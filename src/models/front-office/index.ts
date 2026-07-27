@@ -1,0 +1,63 @@
+import {
+  deleteRow,
+  getRowById,
+  insertRow,
+  listRows,
+  newId,
+  updateRow,
+} from "./base.js";
+
+export const tables = {
+  roomTypes: "room_types",
+  rooms: "rooms",
+  ratePlans: "rate_plans",
+  marketSegments: "market_segments",
+  companies: "companies",
+  guests: "guests",
+  reservations: "reservations",
+  guestStayHistory: "guest_stay_history",
+  folioEntries: "folio_entries",
+  payments: "payments",
+  invoices: "invoices",
+  roomTransfers: "room_transfers",
+  wakeUpCalls: "wake_up_calls",
+  taxiBookings: "taxi_bookings",
+  luggageItems: "luggage_items",
+  messages: "messages",
+  guestFeedback: "guest_feedback",
+  lostFoundItems: "lost_found_items",
+  housekeepingRequests: "housekeeping_requests",
+  maintenanceRequests: "maintenance_requests",
+  cashierShifts: "cashier_shifts",
+  roomChargePostings: "room_charge_postings",
+  dayClosings: "day_closings",
+  deskActivity: "desk_activity",
+} as const;
+
+export type TableName = (typeof tables)[keyof typeof tables];
+
+export const foModel = {
+  list: listRows,
+  get: getRowById,
+  create: insertRow,
+  update: updateRow,
+  remove: deleteRow,
+  newId,
+  tables,
+};
+
+/** Map taxi `drop` UI field to DB `drop_location`. */
+export function normalizeTaxiPayload(body: Record<string, unknown>) {
+  const { drop, dropLocation, ...rest } = body;
+  return {
+    ...rest,
+    dropLocation: dropLocation ?? drop,
+  };
+}
+
+/** Map taxi row back for UI (`drop`). */
+export function mapTaxiForUi<T>(row: T): T {
+  const r = row as Record<string, unknown>;
+  const { dropLocation, ...rest } = r;
+  return { ...rest, drop: dropLocation ?? "" } as T;
+}
