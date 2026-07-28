@@ -1,0 +1,68 @@
+import { deleteRow, getRowById, insertRow, listRows, newId, updateRow } from "./base.js";
+export declare const tables: {
+    readonly roomTypes: "room_types";
+    readonly rooms: "rooms";
+    readonly ratePlans: "rate_plans";
+    readonly marketSegments: "market_segments";
+    readonly companies: "companies";
+    readonly guests: "guests";
+    readonly reservations: "reservations";
+    readonly guestStayHistory: "guest_stay_history";
+    readonly folioEntries: "folio_entries";
+    readonly payments: "payments";
+    readonly invoices: "invoices";
+    readonly roomTransfers: "room_transfers";
+    readonly wakeUpCalls: "wake_up_calls";
+    readonly taxiBookings: "taxi_bookings";
+    readonly luggageItems: "luggage_items";
+    readonly messages: "messages";
+    readonly guestFeedback: "guest_feedback";
+    readonly lostFoundItems: "lost_found_items";
+    readonly housekeepingRequests: "housekeeping_requests";
+    readonly maintenanceRequests: "maintenance_requests";
+    readonly cashierShifts: "cashier_shifts";
+    readonly roomChargePostings: "room_charge_postings";
+    readonly dayClosings: "day_closings";
+    readonly deskActivity: "desk_activity";
+};
+export type TableName = (typeof tables)[keyof typeof tables];
+export declare const foModel: {
+    list: typeof listRows;
+    get: typeof getRowById;
+    create: typeof insertRow;
+    update: typeof updateRow;
+    remove: typeof deleteRow;
+    newId: typeof newId;
+    tables: {
+        readonly roomTypes: "room_types";
+        readonly rooms: "rooms";
+        readonly ratePlans: "rate_plans";
+        readonly marketSegments: "market_segments";
+        readonly companies: "companies";
+        readonly guests: "guests";
+        readonly reservations: "reservations";
+        readonly guestStayHistory: "guest_stay_history";
+        readonly folioEntries: "folio_entries";
+        readonly payments: "payments";
+        readonly invoices: "invoices";
+        readonly roomTransfers: "room_transfers";
+        readonly wakeUpCalls: "wake_up_calls";
+        readonly taxiBookings: "taxi_bookings";
+        readonly luggageItems: "luggage_items";
+        readonly messages: "messages";
+        readonly guestFeedback: "guest_feedback";
+        readonly lostFoundItems: "lost_found_items";
+        readonly housekeepingRequests: "housekeeping_requests";
+        readonly maintenanceRequests: "maintenance_requests";
+        readonly cashierShifts: "cashier_shifts";
+        readonly roomChargePostings: "room_charge_postings";
+        readonly dayClosings: "day_closings";
+        readonly deskActivity: "desk_activity";
+    };
+};
+/** Map taxi `drop` UI field to DB `drop_location`. */
+export declare function normalizeTaxiPayload(body: Record<string, unknown>): {
+    dropLocation: unknown;
+};
+/** Map taxi row back for UI (`drop`). */
+export declare function mapTaxiForUi<T>(row: T): T;
