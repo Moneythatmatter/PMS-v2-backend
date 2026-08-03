@@ -33,5 +33,9 @@ app.use(errorHandler);
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on http://localhost:${PORT}`);
-  console.log("Request logging enabled — API hits will appear below.\n");
+  console.log("Request logging enabled — API hits tagged by module:\n");
+  console.log("  [FO]   /api/front-office");
+  console.log("  [FB]   /api/food-beverages");
+  console.log("  [HK]   /api/housekeeping");
+  console.log("  [AUTH] /api/auth\n");
 });
