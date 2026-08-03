@@ -7,6 +7,7 @@ import { requestLogger } from "./middleware/request-logger.js";
 import authRoutes from "./routes/auth.js";
 import frontOfficeRoutes from "./routes/front-office.js";
 import foodBeveragesRoutes from "./routes/food-beverages.js";
+import housekeepingRoutes from "./routes/housekeeping.js";
 
 const app = express();
 const PORT = config.port;
@@ -26,6 +27,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/front-office", frontOfficeRoutes);
 app.use("/api/food-beverages", foodBeveragesRoutes);
+app.use("/api/housekeeping", housekeepingRoutes);
 
 app.use(errorHandler);
 

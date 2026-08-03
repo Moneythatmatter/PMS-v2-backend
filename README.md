@@ -34,3 +34,20 @@ Ops:
 - `GET|POST /cashier-shifts`, `POST /cashier-shifts/:id/close`
 
 Also CRUD for outlets, menu, banquet, inventory, bar, settings, and `GET /reports/:type`.
+
+## Housekeeping API
+
+Base: `/api/housekeeping`
+
+1. Run SQL: [`sql/housekeeping-schema.sql`](sql/housekeeping-schema.sql) in Supabase SQL Editor (after front-office schema)
+2. Restart: `npm run dev`
+
+Ops:
+- `GET /dashboard`
+- Rooms: `GET|POST /rooms`, `POST /rooms/:id/start-clean|pause-clean|complete-clean|inspect|mark-dirty`
+- Laundry: `GET|POST /laundry`, `POST /laundry/:id/advance`
+- Requisitions: `GET|POST /requisitions`, `POST /requisitions/:id/approve|issue|reject`
+
+Also CRUD for public-areas, checklists, staff, shifts, inventory, damage-reports, history, luggage, settings.
+Shared FO tables via `/guest-requests`, `/maintenance`, `/lost-found`.
+Reports: `GET /reports/:type` (`room-status`, `cleaning-productivity`, `inspection`, `laundry`, `inventory`, `damage`, `staff-performance`, `public-area`).
