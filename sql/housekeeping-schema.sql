@@ -294,3 +294,23 @@ on conflict (id) do nothing;
 insert into hk_settings (id, label, value) values
   ('general', 'General HK Settings', '{"autoMarkDirtyOnCheckout":true,"inspectionRequired":true,"defaultCleanMinutes":30}'::jsonb)
 on conflict (id) do nothing;
+
+-- ========== RLS (anon access — same pattern as FO / F&B) ==========
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'hk_rooms','hk_public_areas','hk_checklist_templates','hk_staff','hk_shifts',
+    'hk_inventory','hk_laundry_jobs','hk_damage_reports','hk_requisitions',
+    'hk_history','hk_luggage_jobs','hk_settings'
+  ]
+  loop
+    execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists "anon_all_%s" on %I', t, t);
+    execute format(
+      'create policy "anon_all_%s" on %I for all to anon using (true) with check (true)',
+      t, t
+    );
+  end loop;
+end $$;
