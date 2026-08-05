@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { foModel } from "../../models/front-office/index.js";
+import { isArrivingTodayReservation } from "../../utils/date.js";
 import { fail, fromError, ok } from "../../utils/response.js";
 
 type Reservation = Record<string, unknown>;
@@ -49,9 +50,9 @@ export async function getReport(req: Request, res: Response) {
           return reservations
             .filter(
               (r) =>
-                r.arrivingToday ||
-                r.status === "Confirmed" ||
-                r.status === "Reserved",
+                isArrivingTodayReservation(r) &&
+                r.status !== "Cancelled" &&
+                r.status !== "Checked Out",
             )
             .map((r) => ({
               bookingId: r.id,

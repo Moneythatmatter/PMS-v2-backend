@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { foModel } from "../../models/front-office/index.js";
+import { isArrivingTodayReservation } from "../../utils/date.js";
 import { fromError, ok } from "../../utils/response.js";
 
 type Reservation = Record<string, unknown>;
@@ -22,9 +23,9 @@ export async function getDashboard(_req: Request, res: Response) {
     );
     const arrivals = reservations.filter(
       (r) =>
-        r.arrivingToday ||
-        r.status === "Confirmed" ||
-        r.status === "Reserved",
+        isArrivingTodayReservation(r) &&
+        r.status !== "Cancelled" &&
+        r.status !== "Checked Out",
     );
     const departures = reservations.filter(
       (r) => r.status === "Checked In",
@@ -56,7 +57,7 @@ export async function getDashboard(_req: Request, res: Response) {
       },
       {
         title: "Arrivals Today",
-        value: String(arrivals.filter((a) => a.arrivingToday).length),
+        value: String(arrivals.length),
         note: "Expected arrivals",
         trend: "neutral" as const,
       },
@@ -77,7 +78,6 @@ export async function getDashboard(_req: Request, res: Response) {
     ];
 
     const todaysArrivals = arrivals
-      .filter((a) => a.arrivingToday || a.status === "Reserved")
       .slice(0, 10)
       .map((a) => ({
         id: a.id,

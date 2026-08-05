@@ -18,7 +18,7 @@ import {
   DatabaseError,
   NotFoundError,
 } from "../../errors/index.js";
-import { formatDate, formatTime, timestamp } from "../../utils/date.js";
+import { formatDate, formatTime, isArrivingTodayReservation, timestamp } from "../../utils/date.js";
 import { IdService } from "../shared/id.service.js";
 import { ActivityService } from "../shared/activity.service.js";
 import { PaymentService } from "../shared/payment.service.js";
@@ -55,6 +55,9 @@ export const ReservationService = {
     if (!body.id) body.id = IdService.generateReservation();
     if (!body.createdAt) body.createdAt = timestamp();
     if (!body.status) body.status = ReservationStatus.CONFIRMED;
+    if (body.checkIn && isArrivingTodayReservation(body)) {
+      body.arrivingToday = true;
+    }
 
     const row = await foModel.create<Reservation>(
       foModel.tables.reservations,
@@ -338,7 +341,12 @@ export const ReservationService = {
       },
       {
         label: "Arriving Today",
-        value: rows.filter((r) => r.arrivingToday).length,
+        value: rows.filter(
+          (r) =>
+            isArrivingTodayReservation(r) &&
+            r.status !== ReservationStatus.CANCELLED &&
+            r.status !== ReservationStatus.CHECKED_OUT,
+        ).length,
         icon: "user-check",
         color: "#22c55e",
       },
