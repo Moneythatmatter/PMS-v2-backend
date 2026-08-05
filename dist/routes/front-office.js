@@ -34,9 +34,9 @@ mountCrud(router, "/masters/room-types", createCrudController({
     table: foModel.tables.roomTypes,
     idPrefix: "RT",
 }));
-mountCrud(router, "/masters/rate-plans", createCrudController({
-    table: foModel.tables.ratePlans,
-    idPrefix: "RP",
+mountCrud(router, "/masters/tariff-plans", createCrudController({
+    table: foModel.tables.tariffPlans,
+    idPrefix: "TP",
 }));
 mountCrud(router, "/masters/market-segments", createCrudController({
     table: foModel.tables.marketSegments,
@@ -45,6 +45,10 @@ mountCrud(router, "/masters/market-segments", createCrudController({
 mountCrud(router, "/masters/companies", createCrudController({
     table: foModel.tables.companies,
     idPrefix: "CO",
+}));
+mountCrud(router, "/masters/booking-sources", createCrudController({
+    table: foModel.tables.bookingSources,
+    idPrefix: "BS",
 }));
 // Guests
 mountCrud(router, "/guests", createCrudController({

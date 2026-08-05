@@ -19,7 +19,7 @@ Express + Supabase API for Hotel PMS Front Office.
 - `npm run build` — compile to `dist/`
 - `npm start` — run compiled server
 
-## F&B API
+## F&B APIjkdjkdjk
 
 Base: `/api/food-beverages`
 

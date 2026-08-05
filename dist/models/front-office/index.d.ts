@@ -2,9 +2,10 @@ import { deleteRow, getRowById, insertRow, listRows, newId, updateRow } from "./
 export declare const tables: {
     readonly roomTypes: "room_types";
     readonly rooms: "rooms";
-    readonly ratePlans: "rate_plans";
+    readonly tariffPlans: "tariff_plans";
     readonly marketSegments: "market_segments";
     readonly companies: "companies";
+    readonly bookingSources: "booking_sources";
     readonly guests: "guests";
     readonly reservations: "reservations";
     readonly guestStayHistory: "guest_stay_history";
@@ -36,9 +37,10 @@ export declare const foModel: {
     tables: {
         readonly roomTypes: "room_types";
         readonly rooms: "rooms";
-        readonly ratePlans: "rate_plans";
+        readonly tariffPlans: "tariff_plans";
         readonly marketSegments: "market_segments";
         readonly companies: "companies";
+        readonly bookingSources: "booking_sources";
         readonly guests: "guests";
         readonly reservations: "reservations";
         readonly guestStayHistory: "guest_stay_history";
