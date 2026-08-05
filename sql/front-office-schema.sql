@@ -30,7 +30,7 @@ create table if not exists rooms (
   created_at timestamptz default now()
 );
 
-create table if not exists rate_plans (
+create table if not exists tariff_plans (
   id text primary key,
   code text not null unique,
   name text not null,
@@ -72,6 +72,15 @@ create table if not exists companies (
   city text default '',
   corporate_discount numeric not null default 0,
   credit_limit numeric not null default 0,
+  status text not null default 'Active',
+  created_at timestamptz default now()
+);
+
+create table if not exists booking_sources (
+  id text primary key,
+  code text not null unique,
+  name text not null,
+  description text default '',
   status text not null default 'Active',
   created_at timestamptz default now()
 );
@@ -128,7 +137,7 @@ create table if not exists reservations (
   adults int default 1,
   children int default 0,
   nights int default 1,
-  rate_plan text,
+  tariff_plan text,
   meal_plan text,
   room_rate numeric default 0,
   total_amount numeric default 0,
@@ -399,9 +408,10 @@ create index if not exists idx_payments_date on payments(date);
 -- RLS: allow anon full access (prototype)
 alter table room_types enable row level security;
 alter table rooms enable row level security;
-alter table rate_plans enable row level security;
+alter table tariff_plans enable row level security;
 alter table market_segments enable row level security;
 alter table companies enable row level security;
+alter table booking_sources enable row level security;
 alter table guests enable row level security;
 alter table reservations enable row level security;
 alter table guest_stay_history enable row level security;
@@ -427,7 +437,7 @@ declare
   t text;
 begin
   foreach t in array array[
-    'room_types','rooms','rate_plans','market_segments','companies',
+    'room_types','rooms','tariff_plans','market_segments','companies','booking_sources',
     'guests','reservations','guest_stay_history','folio_entries','payments',
     'invoices','room_transfers','wake_up_calls','taxi_bookings','luggage_items',
     'messages','guest_feedback','lost_found_items','housekeeping_requests',
@@ -451,7 +461,7 @@ insert into room_types (id, code, name, description, base_rate, max_occupancy, m
   ('RT-04','PRM','Premium','Top-floor premium rooms',6200,3,2,1,6,400,array['Wi-Fi','AC','Smart TV','Mini Bar','Balcony'],'Active')
 on conflict (id) do nothing;
 
-insert into rate_plans (id, code, name, room_type, base_rate, weekend_rate, meal_plan, cancellation_policy, min_nights, valid_from, valid_to, status) values
+insert into tariff_plans (id, code, name, room_type, base_rate, weekend_rate, meal_plan, cancellation_policy, min_nights, valid_from, valid_to, status) values
   ('RP-01','BAR','Best Available Rate','All Types',3500,4200,'EP','Free cancellation 24 hrs before arrival',1,'2026-01-01','2026-12-31','Active'),
   ('RP-02','CORP','Corporate Rate','Standard, Deluxe',3200,3200,'CP','Free cancellation 48 hrs before arrival',1,'2026-01-01','2026-12-31','Active'),
   ('RP-03','WKND','Weekend Package','Deluxe, Suite',4800,4800,'MAP','Non-refundable',2,'2026-01-01','2026-12-31','Active'),
@@ -470,6 +480,16 @@ insert into companies (id, code, name, type, contact_person, email, phone, addre
   ('CO-01','TCS','Tata Consultancy','Corporate','Amit Shah','amit@tcs.com','+91 98765 11111','TCS Campus','Mumbai',15,500000,'Active'),
   ('CO-02','INFY','Infosys Ltd','Corporate','Priya Nair','priya@infosys.com','+91 98765 22222','Electronics City','Bangalore',12,400000,'Active'),
   ('CO-03','MMT','MakeMyTrip','Travel Agent','Ravi Kumar','ravi@mmt.com','+91 98765 33333','Gurugram','Delhi NCR',8,200000,'Active')
+on conflict (id) do nothing;
+
+insert into booking_sources (id, code, name, description, status) values
+  ('BS-01','WALKIN','Walk-in','Guest arrived at front desk without prior booking','Active'),
+  ('BS-02','WEB','Website','Direct booking via hotel website','Active'),
+  ('BS-03','BCOM','Booking.com','OTA — Booking.com','Active'),
+  ('BS-04','AGODA','Agoda','OTA — Agoda','Active'),
+  ('BS-05','MMT','MakeMyTrip','OTA — MakeMyTrip','Active'),
+  ('BS-06','TA','Travel Agent','Booked through travel agent','Active'),
+  ('BS-07','CORP','Corporate','Corporate / company booking','Active')
 on conflict (id) do nothing;
 
 insert into rooms (room_no, room_type, floor, status, guest_name, housekeeping, maintenance, checkout_date) values
@@ -494,7 +514,7 @@ insert into guests (id, name, mobile, email, nationality, total_stays, loyalty_p
   ('G-005','Michael Brown','+91 88776 65544','m.brown@corp.com','American',4,1100,'Passport','US4412299','2024-11-05')
 on conflict (id) do nothing;
 
-insert into reservations (id, guest_name, guest_id, phone, email, source, room_no, room_type, check_in, check_out, balance, status, arriving_today, nationality, id_proof_type, id_number, adults, children, nights, rate_plan, meal_plan, room_rate, total_amount, advance_paid, payment_mode, special_requests, created_at, booked_by, restaurant_bill, laundry, is_vip) values
+insert into reservations (id, guest_name, guest_id, phone, email, source, room_no, room_type, check_in, check_out, balance, status, arriving_today, nationality, id_proof_type, id_number, adults, children, nights, tariff_plan, meal_plan, room_rate, total_amount, advance_paid, payment_mode, special_requests, created_at, booked_by, restaurant_bill, laundry, is_vip) values
   ('BK-1042','Rahul Sharma','G-001','+91 98765 43210','rahul@email.com','Walk-in','204','Deluxe','23 Jun 2026','26 Jun 2026',8500,'Checked In',false,'Indian','Aadhaar','XXXX-XXXX-4521',2,0,3,'BAR','CP',4500,13500,5000,'UPI','Late check-in requested','20 Jun 2026, 2:30 PM','Front Desk — Amit',620,180,false),
   ('BK-1040','James Wilson','G-002','+91 87654 32109','james.w@email.com','Booking.com','112','Standard','22 Jun 2026','27 Jun 2026',3200,'Checked In',false,'British','Passport','GB9823412',1,0,5,'OTA','EP',3200,16000,12800,'Card',null,'18 Jun 2026, 11:00 AM','Online — Booking.com',850,200,false),
   ('BK-1039','Anita Desai','G-003','+91 76543 21098','anita.d@email.com','Agoda','308','Deluxe','23 Jun 2026','24 Jun 2026',5500,'Reserved',true,'Indian','Driving Licence','DL-MH-2019-8821',2,1,1,'OTA','MAP',5500,5500,0,'Pay at Hotel','Crib required','21 Jun 2026, 4:15 PM','Online — Agoda',0,0,false),

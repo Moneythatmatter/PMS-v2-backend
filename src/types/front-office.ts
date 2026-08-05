@@ -45,7 +45,7 @@ export interface Reservation {
   adults?: number;
   children?: number;
   nights?: number;
-  ratePlan?: string;
+  tariffPlan?: string;
   mealPlan?: string;
   roomRate?: number;
   totalAmount?: number;

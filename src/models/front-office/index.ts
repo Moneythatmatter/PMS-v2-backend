@@ -10,9 +10,10 @@ import {
 export const tables = {
   roomTypes: "room_types",
   rooms: "rooms",
-  ratePlans: "rate_plans",
+  tariffPlans: "tariff_plans",
   marketSegments: "market_segments",
   companies: "companies",
+  bookingSources: "booking_sources",
   guests: "guests",
   reservations: "reservations",
   guestStayHistory: "guest_stay_history",

@@ -57,10 +57,10 @@ mountCrud(
 );
 mountCrud(
   router,
-  "/masters/rate-plans",
+  "/masters/tariff-plans",
   createCrudController({
-    table: foModel.tables.ratePlans,
-    idPrefix: "RP",
+    table: foModel.tables.tariffPlans,
+    idPrefix: "TP",
   }),
 );
 mountCrud(
@@ -77,6 +77,14 @@ mountCrud(
   createCrudController({
     table: foModel.tables.companies,
     idPrefix: "CO",
+  }),
+);
+mountCrud(
+  router,
+  "/masters/booking-sources",
+  createCrudController({
+    table: foModel.tables.bookingSources,
+    idPrefix: "BS",
   }),
 );
 
