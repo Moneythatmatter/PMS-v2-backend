@@ -1,6 +1,6 @@
 # PMS Backend (TypeScript)
 
-Express + Supabase API for Hotel PMS Front Office.
+Express + Supabase API for Hotel PMS (Front Office, Food & Beverages, Housekeeping, Auth).
 
 ## Setup
 
@@ -13,13 +13,29 @@ Express + Supabase API for Hotel PMS Front Office.
    [`sql/front-office-schema.sql`](sql/front-office-schema.sql)
 4. Start: `npm run dev` → http://localhost:5001
 
+## API Documentation (OpenAPI)
+
+Interactive Swagger UI with all endpoints, categorized by module:
+
+- **Swagger UI:** http://localhost:5001/api-docs
+- **OpenAPI JSON:** http://localhost:5001/api-docs.json
+
+Tags are grouped as:
+
+| Prefix | Categories |
+|--------|------------|
+| System / Auth | Health, login, current user |
+| FO · … | Dashboard, Reservations, Rooms, Masters, Guests, Billing, Guest Services, Closing, Reports |
+| FB · … | Dashboard, Live Tables, Orders, KDS, Cashier, Menu, Banquet, Inventory, Bar, Settings, Reports |
+| HK · … | Dashboard, Rooms, Laundry, Requisitions, Public Areas, Staff, Inventory, Guest Services, Reports |
+
 ## Scripts
 
 - `npm run dev` — tsx watch
 - `npm run build` — compile to `dist/`
 - `npm start` — run compiled server
 
-## F&B APIjkdjkdjk
+## F&B API
 
 Base: `/api/food-beverages`
 
