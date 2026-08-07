@@ -18,7 +18,12 @@ import {
   DatabaseError,
   NotFoundError,
 } from "../../errors/index.js";
-import { formatDate, formatTime, isArrivingTodayReservation, timestamp } from "../../utils/date.js";
+import {
+  formatDate,
+  formatTime,
+  isArrivingTodayReservation,
+  timestamp,
+} from "../../utils/date.js";
 import { IdService } from "../shared/id.service.js";
 import { ActivityService } from "../shared/activity.service.js";
 import { PaymentService } from "../shared/payment.service.js";
@@ -75,7 +80,10 @@ async function occupyRoom(
   );
 }
 
-async function releaseRoom(roomNo: unknown, toStatus: string = RoomStatus.VACANT) {
+async function releaseRoom(
+  roomNo: unknown,
+  toStatus: string = RoomStatus.VACANT,
+) {
   if (!isRealRoomNo(roomNo)) return;
   await foModel.update(
     foModel.tables.rooms,
@@ -142,10 +150,7 @@ export const ReservationService = {
     return row;
   },
 
-  async update(
-    id: string,
-    input: Partial<Reservation>,
-  ): Promise<Reservation> {
+  async update(id: string, input: Partial<Reservation>): Promise<Reservation> {
     const existing = await getOrThrow(id);
     const body = { ...input } as Record<string, unknown>;
     delete body.id;
@@ -228,10 +233,11 @@ export const ReservationService = {
     // Persist room assignment before RPC so it can mark the correct room Occupied
     const assignedRoom = extras.roomNo;
     if (isRealRoomNo(assignedRoom) && assignedRoom !== existing.roomNo) {
-      const { status: _s, arrivingToday: _a, ...roomPatch } = extras as Record<
-        string,
-        unknown
-      >;
+      const {
+        status: _s,
+        arrivingToday: _a,
+        ...roomPatch
+      } = extras as Record<string, unknown>;
       existing = await foModel.update<Reservation>(
         foModel.tables.reservations,
         id,
@@ -284,7 +290,9 @@ export const ReservationService = {
     // Fallback if RPC not applied yet
     if (
       error &&
-      !/fo_check_in_reservation|Could not find the function/i.test(error.message)
+      !/fo_check_in_reservation|Could not find the function/i.test(
+        error.message,
+      )
     ) {
       throw new DatabaseError(error.message);
     }
@@ -370,7 +378,12 @@ export const ReservationService = {
       return mapReservationRow(data);
     }
 
-    if (error && !/fo_check_out_reservation|Could not find the function/i.test(error.message)) {
+    if (
+      error &&
+      !/fo_check_out_reservation|Could not find the function/i.test(
+        error.message,
+      )
+    ) {
       throw new DatabaseError(error.message);
     }
 

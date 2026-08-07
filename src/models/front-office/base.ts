@@ -77,10 +77,10 @@ export async function updateRow<T>(
     .update(toSnake(payload))
     .eq(idColumn, id)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
-  return toCamel<T>(data);
+  return toCamel<T>(data ?? ({} as T));
 }
 
 export async function deleteRow(
