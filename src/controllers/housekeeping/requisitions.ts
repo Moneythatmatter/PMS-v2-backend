@@ -35,7 +35,7 @@ export async function createRequisition(req: Request, res: Response) {
   try {
     const body = { ...(req.body as Record<string, unknown>) };
     if (!body.id) body.id = hkModel.newId("RQ");
-    if (!body.requestNo) body.requestNo = hkModel.newId("REQ");
+    if (!body.requestNo) body.requestNo = hkModel.newCode("REQ");
     if (!body.status) body.status = "Pending";
     if (!body.requestedAt) body.requestedAt = new Date().toISOString();
     if (!Array.isArray(body.items)) body.items = [];

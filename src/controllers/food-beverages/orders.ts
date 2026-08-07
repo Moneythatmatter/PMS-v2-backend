@@ -39,7 +39,7 @@ export async function createOrder(req: Request, res: Response) {
   try {
     const body = { ...(req.body as Record<string, unknown>) };
     if (!body.id) body.id = fbModel.newId("OR");
-    if (!body.orderNo) body.orderNo = fbModel.newId("ORD");
+    if (!body.orderNo) body.orderNo = fbModel.newCode("ORD");
     if (!body.status) body.status = "Pending";
     if (!body.placedAt) {
       body.placedAt = new Date().toLocaleTimeString("en-IN", {

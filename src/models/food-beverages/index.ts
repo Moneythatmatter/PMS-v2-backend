@@ -3,6 +3,7 @@ import {
   getRowById,
   insertRow,
   listRows,
+  newCode,
   newId,
   updateRow,
   type FilterMap,
@@ -54,6 +55,7 @@ export const fbModel = {
   update: updateRow,
   remove: deleteRow,
   newId,
+  newCode,
   tables: fbTables,
 };
 

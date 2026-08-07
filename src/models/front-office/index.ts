@@ -3,6 +3,7 @@ import {
   getRowById,
   insertRow,
   listRows,
+  newCode,
   newId,
   updateRow,
 } from "./base.js";
@@ -44,6 +45,7 @@ export const foModel = {
   update: updateRow,
   remove: deleteRow,
   newId,
+  newCode,
   tables,
 };
 

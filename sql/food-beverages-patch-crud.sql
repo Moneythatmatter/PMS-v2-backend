@@ -1,10 +1,20 @@
 -- Patch: add table master fields + reservation seeds
 -- Run in Supabase SQL Editor if F&B schema already applied
+-- Fixes: Could not find the 'shape' column of 'fb_live_tables' in the schema cache
 
 alter table fb_live_tables add column if not exists shape text default 'Square';
 alter table fb_live_tables add column if not exists qr text default 'Linked';
 
 update fb_live_tables set shape = coalesce(shape, 'Square'), qr = coalesce(qr, 'Linked') where true;
+
+-- Outlet booking availability (separate from Active/Inactive operational status)
+alter table fb_outlets add column if not exists booking_status text default 'Available';
+update fb_outlets
+set booking_status = coalesce(nullif(booking_status, ''), 'Available')
+where true;
+
+-- Refresh PostgREST schema cache so inserts/updates see the new columns
+notify pgrst, 'reload schema';
 
 insert into fb_reservations (id, res_no, outlet_id, guest, phone, time, covers, table_no, status) values
   ('R1','TR-1042','rest-1','Anita Desai','+91 98765 11111','7:30 PM',4,'T-07','Confirmed'),

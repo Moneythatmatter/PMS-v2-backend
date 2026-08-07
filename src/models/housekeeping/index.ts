@@ -3,6 +3,7 @@ import {
   getRowById,
   insertRow,
   listRows,
+  newCode,
   newId,
   updateRow,
   type FilterMap,
@@ -44,6 +45,7 @@ export const hkModel = {
   update: updateRow,
   remove: deleteRow,
   newId,
+  newCode,
   tables: hkTables,
   shared: hkSharedTables,
 };

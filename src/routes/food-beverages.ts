@@ -39,11 +39,6 @@ mountCrud(
     idPrefix: "T",
     listFilters: outletFilter,
     orderBy: "table_no",
-    mapIncoming: (body) => {
-      const copy = { ...body };
-      delete copy.qr;
-      return copy;
-    },
   }),
 );
 

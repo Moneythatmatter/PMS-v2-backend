@@ -7,6 +7,7 @@ create table if not exists fb_outlets (
   name text not null,
   type text not null,
   status text not null default 'Active',
+  booking_status text not null default 'Available',
   tables int default 0,
   covers int default 0,
   sales text default '₹0',

@@ -31,7 +31,7 @@ export async function createKds(req: Request, res: Response) {
   try {
     let body = mapKdsIncoming({ ...(req.body as Record<string, unknown>) });
     if (!body.id) body.id = fbModel.newId("K");
-    if (!body.ticket) body.ticket = fbModel.newId("KDS");
+    if (!body.ticket) body.ticket = fbModel.newCode("KDS");
     if (!body.status) body.status = "Pending";
     if (!Array.isArray(body.lines)) body.lines = [];
     const row = await fbModel.create(fbModel.tables.kdsTickets, body);
