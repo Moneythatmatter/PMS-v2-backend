@@ -6,6 +6,7 @@ import * as orders from "../controllers/food-beverages/orders.js";
 import * as kds from "../controllers/food-beverages/kds.js";
 import * as cashier from "../controllers/food-beverages/cashier.js";
 import { getReport } from "../controllers/food-beverages/reports.js";
+import { mountModuleRecords } from "../controllers/food-beverages/module-records.js";
 import {
   fbModel,
   mapHappyHourIncoming,
@@ -284,5 +285,13 @@ mountCrud(
 
 // Reports
 router.get("/reports/:type", getReport);
+
+// Flexible module records (pages without dedicated tables)
+mountModuleRecords(router, "/menu/recipes", "menu/recipes", "RC");
+mountModuleRecords(router, "/settings/service-charge", "settings/service-charge", "SC");
+mountModuleRecords(router, "/settings/kitchen-printers", "settings/kitchen-printers", "KP");
+mountModuleRecords(router, "/settings/table-types", "settings/table-types", "TT");
+mountModuleRecords(router, "/settings/reason-masters", "settings/reason-masters", "RM");
+// Settings modifiers UI can reuse menu modifiers table via frontend mapping
 
 export default router;
