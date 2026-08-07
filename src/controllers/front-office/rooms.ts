@@ -153,19 +153,64 @@ function parseStayDate(value: string): Date | null {
 
 export async function roomStatusCards(_req: Request, res: Response) {
   try {
-    const rooms = await foModel.list<Room>(foModel.tables.rooms, {
-      orderBy: "room_no",
+    const [rooms, reservations] = await Promise.all([
+      foModel.list<Room>(foModel.tables.rooms, { orderBy: "room_no" }),
+      foModel.list<Reservation>(foModel.tables.reservations),
+    ]);
+
+    // Overlay active bookings so Room Status stays correct even if rooms.status lagged
+    const bookingByRoom = new Map<string, Reservation>();
+    for (const r of reservations) {
+      const roomNo = String(r.roomNo ?? "").trim();
+      if (!roomNo || /^(tba|n\/?a|unassigned|-)$/i.test(roomNo)) continue;
+      const status = String(r.status ?? "");
+      if (
+        status === "Cancelled" ||
+        status === "Checked Out" ||
+        status === "No Show"
+      ) {
+        continue;
+      }
+      // Prefer in-house over reserved if both somehow exist
+      const prev = bookingByRoom.get(roomNo);
+      if (
+        !prev ||
+        status === "Checked In" ||
+        status === "In-House"
+      ) {
+        bookingByRoom.set(roomNo, r);
+      }
+    }
+
+    const cards = rooms.map((r) => {
+      const roomNo = String(r.roomNo);
+      const booking = bookingByRoom.get(roomNo);
+      let status = String(r.status ?? "Vacant");
+      let guestName = r.guestName ? String(r.guestName) : undefined;
+      let checkoutDate = r.checkoutDate ? String(r.checkoutDate) : undefined;
+
+      if (booking) {
+        guestName = String(booking.guestName ?? guestName ?? "");
+        checkoutDate = String(booking.checkOut ?? checkoutDate ?? "");
+        const bStatus = String(booking.status);
+        if (bStatus === "Checked In" || bStatus === "In-House") {
+          status = "Occupied";
+        } else if (status === "Vacant" || status === "Clean" || status === "Reserved") {
+          status = "Reserved";
+        }
+      }
+
+      return {
+        roomNo,
+        type: r.roomType,
+        floor: r.floor,
+        status,
+        guestName,
+        housekeeping: r.housekeeping,
+        maintenance: r.maintenance,
+        checkoutDate,
+      };
     });
-    const cards = rooms.map((r) => ({
-      roomNo: r.roomNo,
-      type: r.roomType,
-      floor: r.floor,
-      status: r.status,
-      guestName: r.guestName,
-      housekeeping: r.housekeeping,
-      maintenance: r.maintenance,
-      checkoutDate: r.checkoutDate,
-    }));
     return ok(res, cards);
   } catch (e) {
     return fromError(res, e);

@@ -33,6 +33,65 @@ function mapReservationRow(raw: unknown): Reservation {
   return toCamel<Reservation>(raw as Record<string, unknown>);
 }
 
+/** Placeholders like TBA must never touch the rooms table. */
+function isRealRoomNo(roomNo: unknown): roomNo is string {
+  const value = String(roomNo ?? "").trim();
+  if (!value) return false;
+  return !/^(tba|n\/?a|unassigned|-)$/i.test(value);
+}
+
+async function reserveRoom(
+  roomNo: string,
+  guest: { guestName?: string; checkOut?: string },
+) {
+  if (!isRealRoomNo(roomNo)) return;
+  await foModel.update(
+    foModel.tables.rooms,
+    roomNo,
+    {
+      status: RoomStatus.RESERVED,
+      guestName: guest.guestName ?? null,
+      checkoutDate: guest.checkOut ?? null,
+    },
+    "room_no",
+  );
+}
+
+async function occupyRoom(
+  roomNo: string,
+  guest: { guestName?: string; checkOut?: string },
+) {
+  if (!isRealRoomNo(roomNo)) return;
+  await foModel.update(
+    foModel.tables.rooms,
+    roomNo,
+    {
+      status: RoomStatus.OCCUPIED,
+      guestName: guest.guestName ?? null,
+      housekeeping: HousekeepingStatus.CLEAN,
+      checkoutDate: guest.checkOut ?? null,
+    },
+    "room_no",
+  );
+}
+
+async function releaseRoom(roomNo: unknown, toStatus: string = RoomStatus.VACANT) {
+  if (!isRealRoomNo(roomNo)) return;
+  await foModel.update(
+    foModel.tables.rooms,
+    String(roomNo).trim(),
+    {
+      status: toStatus,
+      guestName: null,
+      checkoutDate: null,
+      ...(toStatus === RoomStatus.DIRTY
+        ? { housekeeping: HousekeepingStatus.DIRTY }
+        : {}),
+    },
+    "room_no",
+  );
+}
+
 /**
  * ReservationService — business workflows for FO reservations.
  * Check-in / check-out prefer transactional Postgres RPCs when available.
@@ -64,6 +123,14 @@ export const ReservationService = {
       body as Record<string, unknown>,
     );
 
+    // Assigning a real room on booking must flip room inventory off Vacant
+    if (isRealRoomNo(body.roomNo)) {
+      await reserveRoom(String(body.roomNo).trim(), {
+        guestName: body.guestName,
+        checkOut: body.checkOut,
+      });
+    }
+
     await ActivityService.log({
       type: ActivityType.RESERVATION_CREATED,
       message: `New reservation — ${body.guestName}, ${body.roomNo ?? "TBA"}`,
@@ -79,15 +146,62 @@ export const ReservationService = {
     id: string,
     input: Partial<Reservation>,
   ): Promise<Reservation> {
-    await getOrThrow(id);
+    const existing = await getOrThrow(id);
     const body = { ...input } as Record<string, unknown>;
     delete body.id;
-    return foModel.update<Reservation>(foModel.tables.reservations, id, body);
+
+    const row = await foModel.update<Reservation>(
+      foModel.tables.reservations,
+      id,
+      body,
+    );
+
+    const nextStatus = String(row.status ?? existing.status);
+    const prevRoom = isRealRoomNo(existing.roomNo)
+      ? String(existing.roomNo).trim()
+      : "";
+    const nextRoom = isRealRoomNo(row.roomNo) ? String(row.roomNo).trim() : "";
+
+    // Cancelled / checked-out bookings free the room
+    if (
+      nextStatus === ReservationStatus.CANCELLED ||
+      nextStatus === ReservationStatus.CHECKED_OUT ||
+      nextStatus === ReservationStatus.NO_SHOW
+    ) {
+      if (prevRoom) await releaseRoom(prevRoom, RoomStatus.VACANT);
+      return row;
+    }
+
+    // Room reassignment on an active booking
+    if (prevRoom && prevRoom !== nextRoom) {
+      await releaseRoom(prevRoom, RoomStatus.VACANT);
+    }
+    if (nextRoom) {
+      if (
+        nextStatus === ReservationStatus.CHECKED_IN ||
+        nextStatus === ReservationStatus.IN_HOUSE
+      ) {
+        await occupyRoom(nextRoom, {
+          guestName: String(row.guestName ?? existing.guestName ?? ""),
+          checkOut: String(row.checkOut ?? existing.checkOut ?? ""),
+        });
+      } else {
+        await reserveRoom(nextRoom, {
+          guestName: String(row.guestName ?? existing.guestName ?? ""),
+          checkOut: String(row.checkOut ?? existing.checkOut ?? ""),
+        });
+      }
+    }
+
+    return row;
   },
 
   async remove(id: string): Promise<{ id: string }> {
-    await getOrThrow(id);
+    const existing = await getOrThrow(id);
     await foModel.remove(foModel.tables.reservations, id);
+    if (isRealRoomNo(existing.roomNo)) {
+      await releaseRoom(existing.roomNo, RoomStatus.VACANT);
+    }
     return { id };
   },
 
@@ -99,7 +213,7 @@ export const ReservationService = {
     id: string,
     extras: Partial<Reservation> = {},
   ): Promise<Reservation> {
-    const existing = await getOrThrow(id);
+    let existing = await getOrThrow(id);
 
     if (existing.status === ReservationStatus.CHECKED_OUT) {
       throw new ConflictError("Cannot check in a checked-out reservation");
@@ -111,8 +225,26 @@ export const ReservationService = {
       throw new ConflictError("Guest is already checked in");
     }
 
+    // Persist room assignment before RPC so it can mark the correct room Occupied
+    const assignedRoom = extras.roomNo;
+    if (isRealRoomNo(assignedRoom) && assignedRoom !== existing.roomNo) {
+      const { status: _s, arrivingToday: _a, ...roomPatch } = extras as Record<
+        string,
+        unknown
+      >;
+      existing = await foModel.update<Reservation>(
+        foModel.tables.reservations,
+        id,
+        roomPatch,
+      );
+    }
+
     const activityId = IdService.generateActivity();
-    const activityMessage = `[${ActivityType.CHECK_IN}] Check-in completed — ${existing.guestName}, Room ${existing.roomNo}`;
+    const roomLabel =
+      (isRealRoomNo(extras.roomNo) && String(extras.roomNo).trim()) ||
+      existing.roomNo ||
+      "TBA";
+    const activityMessage = `[${ActivityType.CHECK_IN}] Check-in completed — ${existing.guestName}, Room ${roomLabel}`;
     const activityTs = formatTime();
 
     const { data, error } = await supabase.rpc("fo_check_in_reservation", {
@@ -123,22 +255,37 @@ export const ReservationService = {
     });
 
     if (!error && data) {
-      // Apply any extra body fields after successful transactional core update
+      let row = mapReservationRow(data);
+      // Apply any remaining extras (except status / arrivingToday handled by RPC)
       if (Object.keys(extras).length) {
-        const { status: _s, arrivingToday: _a, ...rest } = extras;
+        const { status: _s, arrivingToday: _a, roomNo: _r, ...rest } = extras;
         if (Object.keys(rest).length) {
-          return foModel.update<Reservation>(
+          row = await foModel.update<Reservation>(
             foModel.tables.reservations,
             id,
             rest as Record<string, unknown>,
           );
         }
       }
-      return mapReservationRow(data);
+
+      const finalRoom =
+        (isRealRoomNo(row.roomNo) && String(row.roomNo).trim()) ||
+        (isRealRoomNo(extras.roomNo) && String(extras.roomNo).trim()) ||
+        "";
+      if (finalRoom) {
+        await occupyRoom(finalRoom, {
+          guestName: row.guestName,
+          checkOut: row.checkOut,
+        });
+      }
+      return row;
     }
 
     // Fallback if RPC not applied yet
-    if (error && !/fo_check_in_reservation|Could not find the function/i.test(error.message)) {
+    if (
+      error &&
+      !/fo_check_in_reservation|Could not find the function/i.test(error.message)
+    ) {
       throw new DatabaseError(error.message);
     }
 
@@ -160,25 +307,24 @@ export const ReservationService = {
       } as Record<string, unknown>,
     );
 
-    if (existing.roomNo) {
-      await foModel.update(
-        foModel.tables.rooms,
-        String(existing.roomNo),
-        {
-          status: RoomStatus.OCCUPIED,
-          guestName: existing.guestName,
-          housekeeping: HousekeepingStatus.CLEAN,
-          checkoutDate: existing.checkOut,
-        },
-        "room_no",
-      );
+    const roomNo =
+      (isRealRoomNo(row.roomNo) && String(row.roomNo).trim()) ||
+      (isRealRoomNo(extras.roomNo) && String(extras.roomNo).trim()) ||
+      (isRealRoomNo(existing.roomNo) && String(existing.roomNo).trim()) ||
+      "";
+
+    if (roomNo) {
+      await occupyRoom(roomNo, {
+        guestName: row.guestName ?? existing.guestName,
+        checkOut: row.checkOut ?? existing.checkOut,
+      });
     }
 
     await ActivityService.log({
       type: ActivityType.CHECK_IN,
-      message: `Check-in completed — ${existing.guestName}, Room ${existing.roomNo}`,
+      message: `Check-in completed — ${existing.guestName}, Room ${roomNo || "TBA"}`,
       guestId: existing.guestId,
-      room: existing.roomNo,
+      room: roomNo || existing.roomNo,
       reservationId: id,
     });
 
@@ -259,18 +405,8 @@ export const ReservationService = {
       });
     }
 
-    if (existing.roomNo) {
-      await foModel.update(
-        foModel.tables.rooms,
-        String(existing.roomNo),
-        {
-          status: RoomStatus.DIRTY,
-          guestName: null,
-          housekeeping: HousekeepingStatus.DIRTY,
-          checkoutDate: null,
-        },
-        "room_no",
-      );
+    if (isRealRoomNo(existing.roomNo)) {
+      await releaseRoom(existing.roomNo, RoomStatus.DIRTY);
     }
 
     if (existing.guestId) {

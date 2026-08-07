@@ -14,6 +14,7 @@ export type ReservationStatusValue =
 
 export const RoomStatus = {
   VACANT: "Vacant",
+  RESERVED: "Reserved",
   OCCUPIED: "Occupied",
   DIRTY: "Dirty",
   CLEAN: "Clean",
