@@ -51,6 +51,9 @@ router.put("/orders/:id", orders.updateOrder);
 router.patch("/orders/:id", orders.updateOrder);
 router.delete("/orders/:id", orders.deleteOrder);
 router.post("/orders/:id/advance", orders.advanceOrder);
+router.post("/orders/:id/accept", orders.acceptOrder);
+router.post("/orders/:id/reject", orders.rejectOrder);
+router.post("/orders/:id/pay", orders.payOrder);
 
 // KDS (ops)
 router.get("/kds", kds.listKds);

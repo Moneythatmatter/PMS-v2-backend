@@ -34,6 +34,12 @@ do $$ begin
   end if;
 end $$;
 
+-- Kitchen accept / reject + POS payment fields on orders
+alter table fb_orders add column if not exists prep_minutes int;
+alter table fb_orders add column if not exists reject_reason text;
+alter table fb_orders add column if not exists payment_mode text;
+alter table fb_orders add column if not exists paid_at text;
+
 -- Refresh PostgREST schema cache so inserts/updates see the new columns
 notify pgrst, 'reload schema';
 

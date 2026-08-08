@@ -43,6 +43,10 @@ create table if not exists fb_orders (
   status text not null default 'Pending',
   placed_at text default '',
   server text default '',
+  prep_minutes int,
+  reject_reason text,
+  payment_mode text,
+  paid_at text,
   cashier_shift_id text,
   created_at timestamptz default now()
 );
