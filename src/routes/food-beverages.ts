@@ -126,7 +126,26 @@ mountCrud(
 mountCrud(
   router,
   "/banquet/bookings",
-  createTableCrud({ table: fbModel.tables.banquetBookings, idPrefix: "BB" }),
+  createTableCrud({
+    table: fbModel.tables.banquetBookings,
+    idPrefix: "BB",
+    mapIncoming: (body: Record<string, unknown>) => {
+      if (body.outletId !== undefined && body.venueId === undefined) {
+        body.venueId = body.outletId;
+      }
+      delete body.outletId;
+      return body;
+    },
+    mapOutgoing: <T>(row: T): T => {
+      if (row && typeof row === "object") {
+        const r = row as Record<string, unknown>;
+        if (r.venueId !== undefined && r.outletId === undefined) {
+          r.outletId = r.venueId;
+        }
+      }
+      return row;
+    },
+  }),
 );
 mountCrud(
   router,
@@ -194,7 +213,20 @@ mountCrud(
 mountCrud(
   router,
   "/bar/drink-categories",
-  createTableCrud({ table: fbModel.tables.drinkCategories, idPrefix: "DC" }),
+  createTableCrud({
+    table: fbModel.tables.drinkCategories,
+    idPrefix: "DC",
+    listFilters: outletFilter,
+    mapOutgoing: <T>(row: T): T => {
+      if (row && typeof row === "object") {
+        const r = row as Record<string, unknown>;
+        if (r.items === undefined && r.itemCount !== undefined) {
+          r.items = r.itemCount;
+        }
+      }
+      return row;
+    },
+  }),
 );
 mountCrud(
   router,
