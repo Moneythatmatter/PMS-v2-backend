@@ -2,6 +2,7 @@
 
 export const ReservationStatus = {
   CONFIRMED: "Confirmed",
+  RESERVED: "Reserved",
   CHECKED_IN: "Checked In",
   IN_HOUSE: "In-House",
   CHECKED_OUT: "Checked Out",

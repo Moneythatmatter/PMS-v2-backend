@@ -31,7 +31,7 @@ export async function createRequisition(req, res) {
         if (!body.id)
             body.id = hkModel.newId("RQ");
         if (!body.requestNo)
-            body.requestNo = hkModel.newId("REQ");
+            body.requestNo = hkModel.newCode("REQ");
         if (!body.status)
             body.status = "Pending";
         if (!body.requestedAt)

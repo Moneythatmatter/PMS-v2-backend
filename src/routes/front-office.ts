@@ -18,6 +18,12 @@ import {
   paymentCreateSchema,
   paymentUpdateSchema,
 } from "../validators/front-office.js";
+import {
+  assertGuestContactUnique,
+  getGuestByKey,
+  sanitizeGuestInput,
+} from "../services/front-office/guest-lookup.js";
+import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 
 const router = Router();
 
@@ -27,6 +33,7 @@ router.get("/dashboard", getDashboard);
 // Reservations
 router.get("/reservations/summary", reservations.getSummary);
 router.get("/reservations/in-house", reservations.listInHouse);
+router.get("/reservations/by-room/:roomId/current", reservations.getCurrentForRoom);
 router.get("/reservations", reservations.listReservations);
 router.get("/reservations/:id", reservations.getReservation);
 router.post("/reservations", reservations.createReservation);
@@ -97,6 +104,10 @@ mountCrud(
     idPrefix: "G",
     createSchema: guestCreateSchema,
     updateSchema: guestUpdateSchema,
+    mapIncoming: sanitizeGuestInput,
+    resolveId: async (key) => (await getGuestByKey(key))?.id ?? null,
+    beforeCreate: async (body) => assertGuestContactUnique(body),
+    beforeUpdate: async (id, body) => assertGuestContactUnique(body, id),
   }),
 );
 mountCrud(
@@ -192,14 +203,15 @@ mountCrud(
     idPrefix: "FB",
   }),
 );
-mountCrud(
-  router,
-  "/lost-found",
-  createCrudController({
-    table: foModel.tables.lostFoundItems,
-    idPrefix: "LF",
-  }),
-);
+router.get("/lost-found", lostFoundItems.listLostFoundItems);
+router.get("/lost-found/:id", lostFoundItems.getLostFoundItem);
+router.post("/lost-found", lostFoundItems.createLostFoundItem);
+router.put("/lost-found/:id", lostFoundItems.updateLostFoundItem);
+router.patch("/lost-found/:id", lostFoundItems.updateLostFoundItem);
+router.post("/lost-found/:id/return", lostFoundItems.returnLostFoundItem);
+router.post("/lost-found/:id/claim", lostFoundItems.claimLostFoundItem);
+router.post("/lost-found/:id/dispose", lostFoundItems.disposeLostFoundItem);
+router.post("/lost-found/:id/courier", lostFoundItems.courierLostFoundItem);
 mountCrud(
   router,
   "/housekeeping-requests",

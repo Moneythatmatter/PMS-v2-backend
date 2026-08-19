@@ -16,10 +16,22 @@ type CrudOptions = {
   createSchema?: ZodTypeAny;
   /** Zod schema for PUT/PATCH body */
   updateSchema?: ZodTypeAny;
+  /** Resolve route key (UUID or human-readable no) to primary key */
+  resolveId?: (key: string) => Promise<string | null>;
+  beforeCreate?: (body: Record<string, unknown>) => Promise<void>;
+  beforeUpdate?: (id: string, body: Record<string, unknown>) => Promise<void>;
 };
 
 export function createCrudController(options: CrudOptions) {
   const idCol = options.idColumn ?? "id";
+
+  async function resolvePrimaryKey(key: string): Promise<string> {
+    if (options.resolveId) {
+      const resolved = await options.resolveId(key);
+      if (resolved) return resolved;
+    }
+    return key;
+  }
 
   return {
     async list(req: Request, res: Response) {
@@ -40,7 +52,7 @@ export function createCrudController(options: CrudOptions) {
 
     async get(req: Request, res: Response) {
       try {
-        const id = String(req.params.id);
+        const id = await resolvePrimaryKey(String(req.params.id));
         let row = await foModel.get(options.table, id, idCol);
         if (!row) return fail(res, "Not found", 404);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
@@ -57,6 +69,9 @@ export function createCrudController(options: CrudOptions) {
         if (options.createSchema) {
           body = parseBody(options.createSchema, body) as Record<string, unknown>;
         }
+        if (options.beforeCreate) {
+          await options.beforeCreate(body);
+        }
         if (!body[idCol]) {
           body[idCol] = foModel.newId(options.idPrefix);
         }
@@ -70,13 +85,16 @@ export function createCrudController(options: CrudOptions) {
 
     async update(req: Request, res: Response) {
       try {
-        const id = String(req.params.id);
+        const id = await resolvePrimaryKey(String(req.params.id));
         let body = { ...(req.body as Record<string, unknown>) };
         delete body[idCol];
         delete body.id;
         if (options.mapIncoming) body = options.mapIncoming(body);
         if (options.updateSchema) {
           body = parseBody(options.updateSchema, body) as Record<string, unknown>;
+        }
+        if (options.beforeUpdate) {
+          await options.beforeUpdate(id, body);
         }
         let row = await foModel.update(options.table, id, body, idCol);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
@@ -88,7 +106,7 @@ export function createCrudController(options: CrudOptions) {
 
     async remove(req: Request, res: Response) {
       try {
-        const id = String(req.params.id);
+        const id = await resolvePrimaryKey(String(req.params.id));
         await foModel.remove(options.table, id, idCol);
         return ok(res, { id });
       } catch (e) {

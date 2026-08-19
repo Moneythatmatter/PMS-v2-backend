@@ -28,6 +28,18 @@ export async function getReservation(req: Request, res: Response) {
   }
 }
 
+export async function getCurrentForRoom(req: Request, res: Response) {
+  try {
+    const row = await ReservationService.findCurrentForRoom(
+      String(req.params.roomId),
+    );
+    if (!row) return fail(res, "No booking for this room", 404);
+    return ok(res, row);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
 export async function createReservation(req: Request, res: Response) {
   try {
     const body = parseBody(reservationCreateSchema, req.body) as Record<

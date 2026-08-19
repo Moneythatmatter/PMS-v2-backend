@@ -16,7 +16,7 @@ export declare const ReservationService: {
      * Fallback: sequential writes if RPC is not installed yet.
      */
     checkIn(id: string, extras?: Partial<Reservation>): Promise<Reservation>;
-    checkInFallback(id: string, existing: Reservation, extras: Partial<Reservation>): Promise<Reservation>;
+    checkInFallback(reservationId: string, existing: Reservation, extras: Partial<Reservation>): Promise<Reservation>;
     /**
      * Check-out (transactional via fo_check_out_reservation RPC when applied).
      */
@@ -24,7 +24,7 @@ export declare const ReservationService: {
         paymentMode?: string;
         amountReceived?: number;
     }): Promise<Reservation>;
-    checkOutFallback(id: string, existing: Reservation, options: {
+    checkOutFallback(reservationId: string, existing: Reservation, options: {
         paymentMode?: string;
         amountReceived?: number;
     }): Promise<Reservation>;
@@ -36,4 +36,6 @@ export declare const ReservationService: {
     }): Promise<Reservation>;
     getSummary(): Promise<SummaryCard[]>;
     listInHouse(): Promise<InHouseGuest[]>;
+    /** Latest reservation for a room (in-house > reserved > recent checkout). */
+    findCurrentForRoom(roomKey: string): Promise<Reservation | null>;
 };

@@ -9,4 +9,7 @@ export declare function getRowById<T>(table: string, id: string, idColumn?: stri
 export declare function insertRow<T>(table: string, payload: Record<string, unknown>): Promise<T>;
 export declare function updateRow<T>(table: string, id: string, payload: Record<string, unknown>, idColumn?: string): Promise<T>;
 export declare function deleteRow(table: string, id: string, idColumn?: string): Promise<void>;
-export declare function newId(prefix: string): string;
+/** Generate a UUID v4 primary key. Prefix is kept for call-site compatibility only. */
+export declare function newId(_prefix?: string): string;
+/** Human-readable document / ticket number (not a primary key). */
+export declare function newCode(prefix: string): string;

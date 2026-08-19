@@ -6,6 +6,7 @@ import * as orders from "../controllers/food-beverages/orders.js";
 import * as kds from "../controllers/food-beverages/kds.js";
 import * as cashier from "../controllers/food-beverages/cashier.js";
 import { getReport } from "../controllers/food-beverages/reports.js";
+import { mountModuleRecords } from "../controllers/food-beverages/module-records.js";
 import { fbModel, mapHappyHourIncoming, mapHappyHourOutgoing, mapKdsIncoming, mapKdsOutgoing, } from "../models/food-beverages/index.js";
 const router = Router();
 const outletFilter = (req) => ({
@@ -35,6 +36,9 @@ router.put("/orders/:id", orders.updateOrder);
 router.patch("/orders/:id", orders.updateOrder);
 router.delete("/orders/:id", orders.deleteOrder);
 router.post("/orders/:id/advance", orders.advanceOrder);
+router.post("/orders/:id/accept", orders.acceptOrder);
+router.post("/orders/:id/reject", orders.rejectOrder);
+router.post("/orders/:id/pay", orders.payOrder);
 // KDS (ops)
 router.get("/kds", kds.listKds);
 router.post("/kds", kds.createKds);
@@ -70,7 +74,26 @@ mountCrud(router, "/menu/pricing", createTableCrud({
     listFilters: outletFilter,
 }));
 // Banquet
-mountCrud(router, "/banquet/bookings", createTableCrud({ table: fbModel.tables.banquetBookings, idPrefix: "BB" }));
+mountCrud(router, "/banquet/bookings", createTableCrud({
+    table: fbModel.tables.banquetBookings,
+    idPrefix: "BB",
+    mapIncoming: (body) => {
+        if (body.outletId !== undefined && body.venueId === undefined) {
+            body.venueId = body.outletId;
+        }
+        delete body.outletId;
+        return body;
+    },
+    mapOutgoing: (row) => {
+        if (row && typeof row === "object") {
+            const r = row;
+            if (r.venueId !== undefined && r.outletId === undefined) {
+                r.outletId = r.venueId;
+            }
+        }
+        return row;
+    },
+}));
 mountCrud(router, "/banquet/packages", createTableCrud({ table: fbModel.tables.banquetPackages, idPrefix: "BP" }));
 mountCrud(router, "/banquet/requirements", createTableCrud({
     table: fbModel.tables.banquetRequirements,
@@ -88,7 +111,20 @@ mountCrud(router, "/inventory/wastage", createTableCrud({ table: fbModel.tables.
 mountCrud(router, "/inventory/stock-counts", createTableCrud({ table: fbModel.tables.stockCounts, idPrefix: "SC" }));
 mountCrud(router, "/inventory/adjustments", createTableCrud({ table: fbModel.tables.stockAdjustments, idPrefix: "ADJ" }));
 // Bar
-mountCrud(router, "/bar/drink-categories", createTableCrud({ table: fbModel.tables.drinkCategories, idPrefix: "DC" }));
+mountCrud(router, "/bar/drink-categories", createTableCrud({
+    table: fbModel.tables.drinkCategories,
+    idPrefix: "DC",
+    listFilters: outletFilter,
+    mapOutgoing: (row) => {
+        if (row && typeof row === "object") {
+            const r = row;
+            if (r.items === undefined && r.itemCount !== undefined) {
+                r.items = r.itemCount;
+            }
+        }
+        return row;
+    },
+}));
 mountCrud(router, "/bar/drinks", createTableCrud({
     table: fbModel.tables.drinks,
     idPrefix: "DR",
@@ -133,5 +169,12 @@ mountCrud(router, "/kds-tickets", createTableCrud({
 }));
 // Reports
 router.get("/reports/:type", getReport);
+// Flexible module records (pages without dedicated tables)
+mountModuleRecords(router, "/menu/recipes", "menu/recipes", "RC");
+mountModuleRecords(router, "/settings/service-charge", "settings/service-charge", "SC");
+mountModuleRecords(router, "/settings/kitchen-printers", "settings/kitchen-printers", "KP");
+mountModuleRecords(router, "/settings/table-types", "settings/table-types", "TT");
+mountModuleRecords(router, "/settings/reason-masters", "settings/reason-masters", "RM");
+// Settings modifiers UI can reuse menu modifiers table via frontend mapping
 export default router;
 //# sourceMappingURL=food-beverages.js.map

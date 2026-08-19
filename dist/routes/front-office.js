@@ -6,12 +6,14 @@ import * as reservations from "../controllers/front-office/reservations.js";
 import * as rooms from "../controllers/front-office/rooms.js";
 import { foModel, mapTaxiForUi, normalizeTaxiPayload, } from "../models/front-office/index.js";
 import { guestCreateSchema, guestUpdateSchema, paymentCreateSchema, paymentUpdateSchema, } from "../validators/front-office.js";
+import { assertGuestContactUnique, getGuestByKey, sanitizeGuestInput, } from "../services/front-office/guest-lookup.js";
 const router = Router();
 // Dashboard
 router.get("/dashboard", getDashboard);
 // Reservations
 router.get("/reservations/summary", reservations.getSummary);
 router.get("/reservations/in-house", reservations.listInHouse);
+router.get("/reservations/by-room/:roomId/current", reservations.getCurrentForRoom);
 router.get("/reservations", reservations.listReservations);
 router.get("/reservations/:id", reservations.getReservation);
 router.post("/reservations", reservations.createReservation);
@@ -56,6 +58,10 @@ mountCrud(router, "/guests", createCrudController({
     idPrefix: "G",
     createSchema: guestCreateSchema,
     updateSchema: guestUpdateSchema,
+    mapIncoming: sanitizeGuestInput,
+    resolveId: async (key) => (await getGuestByKey(key))?.id ?? null,
+    beforeCreate: async (body) => assertGuestContactUnique(body),
+    beforeUpdate: async (id, body) => assertGuestContactUnique(body, id),
 }));
 mountCrud(router, "/guest-stay-history", createCrudController({
     table: foModel.tables.guestStayHistory,

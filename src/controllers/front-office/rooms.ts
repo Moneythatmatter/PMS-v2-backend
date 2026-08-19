@@ -1,9 +1,27 @@
 import type { Request, Response } from "express";
+import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
+import { toCamel } from "../../utils/mappers.js";
+import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
+import { sanitizeRoomInput } from "../../services/front-office/room-sanitize.js";
 import { fromError, ok } from "../../utils/response.js";
+import type { Reservation } from "../../types/front-office.js";
 
 type Room = Record<string, unknown>;
-type Reservation = Record<string, unknown>;
+
+async function findRoomByParam(param: string): Promise<Room | null> {
+  const byId = await foModel.get<Room>(foModel.tables.rooms, param);
+  if (byId) return byId;
+
+  const { data, error } = await supabase
+    .from(foModel.tables.rooms)
+    .select("*")
+    .eq("room_no", param)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  return data ? toCamel<Room>(data) : null;
+}
 
 export async function listRooms(req: Request, res: Response) {
   try {
@@ -20,11 +38,8 @@ export async function listRooms(req: Request, res: Response) {
 
 export async function getRoom(req: Request, res: Response) {
   try {
-    const row = await foModel.get(
-      foModel.tables.rooms,
-      String(req.params.id),
-      "room_no",
-    );
+    const row = await findRoomByParam(String(req.params.id));
+    if (!row) return fromError(res, new Error("Room not found"), 404);
     return ok(res, row);
   } catch (e) {
     return fromError(res, e);
@@ -33,11 +48,13 @@ export async function getRoom(req: Request, res: Response) {
 
 export async function updateRoom(req: Request, res: Response) {
   try {
+    const existing = await findRoomByParam(String(req.params.id));
+    if (!existing) return fromError(res, new Error("Room not found"), 404);
+    const body = sanitizeRoomInput(req.body as Record<string, unknown>);
     const row = await foModel.update(
       foModel.tables.rooms,
-      String(req.params.id),
-      req.body as Record<string, unknown>,
-      "room_no",
+      String(existing.id),
+      body,
     );
     return ok(res, row);
   } catch (e) {
@@ -47,10 +64,13 @@ export async function updateRoom(req: Request, res: Response) {
 
 export async function createRoom(req: Request, res: Response) {
   try {
-    const row = await foModel.create(
-      foModel.tables.rooms,
-      req.body as Record<string, unknown>,
-    );
+    const body = sanitizeRoomInput(req.body as Record<string, unknown>);
+    if (!body.id) body.id = foModel.newId();
+    if (body.maxOccupancy === undefined) body.maxOccupancy = 2;
+    if (!body.bedType) body.bedType = "Queen";
+    if (body.isActive === undefined) body.isActive = true;
+    if (!body.status) body.status = "Vacant";
+    const row = await foModel.create(foModel.tables.rooms, body);
     return ok(res, row, 201);
   } catch (e) {
     return fromError(res, e);
@@ -69,7 +89,9 @@ export async function roomAvailability(req: Request, res: Response) {
 
     const [rooms, reservations] = await Promise.all([
       foModel.list<Room>(foModel.tables.rooms, { orderBy: "room_no" }),
-      foModel.list<Reservation>(foModel.tables.reservations),
+      enrichReservations(
+        await foModel.list<Reservation>(foModel.tables.reservations),
+      ),
     ]);
 
     const activeReservations = reservations
@@ -155,10 +177,11 @@ export async function roomStatusCards(_req: Request, res: Response) {
   try {
     const [rooms, reservations] = await Promise.all([
       foModel.list<Room>(foModel.tables.rooms, { orderBy: "room_no" }),
-      foModel.list<Reservation>(foModel.tables.reservations),
+      enrichReservations(
+        await foModel.list<Reservation>(foModel.tables.reservations),
+      ),
     ]);
 
-    // Overlay active bookings so Room Status stays correct even if rooms.status lagged
     const bookingByRoom = new Map<string, Reservation>();
     for (const r of reservations) {
       const roomNo = String(r.roomNo ?? "").trim();
@@ -171,7 +194,6 @@ export async function roomStatusCards(_req: Request, res: Response) {
       ) {
         continue;
       }
-      // Prefer in-house over reserved if both somehow exist
       const prev = bookingByRoom.get(roomNo);
       if (
         !prev ||
@@ -186,12 +208,12 @@ export async function roomStatusCards(_req: Request, res: Response) {
       const roomNo = String(r.roomNo);
       const booking = bookingByRoom.get(roomNo);
       let status = String(r.status ?? "Vacant");
-      let guestName = r.guestName ? String(r.guestName) : undefined;
-      let checkoutDate = r.checkoutDate ? String(r.checkoutDate) : undefined;
+      let guestName: string | undefined;
+      let checkoutDate: string | undefined;
 
       if (booking) {
-        guestName = String(booking.guestName ?? guestName ?? "");
-        checkoutDate = String(booking.checkOut ?? checkoutDate ?? "");
+        guestName = String(booking.guestName ?? "").trim() || undefined;
+        checkoutDate = String(booking.checkOut ?? "").trim() || undefined;
         const bStatus = String(booking.status);
         if (bStatus === "Checked In" || bStatus === "In-House") {
           status = "Occupied";
@@ -200,14 +222,23 @@ export async function roomStatusCards(_req: Request, res: Response) {
         }
       }
 
+      const housekeeping =
+        status === "Dirty"
+          ? "Dirty"
+          : status === "Maintenance"
+            ? "In Progress"
+            : "Clean";
+      const maintenance = status === "Maintenance" ? "In Progress" : "OK";
+
       return {
+        id: r.id,
         roomNo,
         type: r.roomType,
         floor: r.floor,
         status,
         guestName,
-        housekeeping: r.housekeeping,
-        maintenance: r.maintenance,
+        housekeeping,
+        maintenance,
         checkoutDate,
       };
     });

@@ -1,6 +1,7 @@
 /** Domain constants — avoid magic strings across services. */
 export const ReservationStatus = {
     CONFIRMED: "Confirmed",
+    RESERVED: "Reserved",
     CHECKED_IN: "Checked In",
     IN_HOUSE: "In-House",
     CHECKED_OUT: "Checked Out",
@@ -9,6 +10,7 @@ export const ReservationStatus = {
 };
 export const RoomStatus = {
     VACANT: "Vacant",
+    RESERVED: "Reserved",
     OCCUPIED: "Occupied",
     DIRTY: "Dirty",
     CLEAN: "Clean",

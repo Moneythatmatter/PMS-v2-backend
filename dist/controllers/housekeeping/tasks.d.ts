@@ -1,0 +1,10 @@
+import type { Request, Response } from "express";
+export declare function listTasks(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getActiveTaskForRoom(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getTask(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function createTask(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function assignTask(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function startTask(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function completeTask(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function approveTask(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function cancelTask(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

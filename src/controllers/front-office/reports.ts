@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { foModel } from "../../models/front-office/index.js";
+import { reservationDisplayNo } from "../../services/front-office/reservation-lookup.js";
 import { isArrivingTodayReservation } from "../../utils/date.js";
 import { fail, fromError, ok } from "../../utils/response.js";
 
@@ -55,7 +56,7 @@ export async function getReport(req: Request, res: Response) {
                 r.status !== "Checked Out",
             )
             .map((r) => ({
-              bookingId: r.id,
+              bookingId: reservationDisplayNo(r),
               guest: r.guestName,
               room: r.roomNo,
               roomType: r.roomType,
@@ -67,7 +68,7 @@ export async function getReport(req: Request, res: Response) {
           return reservations
             .filter((r) => r.status === "Checked In" || r.status === "Checked Out")
             .map((r) => ({
-              bookingId: r.id,
+              bookingId: reservationDisplayNo(r),
               guest: r.guestName,
               room: r.roomNo,
               checkOut: r.checkOut,
@@ -84,7 +85,7 @@ export async function getReport(req: Request, res: Response) {
           }));
         case "revenue":
           return reservations.map((r) => ({
-            bookingId: r.id,
+            bookingId: reservationDisplayNo(r),
             guest: r.guestName,
             roomRevenue: r.totalAmount,
             advancePaid: r.advancePaid,
@@ -109,7 +110,7 @@ export async function getReport(req: Request, res: Response) {
             const amount = Number(r.totalAmount ?? 0);
             const gst = Math.round(amount * 0.12);
             return {
-              bookingId: r.id,
+              bookingId: reservationDisplayNo(r),
               guest: r.guestName,
               taxableAmount: amount,
               gst,

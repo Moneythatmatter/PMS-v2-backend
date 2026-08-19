@@ -1,6 +1,7 @@
 /** Domain constants — avoid magic strings across services. */
 export declare const ReservationStatus: {
     readonly CONFIRMED: "Confirmed";
+    readonly RESERVED: "Reserved";
     readonly CHECKED_IN: "Checked In";
     readonly IN_HOUSE: "In-House";
     readonly CHECKED_OUT: "Checked Out";
@@ -10,6 +11,7 @@ export declare const ReservationStatus: {
 export type ReservationStatusValue = (typeof ReservationStatus)[keyof typeof ReservationStatus];
 export declare const RoomStatus: {
     readonly VACANT: "Vacant";
+    readonly RESERVED: "Reserved";
     readonly OCCUPIED: "Occupied";
     readonly DIRTY: "Dirty";
     readonly CLEAN: "Clean";

@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { foModel } from "../../models/front-office/index.js";
+import { reservationDisplayNo } from "../../services/front-office/reservation-lookup.js";
 import { isArrivingTodayReservation } from "../../utils/date.js";
 import { fromError, ok } from "../../utils/response.js";
 
@@ -82,7 +83,7 @@ export async function getDashboard(_req: Request, res: Response) {
       .map((a) => ({
         id: a.id,
         name: a.guestName,
-        bookingId: a.id,
+        bookingId: reservationDisplayNo(a),
         roomNo: a.roomNo ?? "TBA",
         roomType: a.roomType ?? "",
         status: a.status,
@@ -91,7 +92,7 @@ export async function getDashboard(_req: Request, res: Response) {
     const todaysDepartures = departures.slice(0, 10).map((d) => ({
       id: d.id,
       name: d.guestName,
-      bookingId: d.id,
+      bookingId: reservationDisplayNo(d),
       roomNo: d.roomNo ?? "",
       roomType: d.roomType ?? "",
       status: "Pending",

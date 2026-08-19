@@ -12,13 +12,16 @@ import {
 /** Prefixed HK tables (created by sql/housekeeping-schema.sql). */
 export const hkTables = {
   rooms: "hk_rooms",
+  tasks: "housekeeping_tasks",
+  guestRequests: "guest_requests",
+  publicAreasMaster: "public_areas",
   publicAreas: "hk_public_areas",
   checklistTemplates: "hk_checklist_templates",
   staff: "hk_staff",
   shifts: "hk_shifts",
   inventory: "hk_inventory",
   laundryJobs: "hk_laundry_jobs",
-  damageReports: "hk_damage_reports",
+  damageReports: "damage_reports",
   requisitions: "hk_requisitions",
   history: "hk_history",
   luggageJobs: "hk_luggage_jobs",

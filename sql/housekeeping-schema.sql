@@ -1,43 +1,489 @@
 -- Housekeeping schema for Hotel PMS
 -- Run in Supabase SQL Editor after front-office-schema.sql
--- Shared FO tables (housekeeping_requests, maintenance_requests, luggage_items,
--- lost_found_items) are reused via /api/housekeeping/guest-requests|maintenance|lost-found
+-- Shared FO tables (maintenance_requests, luggage_items, lost_found_items)
+-- are reused via /api/housekeeping/maintenance|lost-found
+-- After base schema, run: maintenance-requests.sql, lost-found-items.sql
+-- Guest requests live in guest_requests (see below)
 
--- ========== ROOMS ==========
+-- ========== ROOMS (slim ops — inventory lives on FO `rooms`) ==========
+do $$
+begin
+  create type public.hk_room_status as enum (
+    'CLEAN',
+    'DIRTY',
+    'INSPECTING',
+    'INSPECTED',
+    'OUT_OF_SERVICE'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
 create table if not exists hk_rooms (
-  id text primary key,
-  room_no text not null unique,
-  category text not null default 'Standard',
-  type text,
-  bed_type text default 'King',
-  floor text not null default '',
-  wing text default '',
-  max_occupancy int not null default 2,
-  cleaning_frequency text default 'Daily',
-  deep_cleaning_frequency text default 'Every 30 Days',
-  last_deep_cleaned text default '',
-  status text not null default 'Vacant Dirty',
-  hk_status text not null default 'Dirty',
-  fo_status text not null default 'Vacant',
-  dnd boolean not null default false,
-  sleep_out boolean not null default false,
-  facilities jsonb not null default '[]'::jsonb,
-  remarks text default '',
-  assigned_staff text,
-  assigned_supervisor text,
-  cleaning_timer jsonb,
-  cleaning_progress int default 0,
-  photos jsonb not null default '[]'::jsonb,
-  inspection_history jsonb not null default '[]'::jsonb,
-  guest_name text,
-  checkout_date text,
-  housekeeping text,
-  maintenance text default 'OK',
+  id text primary key default gen_random_uuid()::text,
+  room_id text not null unique references rooms(id) on delete cascade,
+  status public.hk_room_status not null default 'DIRTY',
+  assigned_to text,
+  inspected_by text,
+  last_cleaned_at timestamptz,
+  last_inspected_at timestamptz,
+  notes text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 
--- ========== PUBLIC AREAS ==========
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'users'
+  ) then
+    alter table hk_rooms drop constraint if exists hk_rooms_assigned_to_fkey;
+    alter table hk_rooms
+      add constraint hk_rooms_assigned_to_fkey
+      foreign key (assigned_to) references users(id) on delete set null;
+
+    alter table hk_rooms drop constraint if exists hk_rooms_inspected_by_fkey;
+    alter table hk_rooms
+      add constraint hk_rooms_inspected_by_fkey
+      foreign key (inspected_by) references users(id) on delete set null;
+  end if;
+exception
+  when others then null;
+end $$;
+
+create or replace function public.hk_rooms_set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_hk_rooms_set_updated_at on hk_rooms;
+
+create trigger trg_hk_rooms_set_updated_at
+  before update on hk_rooms
+  for each row
+  execute function public.hk_rooms_set_updated_at();
+
+-- ========== HOUSEKEEPING TASKS ==========
+do $$
+begin
+  create type public.hk_task_type as enum (
+    'CHECKOUT_CLEANING',
+    'REGULAR_CLEANING',
+    'DEEP_CLEANING',
+    'INSPECTION',
+    'TURNDOWN',
+    'SPECIAL_REQUEST'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.hk_task_status as enum (
+    'PENDING',
+    'ASSIGNED',
+    'IN_PROGRESS',
+    'COMPLETED',
+    'APPROVED',
+    'CANCELLED'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.hk_task_priority as enum (
+    'LOW',
+    'MEDIUM',
+    'HIGH',
+    'URGENT'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+create sequence if not exists public.housekeeping_tasks_task_number_seq
+  start with 0
+  increment by 1
+  minvalue 0;
+
+create table if not exists housekeeping_tasks (
+  id text primary key default gen_random_uuid()::text,
+  task_number text,
+  room_id text not null references rooms(id) on delete cascade,
+  booking_id text references reservations(id) on delete set null,
+  task_type public.hk_task_type not null default 'REGULAR_CLEANING',
+  status public.hk_task_status not null default 'PENDING',
+  assigned_to text,
+  created_by text,
+  priority public.hk_task_priority not null default 'MEDIUM',
+  notes text,
+  assigned_at timestamptz,
+  started_at timestamptz,
+  completed_at timestamptz,
+  approved_at timestamptz,
+  approved_by text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create unique index if not exists housekeeping_tasks_task_number_key
+  on housekeeping_tasks (task_number)
+  where task_number is not null and trim(task_number) <> '';
+
+do $$
+begin
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'users'
+  ) then
+    alter table housekeeping_tasks drop constraint if exists housekeeping_tasks_assigned_to_fkey;
+    alter table housekeeping_tasks
+      add constraint housekeeping_tasks_assigned_to_fkey
+      foreign key (assigned_to) references users(id) on delete set null;
+    alter table housekeeping_tasks drop constraint if exists housekeeping_tasks_created_by_fkey;
+    alter table housekeeping_tasks
+      add constraint housekeeping_tasks_created_by_fkey
+      foreign key (created_by) references users(id) on delete set null;
+    alter table housekeeping_tasks drop constraint if exists housekeeping_tasks_approved_by_fkey;
+    alter table housekeeping_tasks
+      add constraint housekeeping_tasks_approved_by_fkey
+      foreign key (approved_by) references users(id) on delete set null;
+  end if;
+exception
+  when others then null;
+end $$;
+
+create or replace function public.housekeeping_tasks_assign_task_number()
+returns trigger language plpgsql as $$
+begin
+  if new.task_number is null or trim(new.task_number) = '' then
+    new.task_number := 'HT-' || nextval('public.housekeeping_tasks_task_number_seq')::text;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_housekeeping_tasks_assign_task_number on housekeeping_tasks;
+create trigger trg_housekeeping_tasks_assign_task_number
+  before insert on housekeeping_tasks for each row
+  execute function public.housekeeping_tasks_assign_task_number();
+
+create or replace function public.housekeeping_tasks_set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_housekeeping_tasks_set_updated_at on housekeeping_tasks;
+create trigger trg_housekeeping_tasks_set_updated_at
+  before update on housekeeping_tasks for each row
+  execute function public.housekeeping_tasks_set_updated_at();
+
+create or replace function public.hk_ensure_room_dirty(p_room_id text)
+returns void language plpgsql as $$
+begin
+  if p_room_id is null or trim(p_room_id) = '' then return; end if;
+  insert into hk_rooms (room_id, status)
+  values (p_room_id, 'DIRTY'::public.hk_room_status)
+  on conflict (room_id) do update
+    set status = 'DIRTY'::public.hk_room_status, updated_at = now();
+end;
+$$;
+
+create or replace function public.hk_create_checkout_task(
+  p_room_id text,
+  p_booking_id text,
+  p_notes text default null,
+  p_created_by text default null
+)
+returns text language plpgsql as $$
+declare v_task_id text;
+begin
+  if p_room_id is null or trim(p_room_id) = '' then return null; end if;
+  perform public.hk_ensure_room_dirty(p_room_id);
+  if p_booking_id is not null and trim(p_booking_id) <> '' then
+    select id into v_task_id from housekeeping_tasks
+    where booking_id = p_booking_id
+      and task_type = 'CHECKOUT_CLEANING'::public.hk_task_type
+      and status not in ('APPROVED'::public.hk_task_status, 'CANCELLED'::public.hk_task_status)
+    limit 1;
+    if v_task_id is not null then return v_task_id; end if;
+  end if;
+  insert into housekeeping_tasks (room_id, booking_id, task_type, status, priority, notes, created_by)
+  values (
+    p_room_id,
+    nullif(trim(coalesce(p_booking_id, '')), ''),
+    'CHECKOUT_CLEANING'::public.hk_task_type,
+    'PENDING'::public.hk_task_status,
+    'HIGH'::public.hk_task_priority,
+    coalesce(nullif(trim(coalesce(p_notes, '')), ''), 'Auto-created on guest checkout'),
+    nullif(trim(coalesce(p_created_by, '')), '')
+  )
+  returning id into v_task_id;
+  return v_task_id;
+end;
+$$;
+
+-- ========== GUEST REQUESTS ==========
+do $$
+begin
+  create type public.guest_request_type as enum (
+    'AMENITY',
+    'LINEN',
+    'TOWELS',
+    'CLEANING',
+    'LAUNDRY',
+    'MINIBAR',
+    'MAINTENANCE',
+    'ROOM_SERVICE',
+    'OTHER'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.guest_request_status as enum (
+    'PENDING',
+    'ASSIGNED',
+    'IN_PROGRESS',
+    'COMPLETED',
+    'CANCELLED'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.guest_request_priority as enum (
+    'LOW',
+    'MEDIUM',
+    'HIGH',
+    'URGENT'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+create sequence if not exists public.guest_requests_request_number_seq
+  start with 0
+  increment by 1
+  minvalue 0;
+
+create table if not exists guest_requests (
+  id text primary key default gen_random_uuid()::text,
+  request_number text,
+  room_id text not null references rooms(id) on delete cascade,
+  booking_id text references reservations(id) on delete set null,
+  request_type public.guest_request_type not null default 'OTHER',
+  description text not null,
+  status public.guest_request_status not null default 'PENDING',
+  priority public.guest_request_priority not null default 'MEDIUM',
+  assigned_to text,
+  created_by text,
+  requested_at timestamptz default now(),
+  completed_at timestamptz,
+  notes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create unique index if not exists guest_requests_request_number_key
+  on guest_requests (request_number)
+  where request_number is not null and trim(request_number) <> '';
+
+-- assigned_to / created_by store hk_staff.id or display name (no users FK)
+
+create or replace function public.guest_requests_assign_request_number()
+returns trigger language plpgsql as $$
+begin
+  if new.request_number is null or trim(new.request_number) = '' then
+    new.request_number := 'GR-' || nextval('public.guest_requests_request_number_seq')::text;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_guest_requests_assign_request_number on guest_requests;
+create trigger trg_guest_requests_assign_request_number
+  before insert on guest_requests for each row
+  execute function public.guest_requests_assign_request_number();
+
+create or replace function public.guest_requests_set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_guest_requests_set_updated_at on guest_requests;
+create trigger trg_guest_requests_set_updated_at
+  before update on guest_requests for each row
+  execute function public.guest_requests_set_updated_at();
+
+-- ========== MAINTENANCE REQUESTS ==========
+do $$
+begin
+  create type public.maintenance_issue_type as enum (
+    'ELECTRICAL',
+    'PLUMBING',
+    'HVAC',
+    'CARPENTRY',
+    'CIVIL',
+    'APPLIANCE',
+    'IT',
+    'OTHER'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.maintenance_request_status as enum (
+    'OPEN',
+    'ASSIGNED',
+    'IN_PROGRESS',
+    'AWAITING_VERIFICATION',
+    'CLOSED',
+    'CANCELLED'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  create type public.maintenance_request_priority as enum (
+    'LOW',
+    'MEDIUM',
+    'HIGH',
+    'CRITICAL'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+create sequence if not exists public.maintenance_requests_request_number_seq
+  start with 0
+  increment by 1
+  minvalue 0;
+
+create table if not exists maintenance_requests (
+  id text primary key default gen_random_uuid()::text,
+  request_number text,
+  room_id text references rooms(id) on delete set null,
+  public_area_id text references public_areas(id) on delete set null,
+  issue_type public.maintenance_issue_type not null default 'OTHER',
+  title text not null,
+  description text not null,
+  priority public.maintenance_request_priority not null default 'MEDIUM',
+  status public.maintenance_request_status not null default 'OPEN',
+  reported_by text,
+  assigned_to text,
+  reported_at timestamptz default now(),
+  assigned_at timestamptz,
+  started_at timestamptz,
+  estimated_completion_at timestamptz,
+  completed_at timestamptz,
+  verified_at timestamptz,
+  verified_by text,
+  resolution text,
+  notes text,
+  blocks_room boolean not null default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  constraint maintenance_requests_location_chk check (
+    room_id is not null or public_area_id is not null
+  )
+);
+
+create unique index if not exists maintenance_requests_request_number_key
+  on maintenance_requests (request_number)
+  where request_number is not null and trim(request_number) <> '';
+
+create or replace function public.maintenance_requests_assign_request_number()
+returns trigger language plpgsql as $$
+begin
+  if new.request_number is null or trim(new.request_number) = '' then
+    new.request_number := 'MR-' || nextval('public.maintenance_requests_request_number_seq')::text;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_maintenance_requests_assign_request_number on maintenance_requests;
+create trigger trg_maintenance_requests_assign_request_number
+  before insert on maintenance_requests for each row
+  execute function public.maintenance_requests_assign_request_number();
+
+create or replace function public.maintenance_requests_set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_maintenance_requests_set_updated_at on maintenance_requests;
+create trigger trg_maintenance_requests_set_updated_at
+  before update on maintenance_requests for each row
+  execute function public.maintenance_requests_set_updated_at();
+
+-- ========== PUBLIC AREAS MASTER (inventory) ==========
+do $$
+begin
+  create type public.public_area_priority as enum (
+    'LOW',
+    'MEDIUM',
+    'HIGH',
+    'URGENT'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+create table if not exists public_areas (
+  id text primary key default gen_random_uuid()::text,
+  area_code text not null unique,
+  name text not null,
+  area_type text not null default 'Lobby',
+  location text,
+  floor_number int,
+  priority public.public_area_priority not null default 'MEDIUM',
+  is_active boolean not null default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create or replace function public.public_areas_set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_public_areas_set_updated_at on public_areas;
+create trigger trg_public_areas_set_updated_at
+  before update on public_areas for each row
+  execute function public.public_areas_set_updated_at();
+
+-- ========== PUBLIC AREAS OPS (legacy hk_public_areas) ==========
 create table if not exists hk_public_areas (
   id text primary key,
   name text not null,
@@ -125,6 +571,7 @@ create table if not exists hk_laundry_jobs (
 );
 
 -- ========== DAMAGE ==========
+-- Legacy hk_damage_reports — run sql/damage-reports.sql for slim damage_reports table
 create table if not exists hk_damage_reports (
   id text primary key,
   room text not null,
@@ -188,26 +635,35 @@ create table if not exists hk_settings (
 );
 
 -- ========== SEED: ROOMS ==========
-insert into hk_rooms (id, room_no, category, type, bed_type, floor, wing, max_occupancy, cleaning_frequency, deep_cleaning_frequency, last_deep_cleaned, status, hk_status, fo_status, dnd, sleep_out, facilities, remarks, guest_name, checkout_date, maintenance, assigned_staff, assigned_supervisor, cleaning_progress, photos, inspection_history)
-values
-  ('101', '101', 'Standard', 'Standard', 'King', '1st Floor', 'East Wing', 2, 'Daily', 'Every 30 Days', '10 Jun 2026', 'Occupied', 'Clean', 'Occupied', false, false, '["WiFi","TV","Safe"]'::jsonb, 'Needs standard check-out cleaning.', 'James Wilson', '27 Jun', 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('102', '102', 'Standard', 'Standard', 'Twin', '1st Floor', 'East Wing', 2, 'Daily', 'Every 30 Days', '12 Jun 2026', 'Vacant Ready', 'Clean', 'Vacant', false, false, '["WiFi","TV","Safe"]'::jsonb, '', null, null, 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('103', '103', 'Standard', 'Standard', 'King', '1st Floor', 'East Wing', 2, 'Daily', 'Every 30 Days', '15 Jun 2026', 'Vacant Dirty', 'Dirty', 'Vacant', false, false, '["WiFi","TV","Safe"]'::jsonb, '', null, null, 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('104', '104', 'Standard', 'Standard', 'King', '1st Floor', 'West Wing', 2, 'Daily', 'Every 30 Days', '05 Jun 2026', 'Out of Order', 'OOO', 'Blocked', false, false, '["WiFi","TV","Safe"]'::jsonb, 'AC not cooling. Placed OOO.', null, null, 'In Progress', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('105', '105', 'Standard', 'Standard', 'Twin', '1st Floor', 'West Wing', 2, 'Daily', 'Every 30 Days', '08 Jun 2026', 'Blocked', 'Clean', 'Blocked', false, false, '["WiFi","TV","Safe"]'::jsonb, 'Blocked for upcoming group reservation.', null, null, 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('201', '201', 'Deluxe', 'Deluxe', 'King', '2nd Floor', 'East Wing', 3, 'Daily', 'Every 60 Days', '28 May 2026', 'Occupied Dirty', 'Dirty', 'Occupied', false, false, '["WiFi","TV","Safe","Mini Bar"]'::jsonb, 'VIP guest. Stay-over clean.', 'Sarah Chen', '28 Jun', 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('202', '202', 'Deluxe', 'Deluxe', 'Queen', '2nd Floor', 'East Wing', 2, 'Daily', 'Every 60 Days', '01 Jun 2026', 'Occupied', 'Clean', 'Occupied', false, false, '["WiFi","TV","Safe","Mini Bar"]'::jsonb, '', 'Meghna Nair', '29 Jun', 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('203', '203', 'Deluxe', 'Deluxe', 'King', '2nd Floor', 'West Wing', 3, 'Daily', 'Every 60 Days', '02 Jun 2026', 'Cleaning', 'Cleaning', 'Vacant', false, false, '["WiFi","TV","Safe","Mini Bar"]'::jsonb, 'Cleaning in progress by Housekeeper Meena.', null, null, 'OK', 'Meena', null, 45, '[]'::jsonb, '[]'::jsonb),
-  ('204', '204', 'Deluxe', 'Deluxe', 'King', '2nd Floor', 'West Wing', 3, 'Daily', 'Every 60 Days', '03 Jun 2026', 'Inspection Pending', 'Cleaning', 'Vacant', false, false, '["WiFi","TV","Safe","Mini Bar"]'::jsonb, 'Awaiting Supervisor verification.', 'Rahul Sharma', '26 Jun', 'OK', 'Meena', 'Ramesh', 100, '["/sample-bathroom.jpg"]'::jsonb, '[{"id":"INS-99210","date":"15 Jul 2026","time":"09:30 AM","inspector":"Ramesh Kumar","supervisor":"Ramesh Kumar","result":"Rejected","qualityScore":78,"remarks":"Bathroom mirror had smudges.","signature":"Ramesh Kumar"}]'::jsonb),
-  ('301', '301', 'Executive Suite', 'Executive Suite', 'King', '3rd Floor', 'East Wing', 4, 'Daily', 'Every 90 Days', '10 May 2026', 'Occupied', 'Clean', 'Occupied', false, true, '["WiFi","TV","Safe","Mini Bar","Bathtub","Balcony"]'::jsonb, 'Guest noted as Sleep Out.', 'John Doe', '30 Jun', 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('302', '302', 'Executive Suite', 'Executive Suite', 'King', '3rd Floor', 'East Wing', 4, 'Daily', 'Every 90 Days', '15 May 2026', 'Out of Service', 'OOS', 'Vacant', false, false, '["WiFi","TV","Safe","Mini Bar","Bathtub","Balcony"]'::jsonb, 'Balcony door lock minor issue.', null, null, 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('305', '305', 'Deluxe', 'Deluxe', 'King', '3rd Floor', 'West Wing', 3, 'Daily', 'Every 60 Days', '20 May 2026', 'Occupied Dirty', 'Dirty', 'Occupied', false, false, '["WiFi","TV","Safe","Mini Bar"]'::jsonb, 'Stay-over clean due.', 'Michael Brown', '24 Jun', 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('412', '412', 'Standard', 'Standard', 'King', '4th Floor', 'East Wing', 2, 'Daily', 'Every 30 Days', '14 Jun 2026', 'Vacant Ready', 'Clean', 'Vacant', false, false, '["WiFi","TV","Safe"]'::jsonb, '', null, null, 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('501', '501', 'Suite', 'Suite', 'King', '5th Floor', 'East Wing', 4, 'Daily', 'Every 90 Days', '18 May 2026', 'Occupied', 'Clean', 'Occupied', false, false, '["WiFi","TV","Safe","Mini Bar","Bathtub"]'::jsonb, '', 'Priya Patel', '27 Jun', 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb),
-  ('602', '602', 'Suite', 'Suite', 'King', '6th Floor', 'East Wing', 4, 'Daily', 'Every 90 Days', '22 May 2026', 'Vacant Ready', 'Inspected', 'Vacant', false, false, '["WiFi","TV","Safe","Mini Bar"]'::jsonb, '', null, null, 'OK', null, null, 0, '[]'::jsonb, '[]'::jsonb)
-on conflict (id) do nothing;
+create extension if not exists pgcrypto;
 
--- ========== SEED: PUBLIC AREAS (sample) ==========
+insert into hk_rooms (room_id, status, notes, last_cleaned_at)
+select r.id, v.status::public.hk_room_status, v.notes, v.last_cleaned_at
+from (values
+  ('101', 'DIRTY', 'Needs standard check-out cleaning.', null),
+  ('102', 'INSPECTED', null, null),
+  ('103', 'DIRTY', null, null),
+  ('104', 'OUT_OF_SERVICE', 'AC not cooling. Placed OOO.', null),
+  ('105', 'OUT_OF_SERVICE', 'Blocked for upcoming group reservation.', null),
+  ('112', 'CLEAN', null, null),
+  ('204', 'INSPECTING', 'Awaiting supervisor verification.', now() - interval '2 hours'),
+  ('305', 'DIRTY', 'Stay-over clean due.', null),
+  ('308', 'INSPECTED', null, null),
+  ('501', 'CLEAN', null, null),
+  ('602', 'INSPECTED', null, null)
+) as v(room_no, status, notes, last_cleaned_at)
+join rooms r on r.room_no = v.room_no
+on conflict (room_id) do nothing;
+
+-- ========== SEED: PUBLIC AREAS MASTER ==========
+insert into public_areas (area_code, name, area_type, location, floor_number, priority, is_active)
+values
+  ('PA-LOBBY', 'Main Lobby & Reception', 'Lobby', 'Main Entrance Lobby', 0, 'HIGH', true),
+  ('PA-REST', 'Restaurant Dining Area', 'Restaurant', 'Saffron Spice Restaurant', 0, 'HIGH', true),
+  ('PA-WC', 'Lobby Washrooms', 'Washroom', 'Lobby Restroom Corridor', 0, 'URGENT', true)
+on conflict (area_code) do nothing;
+
+-- ========== SEED: PUBLIC AREAS OPS (sample) ==========
 insert into hk_public_areas (id, name, category, floor, location, assigned_staff, supervisor, cleaning_frequency, status, priority, last_cleaned, next_cleaning, est_duration, inspection_status, checklist, history)
 values
   ('PA-01', 'Main Lobby & Reception', 'Lobby', 'Ground Floor', 'Main Entrance Lobby', 'Ravi Shankar', 'Ramesh Kumar', 'Every 2 Hours', 'Inspected', 'High', '16 Jul 11:00 AM', '16 Jul 01:00 PM', '30 mins', 'Passed',
@@ -301,7 +757,7 @@ declare
   t text;
 begin
   foreach t in array array[
-    'hk_rooms','hk_public_areas','hk_checklist_templates','hk_staff','hk_shifts',
+    'hk_rooms','housekeeping_tasks','guest_requests','maintenance_requests','public_areas','hk_public_areas','hk_checklist_templates','hk_staff','hk_shifts',
     'hk_inventory','hk_laundry_jobs','hk_damage_reports','hk_requisitions',
     'hk_history','hk_luggage_jobs','hk_settings'
   ]
@@ -314,3 +770,5 @@ begin
     );
   end loop;
 end $$;
+
+notify pgrst, 'reload schema';

@@ -1,28 +1,34 @@
 /**
- * Central ID generator — one place for all entity ID formats.
+ * Central ID generator — primary keys are UUID v4.
+ * Human-readable numbers (txn / order display codes) stay prefixed.
  */
 function token() {
     return Date.now().toString(36).toUpperCase();
 }
+function uuid() {
+    return crypto.randomUUID();
+}
 export const IdService = {
-    generate(prefix) {
-        return `${prefix}-${token()}`;
+    /** @param _prefix kept for call-site compatibility; value is always a UUID. */
+    generate(_prefix) {
+        return uuid();
     },
     generateReservation() {
-        return this.generate("BK");
+        return uuid();
     },
     generateGuest() {
-        return this.generate("G");
+        return uuid();
     },
     generatePayment() {
-        return this.generate("PAY");
+        return uuid();
     },
     generateActivity() {
-        return this.generate("DA");
+        return uuid();
     },
     generateStayHistory() {
-        return this.generate("SH");
+        return uuid();
     },
+    /** Display / receipt number — not a primary key. */
     generateTransactionNo() {
         return `TXN-${token()}`;
     },

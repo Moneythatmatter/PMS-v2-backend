@@ -1,4 +1,4 @@
-import { deleteRow, getRowById, insertRow, listRows, newId, updateRow } from "./base.js";
+import { deleteRow, getRowById, insertRow, listRows, newCode, newId, updateRow } from "./base.js";
 export declare const tables: {
     readonly roomTypes: "room_types";
     readonly rooms: "rooms";
@@ -34,6 +34,7 @@ export declare const foModel: {
     update: typeof updateRow;
     remove: typeof deleteRow;
     newId: typeof newId;
+    newCode: typeof newCode;
     tables: {
         readonly roomTypes: "room_types";
         readonly rooms: "rooms";

@@ -1,4 +1,4 @@
-import { deleteRow, getRowById, insertRow, listRows, newId, updateRow, } from "../front-office/base.js";
+import { deleteRow, getRowById, insertRow, listRows, newCode, newId, updateRow, } from "../front-office/base.js";
 export const fbTables = {
     outlets: "fb_outlets",
     liveTables: "fb_live_tables",
@@ -42,6 +42,7 @@ export const fbModel = {
     update: updateRow,
     remove: deleteRow,
     newId,
+    newCode,
     tables: fbTables,
 };
 /** Map DB table_ref → UI `table` for KDS. */

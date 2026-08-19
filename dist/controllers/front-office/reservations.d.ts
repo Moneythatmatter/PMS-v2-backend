@@ -5,6 +5,7 @@ import type { Request, Response } from "express";
  */
 export declare function listReservations(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getReservation(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getCurrentForRoom(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function createReservation(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function updateReservation(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function deleteReservation(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

@@ -1,4 +1,4 @@
-import { deleteRow, getRowById, insertRow, listRows, newId, updateRow, type FilterMap } from "../front-office/base.js";
+import { deleteRow, getRowById, insertRow, listRows, newCode, newId, updateRow, type FilterMap } from "../front-office/base.js";
 export declare const fbTables: {
     readonly outlets: "fb_outlets";
     readonly liveTables: "fb_live_tables";
@@ -43,6 +43,7 @@ export declare const fbModel: {
     update: typeof updateRow;
     remove: typeof deleteRow;
     newId: typeof newId;
+    newCode: typeof newCode;
     tables: {
         readonly outlets: "fb_outlets";
         readonly liveTables: "fb_live_tables";

@@ -13,6 +13,10 @@ type CrudOptions = {
     createSchema?: ZodTypeAny;
     /** Zod schema for PUT/PATCH body */
     updateSchema?: ZodTypeAny;
+    /** Resolve route key (UUID or human-readable no) to primary key */
+    resolveId?: (key: string) => Promise<string | null>;
+    beforeCreate?: (body: Record<string, unknown>) => Promise<void>;
+    beforeUpdate?: (id: string, body: Record<string, unknown>) => Promise<void>;
 };
 export declare function createCrudController(options: CrudOptions): {
     list(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

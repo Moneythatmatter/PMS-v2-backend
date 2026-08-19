@@ -2,6 +2,10 @@ import { Router } from "express";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import { getDashboard } from "../controllers/housekeeping/dashboard.js";
 import * as rooms from "../controllers/housekeeping/rooms.js";
+import * as tasks from "../controllers/housekeeping/tasks.js";
+import * as guestRequests from "../controllers/housekeeping/guest-requests.js";
+import * as maintenanceRequests from "../controllers/housekeeping/maintenance-requests.js";
+import * as publicAreasMaster from "../controllers/housekeeping/public-areas-master.js";
 import * as laundry from "../controllers/housekeeping/laundry.js";
 import * as requisitions from "../controllers/housekeeping/requisitions.js";
 import { getReport } from "../controllers/housekeeping/reports.js";
@@ -21,6 +25,44 @@ router.post("/rooms/:id/pause-clean", rooms.pauseClean);
 router.post("/rooms/:id/complete-clean", rooms.completeClean);
 router.post("/rooms/:id/inspect", rooms.inspectRoom);
 router.post("/rooms/:id/mark-dirty", rooms.markDirty);
+// Housekeeping tasks (checkout → clean → approve flow)
+router.get("/tasks", tasks.listTasks);
+router.get("/tasks/room/:roomId/active", tasks.getActiveTaskForRoom);
+router.get("/tasks/:id", tasks.getTask);
+router.post("/tasks", tasks.createTask);
+router.post("/tasks/:id/assign", tasks.assignTask);
+router.post("/tasks/:id/start", tasks.startTask);
+router.post("/tasks/:id/complete", tasks.completeTask);
+router.post("/tasks/:id/approve", tasks.approveTask);
+router.post("/tasks/:id/cancel", tasks.cancelTask);
+// Guest service requests (slim ops — replaces legacy housekeeping_requests)
+router.get("/guest-requests", guestRequests.listGuestRequests);
+router.get("/guest-requests/:id", guestRequests.getGuestRequest);
+router.post("/guest-requests", guestRequests.createGuestRequest);
+router.put("/guest-requests/:id", guestRequests.updateGuestRequest);
+router.patch("/guest-requests/:id", guestRequests.updateGuestRequest);
+router.post("/guest-requests/:id/assign", guestRequests.assignGuestRequest);
+router.post("/guest-requests/:id/start", guestRequests.startGuestRequest);
+router.post("/guest-requests/:id/complete", guestRequests.completeGuestRequest);
+router.post("/guest-requests/:id/cancel", guestRequests.cancelGuestRequest);
+// Maintenance work orders (slim ops — replaces legacy maintenance_requests shape)
+router.get("/maintenance", maintenanceRequests.listMaintenanceRequests);
+router.get("/maintenance/:id", maintenanceRequests.getMaintenanceRequest);
+router.post("/maintenance", maintenanceRequests.createMaintenanceRequest);
+router.put("/maintenance/:id", maintenanceRequests.updateMaintenanceRequest);
+router.patch("/maintenance/:id", maintenanceRequests.updateMaintenanceRequest);
+router.post("/maintenance/:id/assign", maintenanceRequests.assignMaintenanceRequest);
+router.post("/maintenance/:id/start", maintenanceRequests.startMaintenanceRequest);
+router.post("/maintenance/:id/complete", maintenanceRequests.completeMaintenanceRequest);
+router.post("/maintenance/:id/verify", maintenanceRequests.verifyMaintenanceRequest);
+router.post("/maintenance/:id/cancel", maintenanceRequests.cancelMaintenanceRequest);
+// Public areas master (inventory — separate from hk_public_areas ops)
+router.get("/masters/public-areas", publicAreasMaster.listPublicAreasMaster);
+router.get("/masters/public-areas/:id", publicAreasMaster.getPublicAreaMaster);
+router.post("/masters/public-areas", publicAreasMaster.createPublicAreaMaster);
+router.put("/masters/public-areas/:id", publicAreasMaster.updatePublicAreaMaster);
+router.patch("/masters/public-areas/:id", publicAreasMaster.updatePublicAreaMaster);
+router.delete("/masters/public-areas/:id", publicAreasMaster.deletePublicAreaMaster);
 // Laundry (ops + CRUD)
 router.get("/laundry", laundry.listLaundry);
 router.get("/laundry/:id", laundry.getLaundry);
@@ -104,23 +146,7 @@ mountCrud(router, "/luggage", createTableCrud({
 }));
 // Settings (key/value store; id = setting key)
 mountCrud(router, "/settings", createTableCrud({ table: hkModel.tables.settings, idPrefix: "SET" }));
-// Shared FO tables (guest requests / maintenance / lost & found)
-mountCrud(router, "/guest-requests", createTableCrud({
-    table: hkModel.shared.housekeepingRequests,
-    idPrefix: "HKR",
-    listFilters: (req) => ({
-        status: req.query.status,
-        room: req.query.room,
-    }),
-}));
-mountCrud(router, "/maintenance", createTableCrud({
-    table: hkModel.shared.maintenanceRequests,
-    idPrefix: "MNT",
-    listFilters: (req) => ({
-        status: req.query.status,
-        room: req.query.room,
-    }),
-}));
+// Lost & found (shared FO table)
 mountCrud(router, "/lost-found", createTableCrud({
     table: hkModel.shared.lostFoundItems,
     idPrefix: "LF",

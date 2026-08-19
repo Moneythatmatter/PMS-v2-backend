@@ -1,4 +1,6 @@
 import { foModel } from "../../models/front-office/index.js";
+import { reservationDisplayNo } from "../../services/front-office/reservation-lookup.js";
+import { isArrivingTodayReservation } from "../../utils/date.js";
 import { fail, fromError, ok } from "../../utils/response.js";
 const REPORT_TYPES = [
     "arrival",
@@ -31,11 +33,11 @@ export async function getReport(req, res) {
             switch (type) {
                 case "arrival":
                     return reservations
-                        .filter((r) => r.arrivingToday ||
-                        r.status === "Confirmed" ||
-                        r.status === "Reserved")
+                        .filter((r) => isArrivingTodayReservation(r) &&
+                        r.status !== "Cancelled" &&
+                        r.status !== "Checked Out")
                         .map((r) => ({
-                        bookingId: r.id,
+                        bookingId: reservationDisplayNo(r),
                         guest: r.guestName,
                         room: r.roomNo,
                         roomType: r.roomType,
@@ -47,7 +49,7 @@ export async function getReport(req, res) {
                     return reservations
                         .filter((r) => r.status === "Checked In" || r.status === "Checked Out")
                         .map((r) => ({
-                        bookingId: r.id,
+                        bookingId: reservationDisplayNo(r),
                         guest: r.guestName,
                         room: r.roomNo,
                         checkOut: r.checkOut,
@@ -64,7 +66,7 @@ export async function getReport(req, res) {
                     }));
                 case "revenue":
                     return reservations.map((r) => ({
-                        bookingId: r.id,
+                        bookingId: reservationDisplayNo(r),
                         guest: r.guestName,
                         roomRevenue: r.totalAmount,
                         advancePaid: r.advancePaid,
@@ -89,7 +91,7 @@ export async function getReport(req, res) {
                         const amount = Number(r.totalAmount ?? 0);
                         const gst = Math.round(amount * 0.12);
                         return {
-                            bookingId: r.id,
+                            bookingId: reservationDisplayNo(r),
                             guest: r.guestName,
                             taxableAmount: amount,
                             gst,

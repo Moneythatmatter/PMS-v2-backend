@@ -1,5 +1,6 @@
 import { supabase } from "../../utils/supabase.js";
 import { toCamel, toSnake } from "../../utils/mappers.js";
+import { throwIfRlsError } from "../../utils/db-errors.js";
 
 export type FilterMap = Record<string, string | number | boolean | undefined>;
 
@@ -81,7 +82,7 @@ export async function insertRow<T>(
 
     if (!error) return toCamel<T>(data);
     if (!stripMissingColumn(row, error.message)) {
-      throw new Error(error.message);
+      throwIfRlsError(error.message);
     }
   }
   throw new Error(`Insert into ${table} failed after stripping unknown columns`);
@@ -104,7 +105,7 @@ export async function updateRow<T>(
 
     if (!error) return toCamel<T>(data ?? ({} as T));
     if (!stripMissingColumn(row, error.message)) {
-      throw new Error(error.message);
+      throwIfRlsError(error.message);
     }
   }
   throw new Error(`Update on ${table} failed after stripping unknown columns`);

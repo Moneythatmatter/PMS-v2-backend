@@ -144,7 +144,7 @@ select public.remap_parent_and_fks(
   ]
 );
 
--- FO standalone id tables (rooms keep room_no as PK — not remapped)
+-- FO standalone id tables (rooms use room_no as unique business key; reservations use UUID id)
 select public.remap_pk_ids('room_types');
 select public.remap_pk_ids('tariff_plans');
 select public.remap_pk_ids('market_segments');

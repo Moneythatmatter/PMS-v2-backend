@@ -3,6 +3,14 @@ import { fail, fromError, ok } from "../../utils/response.js";
 import { parseBody } from "../../utils/validate.js";
 export function createCrudController(options) {
     const idCol = options.idColumn ?? "id";
+    async function resolvePrimaryKey(key) {
+        if (options.resolveId) {
+            const resolved = await options.resolveId(key);
+            if (resolved)
+                return resolved;
+        }
+        return key;
+    }
     return {
         async list(req, res) {
             try {
@@ -22,7 +30,7 @@ export function createCrudController(options) {
         },
         async get(req, res) {
             try {
-                const id = String(req.params.id);
+                const id = await resolvePrimaryKey(String(req.params.id));
                 let row = await foModel.get(options.table, id, idCol);
                 if (!row)
                     return fail(res, "Not found", 404);
@@ -42,6 +50,9 @@ export function createCrudController(options) {
                 if (options.createSchema) {
                     body = parseBody(options.createSchema, body);
                 }
+                if (options.beforeCreate) {
+                    await options.beforeCreate(body);
+                }
                 if (!body[idCol]) {
                     body[idCol] = foModel.newId(options.idPrefix);
                 }
@@ -56,7 +67,7 @@ export function createCrudController(options) {
         },
         async update(req, res) {
             try {
-                const id = String(req.params.id);
+                const id = await resolvePrimaryKey(String(req.params.id));
                 let body = { ...req.body };
                 delete body[idCol];
                 delete body.id;
@@ -64,6 +75,9 @@ export function createCrudController(options) {
                     body = options.mapIncoming(body);
                 if (options.updateSchema) {
                     body = parseBody(options.updateSchema, body);
+                }
+                if (options.beforeUpdate) {
+                    await options.beforeUpdate(id, body);
                 }
                 let row = await foModel.update(options.table, id, body, idCol);
                 if (options.mapOutgoing)
@@ -76,7 +90,7 @@ export function createCrudController(options) {
         },
         async remove(req, res) {
             try {
-                const id = String(req.params.id);
+                const id = await resolvePrimaryKey(String(req.params.id));
                 await foModel.remove(options.table, id, idCol);
                 return ok(res, { id });
             }

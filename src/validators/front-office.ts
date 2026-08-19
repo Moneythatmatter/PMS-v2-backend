@@ -36,11 +36,13 @@ export const guestUpdateSchema = guestCreateSchema.partial().passthrough();
 export const reservationCreateSchema = z
   .object({
     id: z.string().optional(),
-    guestName: nonEmptyString("guestName"),
-    guestId: z.string().optional().nullable(),
+    guestId: nonEmptyString("guestId"),
+    guestName: z.string().optional(),
     phone: z.string().optional(),
     email: optionalEmail,
+    sourceId: z.string().optional().nullable(),
     source: z.string().optional(),
+    roomRefId: z.string().optional().nullable(),
     roomNo: z.string().optional().nullable(),
     roomType: z.string().optional(),
     checkIn: nonEmptyString("checkIn"),

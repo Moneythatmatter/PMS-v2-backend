@@ -43,11 +43,13 @@ export declare const guestUpdateSchema: z.ZodObject<{
 }, z.core.$loose>;
 export declare const reservationCreateSchema: z.ZodObject<{
     id: z.ZodOptional<z.ZodString>;
-    guestName: z.ZodString;
-    guestId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+    guestId: z.ZodString;
+    guestName: z.ZodOptional<z.ZodString>;
     phone: z.ZodOptional<z.ZodString>;
     email: z.ZodOptional<z.ZodString>;
+    sourceId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
     source: z.ZodOptional<z.ZodString>;
+    roomRefId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
     roomNo: z.ZodNullable<z.ZodOptional<z.ZodString>>;
     roomType: z.ZodOptional<z.ZodString>;
     checkIn: z.ZodString;
@@ -71,11 +73,13 @@ export declare const reservationCreateSchema: z.ZodObject<{
 }, z.core.$loose>;
 export declare const reservationUpdateSchema: z.ZodObject<{
     id: z.ZodOptional<z.ZodOptional<z.ZodString>>;
-    guestName: z.ZodOptional<z.ZodString>;
-    guestId: z.ZodOptional<z.ZodNullable<z.ZodOptional<z.ZodString>>>;
+    guestId: z.ZodOptional<z.ZodString>;
+    guestName: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     phone: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     email: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+    sourceId: z.ZodOptional<z.ZodNullable<z.ZodOptional<z.ZodString>>>;
     source: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+    roomRefId: z.ZodOptional<z.ZodNullable<z.ZodOptional<z.ZodString>>>;
     roomNo: z.ZodOptional<z.ZodNullable<z.ZodOptional<z.ZodString>>>;
     roomType: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     checkIn: z.ZodOptional<z.ZodString>;

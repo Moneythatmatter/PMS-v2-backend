@@ -1,7 +1,10 @@
-import { deleteRow, getRowById, insertRow, listRows, newId, updateRow, } from "../front-office/base.js";
+import { deleteRow, getRowById, insertRow, listRows, newCode, newId, updateRow, } from "../front-office/base.js";
 /** Prefixed HK tables (created by sql/housekeeping-schema.sql). */
 export const hkTables = {
     rooms: "hk_rooms",
+    tasks: "housekeeping_tasks",
+    guestRequests: "guest_requests",
+    publicAreasMaster: "public_areas",
     publicAreas: "hk_public_areas",
     checklistTemplates: "hk_checklist_templates",
     staff: "hk_staff",
@@ -31,6 +34,7 @@ export const hkModel = {
     update: updateRow,
     remove: deleteRow,
     newId,
+    newCode,
     tables: hkTables,
     shared: hkSharedTables,
 };

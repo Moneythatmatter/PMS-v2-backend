@@ -5,5 +5,7 @@ export declare const config: {
     readonly supabase: {
         readonly url: () => string;
         readonly anonKey: () => string;
+        /** Server-side only — bypasses RLS when set (recommended for Express API). */
+        readonly serviceRoleKey: () => string | undefined;
     };
 };

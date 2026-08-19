@@ -13,6 +13,7 @@ security definer
 as $$
 declare
   r reservations%rowtype;
+  g_name text;
   result jsonb;
 begin
   select * into r from reservations where id = p_reservation_id for update;
@@ -28,19 +29,17 @@ begin
     raise exception 'Guest is already checked in' using errcode = 'P0001';
   end if;
 
+  select name into g_name from guests where id = r.guest_id;
+
   update reservations
   set status = 'Checked In', arriving_today = false
   where id = p_reservation_id
   returning to_jsonb(reservations.*) into result;
 
-  if r.room_no is not null and r.room_no <> '' then
+  if r.room_ref_id is not null and r.room_ref_id <> '' then
     update rooms
-    set
-      status = 'Occupied',
-      guest_name = r.guest_name,
-      housekeeping = 'Clean',
-      checkout_date = r.check_out
-    where room_no = r.room_no;
+    set status = 'Occupied'
+    where id = r.room_ref_id;
   end if;
 
   insert into desk_activity (id, message, timestamp)
@@ -68,6 +67,8 @@ security definer
 as $$
 declare
   r reservations%rowtype;
+  g_name text;
+  rm_type text;
   result jsonb;
   pay_mode text;
 begin
@@ -78,6 +79,12 @@ begin
 
   if r.status = 'Checked Out' then
     raise exception 'Reservation is already checked out' using errcode = 'P0001';
+  end if;
+
+  select name into g_name from guests where id = r.guest_id;
+
+  if r.room_ref_id is not null and r.room_ref_id <> '' then
+    select room_type into rm_type from rooms where id = r.room_ref_id;
   end if;
 
   pay_mode := coalesce(nullif(p_payment_mode, ''), r.payment_mode, 'Cash');
@@ -96,8 +103,8 @@ begin
       transaction_no, date, status
     ) values (
       coalesce(p_payment_id, 'PAY-' || substr(md5(random()::text), 1, 8)),
-      r.guest_name,
-      r.room_no,
+      coalesce(g_name, 'Guest'),
+      (select room_no from rooms where id = r.room_ref_id limit 1),
       p_reservation_id,
       p_amount_received,
       pay_mode,
@@ -108,14 +115,27 @@ begin
     );
   end if;
 
-  if r.room_no is not null and r.room_no <> '' then
+  if r.room_ref_id is not null and r.room_ref_id <> '' then
     update rooms
-    set
-      status = 'Dirty',
-      guest_name = null,
-      housekeeping = 'Dirty',
-      checkout_date = null
-    where room_no = r.room_no;
+    set status = 'Dirty'
+    where id = r.room_ref_id;
+
+    if exists (
+      select 1 from information_schema.tables
+      where table_schema = 'public' and table_name = 'housekeeping_tasks'
+    ) then
+      perform public.hk_create_checkout_task(
+        r.room_ref_id,
+        p_reservation_id,
+        'Checkout cleaning for booking ' || coalesce(r.booking_no, p_reservation_id),
+        null
+      );
+    elsif exists (
+      select 1 from information_schema.tables
+      where table_schema = 'public' and table_name = 'hk_rooms'
+    ) then
+      perform public.hk_ensure_room_dirty(r.room_ref_id);
+    end if;
   end if;
 
   if r.guest_id is not null and r.guest_id <> '' then
@@ -126,8 +146,8 @@ begin
       r.guest_id,
       r.check_in,
       r.check_out,
-      r.room_no,
-      r.room_type,
+      (select room_no from rooms where id = r.room_ref_id limit 1),
+      rm_type,
       coalesce(r.total_amount, 0)
     );
   end if;

@@ -1,7 +1,10 @@
-import { deleteRow, getRowById, insertRow, listRows, newId, updateRow, type FilterMap } from "../front-office/base.js";
+import { deleteRow, getRowById, insertRow, listRows, newCode, newId, updateRow, type FilterMap } from "../front-office/base.js";
 /** Prefixed HK tables (created by sql/housekeeping-schema.sql). */
 export declare const hkTables: {
     readonly rooms: "hk_rooms";
+    readonly tasks: "housekeeping_tasks";
+    readonly guestRequests: "guest_requests";
+    readonly publicAreasMaster: "public_areas";
     readonly publicAreas: "hk_public_areas";
     readonly checklistTemplates: "hk_checklist_templates";
     readonly staff: "hk_staff";
@@ -32,8 +35,12 @@ export declare const hkModel: {
     update: typeof updateRow;
     remove: typeof deleteRow;
     newId: typeof newId;
+    newCode: typeof newCode;
     tables: {
         readonly rooms: "hk_rooms";
+        readonly tasks: "housekeeping_tasks";
+        readonly guestRequests: "guest_requests";
+        readonly publicAreasMaster: "public_areas";
         readonly publicAreas: "hk_public_areas";
         readonly checklistTemplates: "hk_checklist_templates";
         readonly staff: "hk_staff";

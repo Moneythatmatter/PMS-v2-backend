@@ -1,4 +1,4 @@
-import { deleteRow, getRowById, insertRow, listRows, newId, updateRow, } from "./base.js";
+import { deleteRow, getRowById, insertRow, listRows, newCode, newId, updateRow, } from "./base.js";
 export const tables = {
     roomTypes: "room_types",
     rooms: "rooms",
@@ -33,6 +33,7 @@ export const foModel = {
     update: updateRow,
     remove: deleteRow,
     newId,
+    newCode,
     tables,
 };
 /** Map taxi `drop` UI field to DB `drop_location`. */

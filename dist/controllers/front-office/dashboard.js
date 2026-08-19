@@ -1,4 +1,6 @@
 import { foModel } from "../../models/front-office/index.js";
+import { reservationDisplayNo } from "../../services/front-office/reservation-lookup.js";
+import { isArrivingTodayReservation } from "../../utils/date.js";
 import { fromError, ok } from "../../utils/response.js";
 export async function getDashboard(_req, res) {
     try {
@@ -12,9 +14,9 @@ export async function getDashboard(_req, res) {
             }),
         ]);
         const inHouse = reservations.filter((r) => r.status === "Checked In" || r.status === "In-House");
-        const arrivals = reservations.filter((r) => r.arrivingToday ||
-            r.status === "Confirmed" ||
-            r.status === "Reserved");
+        const arrivals = reservations.filter((r) => isArrivingTodayReservation(r) &&
+            r.status !== "Cancelled" &&
+            r.status !== "Checked Out");
         const departures = reservations.filter((r) => r.status === "Checked In");
         const occupied = rooms.filter((r) => r.status === "Occupied").length;
         const total = rooms.length || 1;
@@ -39,7 +41,7 @@ export async function getDashboard(_req, res) {
             },
             {
                 title: "Arrivals Today",
-                value: String(arrivals.filter((a) => a.arrivingToday).length),
+                value: String(arrivals.length),
                 note: "Expected arrivals",
                 trend: "neutral",
             },
@@ -59,12 +61,11 @@ export async function getDashboard(_req, res) {
             },
         ];
         const todaysArrivals = arrivals
-            .filter((a) => a.arrivingToday || a.status === "Reserved")
             .slice(0, 10)
             .map((a) => ({
             id: a.id,
             name: a.guestName,
-            bookingId: a.id,
+            bookingId: reservationDisplayNo(a),
             roomNo: a.roomNo ?? "TBA",
             roomType: a.roomType ?? "",
             status: a.status,
@@ -72,7 +73,7 @@ export async function getDashboard(_req, res) {
         const todaysDepartures = departures.slice(0, 10).map((d) => ({
             id: d.id,
             name: d.guestName,
-            bookingId: d.id,
+            bookingId: reservationDisplayNo(d),
             roomNo: d.roomNo ?? "",
             roomType: d.roomType ?? "",
             status: "Pending",

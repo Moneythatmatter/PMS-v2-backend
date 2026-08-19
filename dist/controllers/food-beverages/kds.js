@@ -24,7 +24,7 @@ export async function createKds(req, res) {
         if (!body.id)
             body.id = fbModel.newId("K");
         if (!body.ticket)
-            body.ticket = fbModel.newId("KDS");
+            body.ticket = fbModel.newCode("KDS");
         if (!body.status)
             body.status = "Pending";
         if (!Array.isArray(body.lines))

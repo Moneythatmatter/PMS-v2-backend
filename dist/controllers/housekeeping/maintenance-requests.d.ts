@@ -1,0 +1,10 @@
+import type { Request, Response } from "express";
+export declare function listMaintenanceRequests(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getMaintenanceRequest(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function createMaintenanceRequest(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function updateMaintenanceRequest(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function assignMaintenanceRequest(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function startMaintenanceRequest(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function completeMaintenanceRequest(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function verifyMaintenanceRequest(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function cancelMaintenanceRequest(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

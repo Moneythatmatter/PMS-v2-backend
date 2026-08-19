@@ -6,6 +6,7 @@ import type {
 
 export interface Guest {
   id: string;
+  guestNo?: string;
   name: string;
   mobile: string;
   email?: string;
@@ -28,13 +29,12 @@ export interface Guest {
 
 export interface Reservation {
   id: string;
-  guestName: string;
-  guestId?: string | null;
-  phone?: string;
-  email?: string;
+  bookingNo?: string;
+  guestId: string;
+  roomRefId?: string | null;
+  sourceId?: string | null;
+  /** Enriched from booking_sources — not stored on reservations */
   source?: string;
-  roomNo?: string | null;
-  roomType?: string;
   checkIn: string;
   checkOut: string;
   balance: number;
@@ -57,6 +57,24 @@ export interface Reservation {
   restaurantBill?: number;
   laundry?: number;
   isVip?: boolean;
+  /** Enriched from guests — not stored on reservations */
+  guestNo?: string;
+  guestName?: string;
+  phone?: string;
+  email?: string;
+  nationality?: string;
+  gender?: string;
+  dob?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  pincode?: string;
+  idProofType?: string;
+  idNumber?: string;
+  /** Enriched from rooms — not stored on reservations */
+  roomNo?: string | null;
+  roomType?: string;
 }
 
 export interface Payment {
@@ -74,13 +92,16 @@ export interface Payment {
 }
 
 export interface Room {
-  id?: string;
+  id: string;
   roomNo: string;
   roomType?: string;
+  floor?: string;
   status?: string;
-  guestName?: string | null;
-  housekeeping?: string;
-  checkoutDate?: string | null;
+  maxOccupancy?: number;
+  bedType?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface DeskActivity {
@@ -95,6 +116,8 @@ export interface DeskActivity {
 
 export interface InHouseGuest {
   id: string;
+  bookingNo?: string;
+  guestNo?: string;
   guestName: string;
   room?: string | null;
   roomType?: string;

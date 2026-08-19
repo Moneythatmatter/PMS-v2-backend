@@ -1,5 +1,22 @@
+import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
+import { toCamel } from "../../utils/mappers.js";
+import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
+import { sanitizeRoomInput } from "../../services/front-office/room-sanitize.js";
 import { fromError, ok } from "../../utils/response.js";
+async function findRoomByParam(param) {
+    const byId = await foModel.get(foModel.tables.rooms, param);
+    if (byId)
+        return byId;
+    const { data, error } = await supabase
+        .from(foModel.tables.rooms)
+        .select("*")
+        .eq("room_no", param)
+        .maybeSingle();
+    if (error)
+        throw new Error(error.message);
+    return data ? toCamel(data) : null;
+}
 export async function listRooms(req, res) {
     try {
         const status = req.query.status;
@@ -15,7 +32,9 @@ export async function listRooms(req, res) {
 }
 export async function getRoom(req, res) {
     try {
-        const row = await foModel.get(foModel.tables.rooms, String(req.params.id), "room_no");
+        const row = await findRoomByParam(String(req.params.id));
+        if (!row)
+            return fromError(res, new Error("Room not found"), 404);
         return ok(res, row);
     }
     catch (e) {
@@ -24,7 +43,11 @@ export async function getRoom(req, res) {
 }
 export async function updateRoom(req, res) {
     try {
-        const row = await foModel.update(foModel.tables.rooms, String(req.params.id), req.body, "room_no");
+        const existing = await findRoomByParam(String(req.params.id));
+        if (!existing)
+            return fromError(res, new Error("Room not found"), 404);
+        const body = sanitizeRoomInput(req.body);
+        const row = await foModel.update(foModel.tables.rooms, String(existing.id), body);
         return ok(res, row);
     }
     catch (e) {
@@ -33,7 +56,18 @@ export async function updateRoom(req, res) {
 }
 export async function createRoom(req, res) {
     try {
-        const row = await foModel.create(foModel.tables.rooms, req.body);
+        const body = sanitizeRoomInput(req.body);
+        if (!body.id)
+            body.id = foModel.newId();
+        if (body.maxOccupancy === undefined)
+            body.maxOccupancy = 2;
+        if (!body.bedType)
+            body.bedType = "Queen";
+        if (body.isActive === undefined)
+            body.isActive = true;
+        if (!body.status)
+            body.status = "Vacant";
+        const row = await foModel.create(foModel.tables.rooms, body);
         return ok(res, row, 201);
     }
     catch (e) {
@@ -50,7 +84,7 @@ export async function roomAvailability(req, res) {
         }
         const [rooms, reservations] = await Promise.all([
             foModel.list(foModel.tables.rooms, { orderBy: "room_no" }),
-            foModel.list(foModel.tables.reservations),
+            enrichReservations(await foModel.list(foModel.tables.reservations)),
         ]);
         const activeReservations = reservations
             .filter((r) => r.status !== "Cancelled" &&
@@ -119,19 +153,63 @@ function parseStayDate(value) {
 }
 export async function roomStatusCards(_req, res) {
     try {
-        const rooms = await foModel.list(foModel.tables.rooms, {
-            orderBy: "room_no",
+        const [rooms, reservations] = await Promise.all([
+            foModel.list(foModel.tables.rooms, { orderBy: "room_no" }),
+            enrichReservations(await foModel.list(foModel.tables.reservations)),
+        ]);
+        const bookingByRoom = new Map();
+        for (const r of reservations) {
+            const roomNo = String(r.roomNo ?? "").trim();
+            if (!roomNo || /^(tba|n\/?a|unassigned|-)$/i.test(roomNo))
+                continue;
+            const status = String(r.status ?? "");
+            if (status === "Cancelled" ||
+                status === "Checked Out" ||
+                status === "No Show") {
+                continue;
+            }
+            const prev = bookingByRoom.get(roomNo);
+            if (!prev ||
+                status === "Checked In" ||
+                status === "In-House") {
+                bookingByRoom.set(roomNo, r);
+            }
+        }
+        const cards = rooms.map((r) => {
+            const roomNo = String(r.roomNo);
+            const booking = bookingByRoom.get(roomNo);
+            let status = String(r.status ?? "Vacant");
+            let guestName;
+            let checkoutDate;
+            if (booking) {
+                guestName = String(booking.guestName ?? "").trim() || undefined;
+                checkoutDate = String(booking.checkOut ?? "").trim() || undefined;
+                const bStatus = String(booking.status);
+                if (bStatus === "Checked In" || bStatus === "In-House") {
+                    status = "Occupied";
+                }
+                else if (status === "Vacant" || status === "Clean" || status === "Reserved") {
+                    status = "Reserved";
+                }
+            }
+            const housekeeping = status === "Dirty"
+                ? "Dirty"
+                : status === "Maintenance"
+                    ? "In Progress"
+                    : "Clean";
+            const maintenance = status === "Maintenance" ? "In Progress" : "OK";
+            return {
+                id: r.id,
+                roomNo,
+                type: r.roomType,
+                floor: r.floor,
+                status,
+                guestName,
+                housekeeping,
+                maintenance,
+                checkoutDate,
+            };
         });
-        const cards = rooms.map((r) => ({
-            roomNo: r.roomNo,
-            type: r.roomType,
-            floor: r.floor,
-            status: r.status,
-            guestName: r.guestName,
-            housekeeping: r.housekeeping,
-            maintenance: r.maintenance,
-            checkoutDate: r.checkoutDate,
-        }));
         return ok(res, cards);
     }
     catch (e) {
