@@ -3,9 +3,20 @@ import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
+import {
+  availabilityDayStatus,
+  buildActiveBookingByRoomNo,
+  deriveFoRoomStatus,
+  ensureHkRoomForFoRoom,
+  fetchHkStatusByRoomIds,
+  foStatusQueryToHkStatuses,
+  hkStatusToHousekeeping,
+  hkStatusToMaintenance,
+} from "../../services/front-office/room-hk-status.js";
 import { sanitizeRoomInput } from "../../services/front-office/room-sanitize.js";
 import { fromError, ok } from "../../utils/response.js";
 import type { Reservation } from "../../types/front-office.js";
+import type { HkRoomStatus } from "../../types/housekeeping.js";
 
 type Room = Record<string, unknown>;
 
@@ -26,10 +37,19 @@ async function findRoomByParam(param: string): Promise<Room | null> {
 export async function listRooms(req: Request, res: Response) {
   try {
     const status = req.query.status as string | undefined;
-    const rows = await foModel.list(foModel.tables.rooms, {
-      filters: status ? { status } : undefined,
+    let rows = await foModel.list<Room>(foModel.tables.rooms, {
       orderBy: "room_no",
     });
+
+    const hkStatuses = status ? foStatusQueryToHkStatuses(status) : null;
+    if (hkStatuses) {
+      const hkMap = await fetchHkStatusByRoomIds(rows.map((r) => String(r.id)));
+      rows = rows.filter((room) => {
+        const hkStatus = hkMap.get(String(room.id)) ?? "DIRTY";
+        return hkStatuses.includes(hkStatus);
+      });
+    }
+
     return ok(res, rows);
   } catch (e) {
     return fromError(res, e);
@@ -69,22 +89,38 @@ export async function createRoom(req: Request, res: Response) {
     if (body.maxOccupancy === undefined) body.maxOccupancy = 2;
     if (!body.bedType) body.bedType = "Queen";
     if (body.isActive === undefined) body.isActive = true;
-    if (!body.status) body.status = "Vacant";
-    const row = await foModel.create(foModel.tables.rooms, body);
+    const row = (await foModel.create(foModel.tables.rooms, body)) as Room;
+    await ensureHkRoomForFoRoom(String(row.id));
     return ok(res, row, 201);
   } catch (e) {
     return fromError(res, e);
   }
 }
 
+function startOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+function compareFloor(a: string, b: string): number {
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
 export async function roomAvailability(req: Request, res: Response) {
   try {
     const startParam = (req.query.start as string) || undefined;
-    const start = parseIsoDate(startParam) ?? startOfDay(new Date());
+    const anchor = parseIsoDate(startParam) ?? startOfDay(new Date());
+    const monthStart = startOfMonth(anchor);
+    const year = monthStart.getFullYear();
+    const month = monthStart.getMonth();
+    const dayCount = daysInMonth(year, month);
 
     const days: string[] = [];
-    for (let i = 0; i < 7; i++) {
-      days.push(toIsoDate(addDays(start, i)));
+    for (let i = 0; i < dayCount; i++) {
+      days.push(toIsoDate(addDays(monthStart, i)));
     }
 
     const [rooms, reservations] = await Promise.all([
@@ -94,49 +130,82 @@ export async function roomAvailability(req: Request, res: Response) {
       ),
     ]);
 
+    const hkByRoomId = await fetchHkStatusByRoomIds(
+      rooms.map((room) => String(room.id)),
+    );
+
     const activeReservations = reservations
       .filter(
         (r) =>
           r.status !== "Cancelled" &&
           r.status !== "Checked Out" &&
+          r.status !== "No Show" &&
           r.roomNo,
       )
       .map((r) => ({
         roomNo: String(r.roomNo),
         checkIn: parseStayDate(String(r.checkIn ?? "")),
         checkOut: parseStayDate(String(r.checkOut ?? "")),
+        status: String(r.status ?? ""),
       }))
       .filter((r) => r.checkIn && r.checkOut) as {
       roomNo: string;
       checkIn: Date;
       checkOut: Date;
+      status: string;
     }[];
 
-    const rows = rooms.map((room) => {
-      const dayMap: Record<string, "booked" | "available" | "blocked"> = {};
+    const inHouseStatuses = new Set(["Checked In", "In-House"]);
+
+    const sortedRooms = [...rooms].sort((a, b) => {
+      const floorCompare = compareFloor(String(a.floor ?? ""), String(b.floor ?? ""));
+      if (floorCompare !== 0) return floorCompare;
+      return String(a.roomNo ?? "").localeCompare(String(b.roomNo ?? ""), undefined, {
+        numeric: true,
+      });
+    });
+
+    const rows = sortedRooms.map((room) => {
+      const dayMap: Record<
+        string,
+        "available" | "reserved" | "occupied" | "dirty" | "maintenance" | "blocked"
+      > = {};
+      const roomId = String(room.id);
+      const hkStatus: HkRoomStatus = hkByRoomId.get(roomId) ?? "DIRTY";
+      const isActive = room.isActive !== false;
+
       for (const dayIso of days) {
         const day = parseIsoDate(dayIso)!;
-        if (room.status === "Blocked" || room.status === "Maintenance") {
-          dayMap[dayIso] = "blocked";
-          continue;
-        }
-        const booked = activeReservations.some(
+        const booking = activeReservations.find(
           (r) =>
-            r.roomNo === room.roomNo &&
+            r.roomNo === String(room.roomNo) &&
             startOfDay(day).getTime() >= startOfDay(r.checkIn).getTime() &&
             startOfDay(day).getTime() < startOfDay(r.checkOut).getTime(),
         );
-        dayMap[dayIso] = booked ? "booked" : "available";
+
+        dayMap[dayIso] = availabilityDayStatus(
+          hkStatus,
+          isActive,
+          Boolean(booking),
+          booking ? inHouseStatuses.has(booking.status) : false,
+        );
       }
+
       return {
-        room: room.roomNo,
-        type: room.roomType,
-        floor: room.floor,
+        room: String(room.roomNo ?? ""),
+        type: String(room.roomType ?? ""),
+        floor: String(room.floor ?? "").trim() || "Unassigned",
+        bedType: String(room.bedType ?? "").trim() || undefined,
         days: dayMap,
       };
     });
 
-    return ok(res, { start: toIsoDate(start), days, rows });
+    return ok(res, {
+      start: toIsoDate(monthStart),
+      month: `${year}-${String(month + 1).padStart(2, "0")}`,
+      days,
+      rows,
+    });
   } catch (e) {
     return fromError(res, e);
   }
@@ -182,64 +251,33 @@ export async function roomStatusCards(_req: Request, res: Response) {
       ),
     ]);
 
-    const bookingByRoom = new Map<string, Reservation>();
-    for (const r of reservations) {
-      const roomNo = String(r.roomNo ?? "").trim();
-      if (!roomNo || /^(tba|n\/?a|unassigned|-)$/i.test(roomNo)) continue;
-      const status = String(r.status ?? "");
-      if (
-        status === "Cancelled" ||
-        status === "Checked Out" ||
-        status === "No Show"
-      ) {
-        continue;
-      }
-      const prev = bookingByRoom.get(roomNo);
-      if (
-        !prev ||
-        status === "Checked In" ||
-        status === "In-House"
-      ) {
-        bookingByRoom.set(roomNo, r);
-      }
-    }
+    const hkByRoomId = await fetchHkStatusByRoomIds(
+      rooms.map((room) => String(room.id)),
+    );
+    const bookingByRoom = buildActiveBookingByRoomNo(reservations);
 
-    const cards = rooms.map((r) => {
-      const roomNo = String(r.roomNo);
+    const cards = rooms.map((room) => {
+      const roomNo = String(room.roomNo);
+      const roomId = String(room.id);
+      const hkStatus: HkRoomStatus = hkByRoomId.get(roomId) ?? "DIRTY";
+      const isActive = room.isActive !== false;
       const booking = bookingByRoom.get(roomNo);
-      let status = String(r.status ?? "Vacant");
-      let guestName: string | undefined;
-      let checkoutDate: string | undefined;
-
-      if (booking) {
-        guestName = String(booking.guestName ?? "").trim() || undefined;
-        checkoutDate = String(booking.checkOut ?? "").trim() || undefined;
-        const bStatus = String(booking.status);
-        if (bStatus === "Checked In" || bStatus === "In-House") {
-          status = "Occupied";
-        } else if (status === "Vacant" || status === "Clean" || status === "Reserved") {
-          status = "Reserved";
-        }
-      }
-
-      const housekeeping =
-        status === "Dirty"
-          ? "Dirty"
-          : status === "Maintenance"
-            ? "In Progress"
-            : "Clean";
-      const maintenance = status === "Maintenance" ? "In Progress" : "OK";
+      const status = deriveFoRoomStatus(hkStatus, booking, isActive);
 
       return {
-        id: r.id,
+        id: room.id,
         roomNo,
-        type: r.roomType,
-        floor: r.floor,
+        type: room.roomType,
+        floor: room.floor,
         status,
-        guestName,
-        housekeeping,
-        maintenance,
-        checkoutDate,
+        guestName: booking
+          ? String(booking.guestName ?? "").trim() || undefined
+          : undefined,
+        housekeeping: hkStatusToHousekeeping(hkStatus),
+        maintenance: hkStatusToMaintenance(hkStatus),
+        checkoutDate: booking
+          ? String(booking.checkOut ?? "").trim() || undefined
+          : undefined,
       };
     });
     return ok(res, cards);

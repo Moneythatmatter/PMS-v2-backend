@@ -23,7 +23,6 @@ create table if not exists rooms (
   room_no text not null unique,
   room_type text not null,
   floor text not null default '',
-  status text not null default 'Vacant',
   max_occupancy int not null default 2,
   bed_type text not null default 'Queen',
   is_active boolean not null default true,
@@ -886,7 +885,6 @@ create index if not exists idx_reservations_check_in on reservations(check_in);
 create index if not exists idx_reservations_guest_id on reservations(guest_id);
 create index if not exists idx_reservations_room_ref_id on reservations(room_ref_id);
 create index if not exists idx_reservations_source_id on reservations(source_id);
-create index if not exists idx_rooms_status on rooms(status);
 create index if not exists idx_folio_room on folio_entries(room);
 create index if not exists idx_payments_date on payments(date);
 
@@ -977,18 +975,18 @@ insert into booking_sources (id, code, name, description, status) values
   ('770e8400-e29b-41d4-a716-446655440007','CORP','Corporate','Corporate / company booking','Active')
 on conflict (id) do nothing;
 
-insert into rooms (id, room_no, room_type, floor, status, max_occupancy, bed_type, is_active) values
-  (gen_random_uuid()::text,'101','Standard','1st Floor','Occupied',2,'Queen',true),
-  (gen_random_uuid()::text,'102','Standard','1st Floor','Vacant',2,'Queen',true),
-  (gen_random_uuid()::text,'103','Deluxe','1st Floor','Dirty',3,'King',true),
-  (gen_random_uuid()::text,'104','Deluxe','1st Floor','Maintenance',3,'King',false),
-  (gen_random_uuid()::text,'105','Standard','1st Floor','Blocked',2,'Twin',true),
-  (gen_random_uuid()::text,'112','Standard','1st Floor','Occupied',2,'Queen',true),
-  (gen_random_uuid()::text,'204','Deluxe','2nd Floor','Occupied',3,'King',true),
-  (gen_random_uuid()::text,'305','Deluxe','3rd Floor','Occupied',3,'King',true),
-  (gen_random_uuid()::text,'308','Deluxe','3rd Floor','Vacant',3,'King',true),
-  (gen_random_uuid()::text,'501','Suite','5th Floor','Occupied',4,'King',true),
-  (gen_random_uuid()::text,'602','Suite','6th Floor','Vacant',4,'King',true)
+insert into rooms (id, room_no, room_type, floor, max_occupancy, bed_type, is_active) values
+  (gen_random_uuid()::text,'101','Standard','1st Floor',2,'Queen',true),
+  (gen_random_uuid()::text,'102','Standard','1st Floor',2,'Queen',true),
+  (gen_random_uuid()::text,'103','Deluxe','1st Floor',3,'King',true),
+  (gen_random_uuid()::text,'104','Deluxe','1st Floor',3,'King',false),
+  (gen_random_uuid()::text,'105','Standard','1st Floor',2,'Twin',true),
+  (gen_random_uuid()::text,'112','Standard','1st Floor',2,'Queen',true),
+  (gen_random_uuid()::text,'204','Deluxe','2nd Floor',3,'King',true),
+  (gen_random_uuid()::text,'305','Deluxe','3rd Floor',3,'King',true),
+  (gen_random_uuid()::text,'308','Deluxe','3rd Floor',3,'King',true),
+  (gen_random_uuid()::text,'501','Suite','5th Floor',4,'King',true),
+  (gen_random_uuid()::text,'602','Suite','6th Floor',4,'King',true)
 on conflict (room_no) do nothing;
 
 insert into guests (id, guest_no, name, mobile, email, nationality, total_stays, loyalty_points, id_type, id_number, member_since) values

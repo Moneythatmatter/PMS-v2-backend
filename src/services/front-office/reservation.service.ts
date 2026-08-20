@@ -25,10 +25,11 @@ import {
 } from "../../utils/date.js";
 import { IdService } from "../shared/id.service.js";
 import { ActivityService } from "../shared/activity.service.js";
-import { PaymentService } from "../shared/payment.service.js";
+import { TransactionService } from "../shared/transaction.service.js";
 import {
   enrichReservation,
   enrichReservations,
+  displayRoomNo,
   isRealRoomRef,
   normalizeReservationRoomRef,
   normalizeReservationSourceRef,
@@ -40,6 +41,19 @@ import {
   getReservationByKey,
 } from "./reservation-lookup.js";
 import { HkTaskService } from "../housekeeping/hk-task.service.js";
+
+async function ensureReservationFolio(
+  reservation: Pick<Reservation, "id" | "guestId">,
+): Promise<void> {
+  try {
+    await TransactionService.ensureFolioForBooking(
+      reservation.id,
+      reservation.guestId ?? null,
+    );
+  } catch {
+    // Do not block reservation reads if folios schema is not applied yet
+  }
+}
 
 async function getOrThrow(id: string): Promise<Reservation> {
   const row = await getReservationByKey(id);
@@ -98,15 +112,34 @@ export const ReservationService = {
   },
 
   async getById(id: string): Promise<Reservation> {
-    return getOrThrow(id);
+    const row = await getOrThrow(id);
+    await ensureReservationFolio(row);
+    return row;
   },
 
-  async create(input: Partial<Reservation>): Promise<Reservation> {
+  async create(
+    input: Partial<Reservation> & {
+      externalReference?: string | null;
+      paymentReference?: string | null;
+    },
+  ): Promise<Reservation> {
     if (!input.guestId?.trim()) {
       throw new AppError("guestId is required — create or select a guest profile first");
     }
 
+    const externalReference = String(
+      input.externalReference ?? input.paymentReference ?? "",
+    ).trim();
+    const advancePaid = Number(input.advancePaid ?? 0);
+    const totalAmount = Number(input.totalAmount ?? 0);
+
+    if (advancePaid > 0 && !String(input.paymentMode ?? "").trim()) {
+      throw new AppError("Payment method is required when advance amount is collected");
+    }
+
     const body = sanitizeReservationInput(input) as Record<string, unknown>;
+    delete body.externalReference;
+    delete body.paymentReference;
     await normalizeReservationRoomRef(body);
     await normalizeReservationSourceRef(body);
     if (!body.id) body.id = IdService.generateReservation();
@@ -135,6 +168,29 @@ export const ReservationService = {
       room: roomRef,
       reservationId: String(body.id ?? ""),
     });
+
+    const guestId = String(body.guestId ?? input.guestId ?? "");
+    const folioId = await TransactionService.ensureFolioForBooking(
+      enriched.id,
+      guestId,
+    );
+
+    if (totalAmount > 0) {
+      await foModel.update(foModel.tables.folios, folioId, {
+        subtotal: totalAmount,
+      });
+    }
+
+    if (advancePaid > 0) {
+      await TransactionService.recordReservationAdvance({
+        amount: advancePaid,
+        bookingId: enriched.id,
+        guestId,
+        paymentMethod: String(input.paymentMode ?? body.paymentMode ?? "Cash"),
+        externalReference: externalReference || null,
+        notes: "Reservation advance payment",
+      });
+    }
 
     return enriched;
   },
@@ -282,6 +338,7 @@ export const ReservationService = {
       if (finalRoom) {
         await occupyRoom(finalRoom);
       }
+      await ensureReservationFolio(row);
       return row;
     }
 
@@ -340,6 +397,7 @@ export const ReservationService = {
       reservationId,
     });
 
+    await ensureReservationFolio(enriched);
     return enriched;
   },
 
@@ -416,12 +474,12 @@ export const ReservationService = {
     const enriched = await enrichReservation(row);
 
     if (amountReceived > 0) {
-      await PaymentService.record({
-        guestName: String(existing.guestName ?? "Guest"),
-        room: resolveRoomRef(existing),
-        reservationId: reservationId,
+      await TransactionService.recordFrontOfficePayment({
         amount: amountReceived,
-        mode: paymentMode || existing.paymentMode || "Cash",
+        paymentMethod: paymentMode || existing.paymentMode || "Cash",
+        bookingId: reservationId,
+        guestId: existing.guestId ?? null,
+        notes: `Checkout payment — ${String(existing.guestName ?? "Guest")}`,
       });
     }
 
@@ -536,17 +594,24 @@ export const ReservationService = {
   },
 
   async listInHouse(): Promise<InHouseGuest[]> {
+    const { data, error } = await supabase
+      .from(foModel.tables.reservations)
+      .select("*")
+      .in("status", [ReservationStatus.CHECKED_IN, ReservationStatus.IN_HOUSE])
+      .order("check_out", { ascending: true });
+
+    if (error) throw new DatabaseError(error.message);
+
     const rows = await enrichReservations(
-      await foModel.list<Reservation>(foModel.tables.reservations, {
-        filters: { status: ReservationStatus.CHECKED_IN },
-      }),
+      (data ?? []).map((row) => toCamel<Reservation>(row)),
     );
+    await Promise.all(rows.map((r) => ensureReservationFolio(r)));
     return rows.map((r) => ({
       id: r.id,
       bookingNo: r.bookingNo,
       guestNo: r.guestNo,
       guestName: r.guestName ?? "",
-      room: resolveRoomRef(r),
+      room: displayRoomNo(r) || "TBA",
       roomType: r.roomType,
       checkIn: r.checkIn,
       checkOut: r.checkOut,

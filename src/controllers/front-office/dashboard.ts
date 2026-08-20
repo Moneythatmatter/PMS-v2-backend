@@ -1,6 +1,12 @@
 import type { Request, Response } from "express";
 import { foModel } from "../../models/front-office/index.js";
 import { reservationDisplayNo } from "../../services/front-office/reservation-lookup.js";
+import {
+  buildActiveBookingByRoomNo,
+  deriveFoRoomStatus,
+  fetchHkStatusByRoomIds,
+} from "../../services/front-office/room-hk-status.js";
+import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
 import { isArrivingTodayReservation } from "../../utils/date.js";
 import { fromError, ok } from "../../utils/response.js";
 
@@ -9,7 +15,7 @@ type Room = Record<string, unknown>;
 
 export async function getDashboard(_req: Request, res: Response) {
   try {
-    const [reservations, rooms, activity] = await Promise.all([
+    const [reservationsRaw, rooms, activity] = await Promise.all([
       foModel.list<Reservation>(foModel.tables.reservations),
       foModel.list<Room>(foModel.tables.rooms),
       foModel.list(foModel.tables.deskActivity, {
@@ -18,6 +24,9 @@ export async function getDashboard(_req: Request, res: Response) {
         limit: 20,
       }),
     ]);
+    const reservations = await enrichReservations(
+      reservationsRaw as unknown as import("../../types/front-office.js").Reservation[],
+    );
 
     const inHouse = reservations.filter(
       (r) => r.status === "Checked In" || r.status === "In-House",
@@ -32,13 +41,24 @@ export async function getDashboard(_req: Request, res: Response) {
       (r) => r.status === "Checked In",
     );
 
-    const occupied = rooms.filter((r) => r.status === "Occupied").length;
+    const hkByRoomId = await fetchHkStatusByRoomIds(
+      rooms.map((room) => String(room.id)),
+    );
+    const bookingByRoom = buildActiveBookingByRoomNo(reservations);
+
+    const occupied = inHouse.length;
     const total = rooms.length || 1;
 
     const statusCounts: Record<string, number> = {};
     for (const room of rooms) {
-      const s = String(room.status);
-      statusCounts[s] = (statusCounts[s] ?? 0) + 1;
+      const roomNo = String(room.roomNo);
+      const hkStatus = hkByRoomId.get(String(room.id)) ?? "DIRTY";
+      const status = deriveFoRoomStatus(
+        hkStatus,
+        bookingByRoom.get(roomNo),
+        room.isActive !== false,
+      );
+      statusCounts[status] = (statusCounts[status] ?? 0) + 1;
     }
 
     const colorMap: Record<string, string> = {

@@ -59,6 +59,8 @@ export const reservationCreateSchema = z
     totalAmount: nonNegativeNumber.optional(),
     advancePaid: nonNegativeNumber.optional(),
     paymentMode: z.string().optional(),
+    externalReference: z.string().optional().nullable(),
+    paymentReference: z.string().optional().nullable(), // legacy alias → externalReference
     specialRequests: z.string().optional(),
     bookedBy: z.string().optional(),
     createdAt: z.string().optional(),

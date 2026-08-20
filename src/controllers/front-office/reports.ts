@@ -1,6 +1,12 @@
 import type { Request, Response } from "express";
 import { foModel } from "../../models/front-office/index.js";
 import { reservationDisplayNo } from "../../services/front-office/reservation-lookup.js";
+import {
+  buildActiveBookingByRoomNo,
+  deriveFoRoomStatus,
+  fetchHkStatusByRoomIds,
+} from "../../services/front-office/room-hk-status.js";
+import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
 import { isArrivingTodayReservation } from "../../utils/date.js";
 import { fail, fromError, ok } from "../../utils/response.js";
 
@@ -27,12 +33,20 @@ export async function getReport(req: Request, res: Response) {
       return fail(res, `Unknown report type: ${type}`, 404);
     }
 
-    const [reservations, rooms, payments, shifts] = await Promise.all([
+    const [reservationsRaw, rooms, payments, shifts] = await Promise.all([
       foModel.list<Reservation>(foModel.tables.reservations),
       foModel.list<Room>(foModel.tables.rooms),
       foModel.list<Payment>(foModel.tables.payments),
       foModel.list(foModel.tables.cashierShifts),
     ]);
+    const reservations = await enrichReservations(
+      reservationsRaw as unknown as import("../../types/front-office.js").Reservation[],
+    );
+
+    const hkByRoomId = await fetchHkStatusByRoomIds(
+      rooms.map((room) => String(room.id)),
+    );
+    const bookingByRoom = buildActiveBookingByRoomNo(reservations);
 
     const roomRevenue = reservations.reduce(
       (s, r) => s + Number(r.totalAmount ?? 0),
@@ -42,7 +56,9 @@ export async function getReport(req: Request, res: Response) {
       (s, p) => s + Number(p.amount ?? 0),
       0,
     );
-    const occupied = rooms.filter((r) => r.status === "Occupied").length;
+    const occupied = reservations.filter(
+      (r) => r.status === "Checked In" || r.status === "In-House",
+    ).length;
     const totalRooms = rooms.length || 1;
 
     const rows = (() => {
@@ -76,13 +92,24 @@ export async function getReport(req: Request, res: Response) {
               status: r.status,
             }));
         case "occupancy":
-          return rooms.map((r) => ({
-            room: r.roomNo,
-            type: r.roomType,
-            floor: r.floor,
-            status: r.status,
-            guest: r.guestName ?? "—",
-          }));
+          return rooms.map((r) => {
+            const roomNo = String(r.roomNo);
+            const hkStatus = hkByRoomId.get(String(r.id)) ?? "DIRTY";
+            const booking = bookingByRoom.get(roomNo);
+            return {
+              room: roomNo,
+              type: r.roomType,
+              floor: r.floor,
+              status: deriveFoRoomStatus(
+                hkStatus,
+                booking,
+                r.isActive !== false,
+              ),
+              guest: booking
+                ? String(booking.guestName ?? "—")
+                : "—",
+            };
+          });
         case "revenue":
           return reservations.map((r) => ({
             bookingId: reservationDisplayNo(r),
