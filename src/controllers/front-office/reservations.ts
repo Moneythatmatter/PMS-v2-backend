@@ -96,6 +96,10 @@ export async function checkOut(req: Request, res: Response) {
         paymentMode:
           typeof body.paymentMode === "string" ? body.paymentMode : undefined,
         amountReceived: Number(body.amountReceived ?? 0),
+        externalReference:
+          typeof body.externalReference === "string"
+            ? body.externalReference.trim() || null
+            : null,
       }),
     );
   } catch (e) {

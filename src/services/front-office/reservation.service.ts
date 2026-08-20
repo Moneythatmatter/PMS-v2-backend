@@ -406,7 +406,11 @@ export const ReservationService = {
    */
   async checkOut(
     id: string,
-    options: { paymentMode?: string; amountReceived?: number } = {},
+    options: {
+      paymentMode?: string;
+      amountReceived?: number;
+      externalReference?: string | null;
+    } = {},
   ): Promise<Reservation> {
     const existing = await getOrThrow(id);
     const reservationId = existing.id;
@@ -439,7 +443,18 @@ export const ReservationService = {
     });
 
     if (!error && data) {
-      return enrichReservation(mapReservationRow(data));
+      const enriched = enrichReservation(mapReservationRow(data));
+      if (amountReceived > 0) {
+        await TransactionService.recordFrontOfficePayment({
+          amount: amountReceived,
+          paymentMethod: options.paymentMode || existing.paymentMode || "Cash",
+          bookingId: reservationId,
+          guestId: existing.guestId ?? null,
+          externalReference: options.externalReference ?? null,
+          notes: `Checkout payment — ${String(existing.guestName ?? "Guest")}`,
+        });
+      }
+      return enriched;
     }
 
     if (
@@ -457,7 +472,11 @@ export const ReservationService = {
   async checkOutFallback(
     reservationId: string,
     existing: Reservation,
-    options: { paymentMode?: string; amountReceived?: number },
+    options: {
+      paymentMode?: string;
+      amountReceived?: number;
+      externalReference?: string | null;
+    },
   ): Promise<Reservation> {
     const paymentMode = options.paymentMode;
     const amountReceived = Number(options.amountReceived ?? 0);
@@ -479,6 +498,7 @@ export const ReservationService = {
         paymentMethod: paymentMode || existing.paymentMode || "Cash",
         bookingId: reservationId,
         guestId: existing.guestId ?? null,
+        externalReference: options.externalReference ?? null,
         notes: `Checkout payment — ${String(existing.guestName ?? "Guest")}`,
       });
     }
