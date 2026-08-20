@@ -4,11 +4,14 @@ import { AppError, ConflictError, NotFoundError } from "../../errors/index.js";
 import {
   enrichHkTask,
   enrichHkTasks,
+  persistHkTaskRow,
+  resolveHkTaskAssignee,
+  resolveHkTaskAssigneeLabel,
   resolveHkTaskId,
   resolveRoomIdForTask,
   sanitizeHkTaskInput,
 } from "./hk-task-enrich.js";
-import { resolveHkRoomId } from "./hk-room-enrich.js";
+import { persistHkRoomRow, resolveHkRoomId } from "./hk-room-enrich.js";
 import { throwIfRlsError } from "../../utils/db-errors.js";
 import {
   normalizeHkTaskPriority,
@@ -34,18 +37,27 @@ async function getTaskOrThrow(id: string): Promise<HkTask> {
 async function syncHkRoomForTask(
   roomId: string,
   patch: Record<string, unknown>,
+  staffLabels?: { assigned?: string; inspected?: string },
 ): Promise<void> {
   const hkRoomId = await resolveHkRoomId(roomId);
   if (hkRoomId) {
-    await hkModel.update(hkModel.tables.rooms, hkRoomId, patch);
+    await persistHkRoomRow(
+      patch,
+      { mode: "update", id: hkRoomId },
+      staffLabels,
+    );
     return;
   }
 
-  await hkModel.create(hkModel.tables.rooms, {
-    roomId,
-    status: patch.status ?? "DIRTY",
-    ...patch,
-  });
+  await persistHkRoomRow(
+    {
+      roomId,
+      status: patch.status ?? "DIRTY",
+      ...patch,
+    },
+    { mode: "create" },
+    staffLabels,
+  );
 }
 
 async function appendHistory(entry: {
@@ -236,22 +248,37 @@ export const HkTaskService = {
       throw new ConflictError(`Cannot assign task in status ${existing.status}`);
     }
 
+    const assigneeRaw = assignedTo.trim();
+    const assigneeLabel =
+      (await resolveHkTaskAssigneeLabel(assigneeRaw)) || assigneeRaw;
+    const resolvedAssignee = assigneeRaw
+      ? await resolveHkTaskAssignee(assigneeRaw)
+      : null;
+
     const now = new Date().toISOString();
     const row = await enrichHkTask(
-      await hkModel.update<HkTask>(hkModel.tables.tasks, resolved, {
-        status: "ASSIGNED",
-        assignedTo: assignedTo.trim() || null,
-        assignedAt: now,
-      }),
+      await persistHkTaskRow(
+        {
+          status: "ASSIGNED",
+          assignedTo: resolvedAssignee,
+          assignedAt: now,
+        },
+        { mode: "update", id: resolved },
+        { assigned: assigneeLabel || undefined },
+      ),
     );
 
-    await syncHkRoomForTask(existing.roomId, {
-      status: "DIRTY",
-      assignedTo: assignedTo.trim() || null,
-    });
+    await syncHkRoomForTask(
+      existing.roomId,
+      {
+        status: "DIRTY",
+        assignedTo: resolvedAssignee,
+      },
+      { assigned: assigneeLabel || undefined },
+    );
 
     await appendHistory({
-      user: assignedTo,
+      user: assigneeLabel || assignedTo,
       category: "Cleaning",
       action: "Task assigned",
       room: row.roomNo ?? existing.roomId,
@@ -283,10 +310,19 @@ export const HkTaskService = {
       await hkModel.update<HkTask>(hkModel.tables.tasks, resolved, patch),
     );
 
-    await syncHkRoomForTask(existing.roomId, {
-      status: "INSPECTING",
-      assignedTo: existing.assignedTo ?? null,
-    });
+    const assigneeLabel = existing.assignedTo
+      ? (await resolveHkTaskAssigneeLabel(existing.assignedTo)) ||
+        row.assignedToName
+      : undefined;
+
+    await syncHkRoomForTask(
+      existing.roomId,
+      {
+        status: "INSPECTING",
+        assignedTo: existing.assignedTo ?? null,
+      },
+      assigneeLabel ? { assigned: assigneeLabel } : undefined,
+    );
 
     await appendHistory({
       user: String(existing.assignedTo ?? "Housekeeper"),
@@ -342,24 +378,39 @@ export const HkTaskService = {
       throw new ConflictError(`Cannot approve task in status ${existing.status}`);
     }
 
+    const approverRaw = approvedBy.trim();
+    const approverLabel =
+      (await resolveHkTaskAssigneeLabel(approverRaw)) || approverRaw;
+    const resolvedApprover = approverRaw
+      ? await resolveHkTaskAssignee(approverRaw)
+      : null;
+
     const now = new Date().toISOString();
     const row = await enrichHkTask(
-      await hkModel.update<HkTask>(hkModel.tables.tasks, resolved, {
-        status: "APPROVED",
-        approvedAt: now,
-        approvedBy: approvedBy.trim() || null,
-      }),
+      await persistHkTaskRow(
+        {
+          status: "APPROVED",
+          approvedAt: now,
+          approvedBy: resolvedApprover,
+        },
+        { mode: "update", id: resolved },
+        { approved: approverLabel || undefined },
+      ),
     );
 
-    await syncHkRoomForTask(existing.roomId, {
-      status: "CLEAN",
-      lastInspectedAt: now,
-      inspectedBy: approvedBy.trim() || null,
-      assignedTo: null,
-    });
+    await syncHkRoomForTask(
+      existing.roomId,
+      {
+        status: "CLEAN",
+        lastInspectedAt: now,
+        inspectedBy: resolvedApprover,
+        assignedTo: null,
+      },
+      { inspected: approverLabel || undefined },
+    );
 
     await appendHistory({
-      user: approvedBy,
+      user: approverLabel || approvedBy,
       category: "Inspection",
       action: "Task approved",
       room: row.roomNo ?? existing.roomId,
