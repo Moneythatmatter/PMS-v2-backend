@@ -51,9 +51,10 @@ export const HK_TASK_TYPES = [
   "CHECKOUT_CLEANING",
   "REGULAR_CLEANING",
   "DEEP_CLEANING",
-  "INSPECTION",
+  "GUEST_REQUEST",
   "TURNDOWN",
-  "SPECIAL_REQUEST",
+  "INSPECTION",
+  "OTHER",
 ] as const;
 
 export type HkTaskType = (typeof HK_TASK_TYPES)[number];
@@ -63,6 +64,7 @@ export const HK_TASK_STATUSES = [
   "ASSIGNED",
   "IN_PROGRESS",
   "COMPLETED",
+  "PENDING_INSPECTION",
   "APPROVED",
   "CANCELLED",
 ] as const;
@@ -78,6 +80,7 @@ export interface HkTask {
   taskNumber?: string;
   roomId: string;
   bookingId?: string | null;
+  requestId?: string | null;
   taskType: HkTaskType;
   status: HkTaskStatus;
   assignedTo?: string | null;
@@ -91,12 +94,18 @@ export interface HkTask {
   approvedBy?: string | null;
   createdAt?: string;
   updatedAt?: string;
-  /** Enriched */
+  scheduledDate?: string | null;
+  scheduledStartAt?: string | null;
+  dueAt?: string | null;
+  /** Enriched — not stored */
+  isOverdue?: boolean;
   roomNo?: string;
   bookingNo?: string;
   assignedToName?: string;
   createdByName?: string;
   approvedByName?: string;
+  requestNumber?: string;
+  requestDescription?: string;
 }
 
 export function isHkTaskType(value: string): value is HkTaskType {
@@ -117,7 +126,8 @@ export function normalizeHkTaskType(input: unknown): HkTaskType {
   if (/DEEP/.test(raw)) return "DEEP_CLEANING";
   if (/INSPECT/.test(raw)) return "INSPECTION";
   if (/TURN/.test(raw)) return "TURNDOWN";
-  if (/SPECIAL/.test(raw)) return "SPECIAL_REQUEST";
+  if (/GUEST|SPECIAL/.test(raw)) return "GUEST_REQUEST";
+  if (/OTHER/.test(raw)) return "OTHER";
   return "REGULAR_CLEANING";
 }
 
@@ -127,12 +137,25 @@ export function normalizeHkTaskStatus(input: unknown): HkTaskStatus {
     .toUpperCase()
     .replace(/[\s-]+/g, "_");
   if (isHkTaskStatus(raw)) return raw;
+  if (/PENDING.?INSPECT|AWAITING.?INSPECT/.test(raw)) return "PENDING_INSPECTION";
   if (/PROGRESS|STARTED|CLEANING/.test(raw)) return "IN_PROGRESS";
-  if (/COMPLETE|DONE|FINISH/.test(raw)) return "COMPLETED";
+  if (/COMPLETE|DONE|FINISH/.test(raw)) return "PENDING_INSPECTION";
   if (/APPROVE|PASS/.test(raw)) return "APPROVED";
   if (/CANCEL/.test(raw)) return "CANCELLED";
   if (/ASSIGN/.test(raw)) return "ASSIGNED";
   return "PENDING";
+}
+
+export const HK_TASK_OVERDUE_EXCLUDED_STATUSES = new Set<HkTaskStatus>([
+  "COMPLETED",
+  "APPROVED",
+  "CANCELLED",
+]);
+
+export function computeHkTaskOverdue(task: Pick<HkTask, "dueAt" | "status">): boolean {
+  if (!task.dueAt) return false;
+  if (HK_TASK_OVERDUE_EXCLUDED_STATUSES.has(task.status)) return false;
+  return new Date(task.dueAt).getTime() < Date.now();
 }
 
 export function normalizeHkTaskPriority(input: unknown): HkTaskPriority {

@@ -4,12 +4,15 @@ import { AppError, ConflictError, NotFoundError } from "../../errors/index.js";
 import {
   enrichHkTask,
   enrichHkTasks,
+  buildHkTaskSchedulePayload,
+  parseHkTaskScheduleInput,
   persistHkTaskRow,
   resolveHkTaskAssignee,
   resolveHkTaskAssigneeLabel,
   resolveHkTaskId,
   resolveRoomIdForTask,
   sanitizeHkTaskInput,
+  type HkTaskScheduleInput,
 } from "./hk-task-enrich.js";
 import { persistHkRoomRow, resolveHkRoomId } from "./hk-room-enrich.js";
 import { throwIfRlsError } from "../../utils/db-errors.js";
@@ -25,8 +28,17 @@ const ACTIVE_STATUSES: HkTaskStatus[] = [
   "PENDING",
   "ASSIGNED",
   "IN_PROGRESS",
-  "COMPLETED",
+  "PENDING_INSPECTION",
 ];
+
+async function applySchedulePatch(
+  taskId: string,
+  schedule: HkTaskScheduleInput,
+): Promise<void> {
+  const payload = buildHkTaskSchedulePayload(schedule);
+  if (!Object.keys(payload).length) return;
+  await hkModel.update<HkTask>(hkModel.tables.tasks, taskId, payload);
+}
 
 async function getTaskOrThrow(id: string): Promise<HkTask> {
   const row = await hkModel.get<HkTask>(hkModel.tables.tasks, id);
@@ -148,6 +160,7 @@ export const HkTaskService = {
 
   async create(input: Record<string, unknown>): Promise<HkTask> {
     let body = sanitizeHkTaskInput(input);
+    const schedule = parseHkTaskScheduleInput(input);
     const roomKey = String(body.roomId ?? "").trim();
     if (!roomKey) throw new AppError("roomId is required", 400);
 
@@ -162,6 +175,16 @@ export const HkTaskService = {
     body.priority = normalizeHkTaskPriority(body.priority);
 
     if (body.bookingId === "") body.bookingId = null;
+    if (body.requestId === "") body.requestId = null;
+
+    if (!schedule.scheduledDate && schedule.scheduledStartAt) {
+      schedule.scheduledDate = schedule.scheduledStartAt.slice(0, 10);
+    }
+    if (!schedule.scheduledDate && schedule.dueAt) {
+      schedule.scheduledDate = schedule.dueAt.slice(0, 10);
+    }
+
+    Object.assign(body, buildHkTaskSchedulePayload(schedule));
 
     let row: HkTask;
 
@@ -177,6 +200,7 @@ export const HkTaskService = {
     });
 
     if (!rpcError && rpcId) {
+      await applySchedulePatch(String(rpcId), schedule);
       row = await this.get(String(rpcId));
     } else if (
       rpcError &&
@@ -347,7 +371,7 @@ export const HkTaskService = {
     const now = new Date().toISOString();
     const row = await enrichHkTask(
       await hkModel.update<HkTask>(hkModel.tables.tasks, resolved, {
-        status: "COMPLETED",
+        status: "PENDING_INSPECTION",
         completedAt: now,
         notes: notes ?? existing.notes,
       }),
@@ -363,7 +387,7 @@ export const HkTaskService = {
       category: "Cleaning",
       action: "Task completed",
       room: row.roomNo ?? existing.roomId,
-      details: `${row.taskNumber ?? resolved} awaiting approval`,
+      details: `${row.taskNumber ?? resolved} pending inspection`,
     });
 
     return row;
@@ -374,7 +398,10 @@ export const HkTaskService = {
     if (!resolved) throw new NotFoundError("Task not found");
     const existing = await getTaskOrThrow(resolved);
 
-    if (existing.status !== "COMPLETED") {
+    if (
+      existing.status !== "PENDING_INSPECTION" &&
+      existing.status !== "COMPLETED"
+    ) {
       throw new ConflictError(`Cannot approve task in status ${existing.status}`);
     }
 

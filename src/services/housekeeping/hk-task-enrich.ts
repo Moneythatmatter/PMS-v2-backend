@@ -8,11 +8,17 @@ import {
   resolveGuestRequestAssigneeLabel,
 } from "./guest-request-enrich.js";
 import type { HkTask } from "../../types/housekeeping.js";
+import { computeHkTaskOverdue } from "../../types/housekeeping.js";
 
 type FoRoom = { id: string; roomNo?: string };
 type ReservationRow = { id: string; bookingNo?: string };
 type UserRow = { id: string; name?: string };
 type StaffRow = { id: string; name?: string };
+type GuestRequestRow = {
+  id: string;
+  requestNumber?: string;
+  description?: string;
+};
 
 export const resolveHkTaskAssignee = resolveGuestRequestAssignee;
 export const resolveHkTaskAssigneeLabel = resolveGuestRequestAssigneeLabel;
@@ -131,10 +137,76 @@ export function sanitizeHkTaskInput(
   delete body.assignedStaff;
   delete body.remarks;
   delete body.taskNumber;
+  delete body.roomIds;
   delete body.updatedAt;
   delete body.createdAt;
 
   return body;
+}
+
+export type HkTaskScheduleInput = {
+  scheduledDate?: string | null;
+  scheduledStartAt?: string | null;
+  dueAt?: string | null;
+};
+
+function combineDateAndTime(
+  date?: string | null,
+  time?: string | null,
+): string | null {
+  const d = String(date ?? "").trim();
+  const t = String(time ?? "").trim();
+  if (!d || !t) return null;
+  const normalized = t.length === 5 ? `${t}:00` : t;
+  return `${d}T${normalized}`;
+}
+
+export function parseHkTaskScheduleInput(
+  input: Record<string, unknown>,
+): HkTaskScheduleInput {
+  const scheduledDate =
+    (typeof input.scheduledDate === "string" ? input.scheduledDate : null) ??
+    (typeof input.cleaningDate === "string" ? input.cleaningDate : null);
+
+  let scheduledStartAt =
+    typeof input.scheduledStartAt === "string" ? input.scheduledStartAt : null;
+  let dueAt = typeof input.dueAt === "string" ? input.dueAt : null;
+
+  const startTime =
+    typeof input.startTime === "string"
+      ? input.startTime
+      : typeof input.scheduleStartTime === "string"
+        ? input.scheduleStartTime
+        : null;
+  const dueTime =
+    typeof input.dueTime === "string"
+      ? input.dueTime
+      : typeof input.scheduleEndTime === "string"
+        ? input.scheduleEndTime
+        : null;
+
+  if (!scheduledStartAt && scheduledDate && startTime) {
+    scheduledStartAt = combineDateAndTime(scheduledDate, startTime);
+  }
+  if (!dueAt && scheduledDate && dueTime) {
+    dueAt = combineDateAndTime(scheduledDate, dueTime);
+  }
+
+  return {
+    scheduledDate,
+    scheduledStartAt,
+    dueAt,
+  };
+}
+
+export function buildHkTaskSchedulePayload(
+  input: HkTaskScheduleInput,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (input.scheduledDate) payload.scheduledDate = input.scheduledDate;
+  if (input.scheduledStartAt) payload.scheduledStartAt = input.scheduledStartAt;
+  if (input.dueAt) payload.dueAt = input.dueAt;
+  return payload;
 }
 
 async function fetchRoomsByIds(ids: string[]): Promise<Map<string, FoRoom>> {
@@ -190,35 +262,64 @@ async function fetchUsersByIds(ids: string[]): Promise<Map<string, UserRow>> {
   return map;
 }
 
+async function fetchGuestRequestsByIds(
+  ids: string[],
+): Promise<Map<string, GuestRequestRow>> {
+  const map = new Map<string, GuestRequestRow>();
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return map;
+
+  const { data, error } = await supabase
+    .from(hkModel.tables.guestRequests)
+    .select("id, request_number, description")
+    .in("id", unique);
+
+  if (error) return map;
+  for (const row of data ?? []) {
+    const request = toCamel<GuestRequestRow>(row);
+    map.set(request.id, request);
+  }
+  return map;
+}
+
 function applyEnrichment(
   row: HkTask,
   room?: FoRoom,
   booking?: ReservationRow,
   staff: Map<string, StaffRow> = new Map(),
   users: Map<string, UserRow> = new Map(),
+  guestRequest?: GuestRequestRow,
 ): HkTask {
-  return {
+  const enriched = {
     ...row,
     roomNo: room?.roomNo ?? row.roomNo,
     bookingNo: booking?.bookingNo ?? row.bookingNo,
     assignedToName: staffOrUserName(row.assignedTo, staff, users),
     createdByName: staffOrUserName(row.createdBy, staff, users),
     approvedByName: staffOrUserName(row.approvedBy, staff, users),
+    requestNumber: guestRequest?.requestNumber ?? row.requestNumber,
+    requestDescription: guestRequest?.description ?? row.requestDescription,
+  };
+  return {
+    ...enriched,
+    isOverdue: computeHkTaskOverdue(enriched),
   };
 }
 
 export async function enrichHkTask(row: HkTask): Promise<HkTask> {
   const roomId = String(row.roomId ?? "");
   const bookingId = row.bookingId ? String(row.bookingId) : "";
+  const requestId = row.requestId ? String(row.requestId) : "";
   const staffIds = [row.assignedTo, row.createdBy, row.approvedBy]
     .filter(Boolean)
     .map(String);
 
-  const [roomMap, bookingMap, staffMap, userMap] = await Promise.all([
+  const [roomMap, bookingMap, staffMap, userMap, requestMap] = await Promise.all([
     roomId ? fetchRoomsByIds([roomId]) : Promise.resolve(new Map()),
     bookingId ? fetchBookingsByIds([bookingId]) : Promise.resolve(new Map()),
     fetchStaffByIds(staffIds),
     fetchUsersByIds(staffIds),
+    requestId ? fetchGuestRequestsByIds([requestId]) : Promise.resolve(new Map()),
   ]);
 
   return applyEnrichment(
@@ -227,6 +328,7 @@ export async function enrichHkTask(row: HkTask): Promise<HkTask> {
     bookingId ? bookingMap.get(bookingId) : undefined,
     staffMap,
     userMap,
+    requestId ? requestMap.get(requestId) : undefined,
   );
 }
 
@@ -239,6 +341,11 @@ export async function enrichHkTasks(rows: HkTask[]): Promise<HkTask[]> {
       rows.map((r) => String(r.bookingId ?? "")).filter(Boolean),
     ),
   ];
+  const requestIds = [
+    ...new Set(
+      rows.map((r) => String(r.requestId ?? "")).filter(Boolean),
+    ),
+  ];
   const staffIds = [
     ...new Set(
       rows
@@ -248,11 +355,12 @@ export async function enrichHkTasks(rows: HkTask[]): Promise<HkTask[]> {
     ),
   ];
 
-  const [roomMap, bookingMap, staffMap, userMap] = await Promise.all([
+  const [roomMap, bookingMap, staffMap, userMap, requestMap] = await Promise.all([
     fetchRoomsByIds(roomIds),
     fetchBookingsByIds(bookingIds),
     fetchStaffByIds(staffIds),
     fetchUsersByIds(staffIds),
+    fetchGuestRequestsByIds(requestIds),
   ]);
 
   return rows.map((row) =>
@@ -262,6 +370,7 @@ export async function enrichHkTasks(rows: HkTask[]): Promise<HkTask[]> {
       row.bookingId ? bookingMap.get(String(row.bookingId)) : undefined,
       staffMap,
       userMap,
+      row.requestId ? requestMap.get(String(row.requestId)) : undefined,
     ),
   );
 }
