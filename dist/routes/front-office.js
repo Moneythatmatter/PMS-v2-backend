@@ -7,6 +7,7 @@ import * as rooms from "../controllers/front-office/rooms.js";
 import { foModel, mapTaxiForUi, normalizeTaxiPayload, } from "../models/front-office/index.js";
 import { guestCreateSchema, guestUpdateSchema, paymentCreateSchema, paymentUpdateSchema, } from "../validators/front-office.js";
 import { assertGuestContactUnique, getGuestByKey, sanitizeGuestInput, } from "../services/front-office/guest-lookup.js";
+import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 const router = Router();
 // Dashboard
 router.get("/dashboard", getDashboard);
@@ -114,10 +115,15 @@ mountCrud(router, "/feedback", createCrudController({
     table: foModel.tables.guestFeedback,
     idPrefix: "FB",
 }));
-mountCrud(router, "/lost-found", createCrudController({
-    table: foModel.tables.lostFoundItems,
-    idPrefix: "LF",
-}));
+router.get("/lost-found", lostFoundItems.listLostFoundItems);
+router.get("/lost-found/:id", lostFoundItems.getLostFoundItem);
+router.post("/lost-found", lostFoundItems.createLostFoundItem);
+router.put("/lost-found/:id", lostFoundItems.updateLostFoundItem);
+router.patch("/lost-found/:id", lostFoundItems.updateLostFoundItem);
+router.post("/lost-found/:id/return", lostFoundItems.returnLostFoundItem);
+router.post("/lost-found/:id/claim", lostFoundItems.claimLostFoundItem);
+router.post("/lost-found/:id/dispose", lostFoundItems.disposeLostFoundItem);
+router.post("/lost-found/:id/courier", lostFoundItems.courierLostFoundItem);
 mountCrud(router, "/housekeeping-requests", createCrudController({
     table: foModel.tables.housekeepingRequests,
     idPrefix: "HK",

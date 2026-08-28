@@ -5,6 +5,7 @@ export function sanitizeRoomInput(input) {
     delete body.housekeeping;
     delete body.maintenance;
     delete body.checkoutDate;
+    delete body.status;
     delete body.updatedAt;
     delete body.createdAt;
     if (body.isActive !== undefined) {

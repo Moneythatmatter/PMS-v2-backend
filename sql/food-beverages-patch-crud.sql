@@ -13,10 +13,6 @@ update fb_outlets
 set booking_status = coalesce(nullif(booking_status, ''), 'Available')
 where true;
 
--- Close Event / banquet billing extras
-alter table fb_banquet_billing add column if not exists outlet_id text;
-alter table fb_banquet_billing add column if not exists venue text default '';
-
 -- Flexible records for recipes / extra settings pages
 create table if not exists fb_module_records (
   id text primary key,

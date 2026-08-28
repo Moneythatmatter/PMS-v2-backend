@@ -9,5 +9,5 @@ export declare function advanceOrder(req: Request, res: Response): Promise<Respo
 export declare function acceptOrder(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 /** Kitchen rejects a pending order with a reason. */
 export declare function rejectOrder(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
-/** POS collects payment on a Served order → Settled. */
+/** POS collects payment — routes through fb_bills + transactions when available. */
 export declare function payOrder(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

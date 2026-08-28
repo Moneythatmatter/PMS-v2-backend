@@ -177,7 +177,6 @@ select public.remap_parent_and_fks(
     array['fb_kds_tickets', 'outlet_id'],
     array['fb_cashier_shifts', 'outlet_id'],
     array['fb_reservations', 'outlet_id'],
-    array['fb_menu_items', 'outlet_id'],
     array['fb_pricing_rules', 'outlet_id'],
     array['fb_banquet_bookings', 'outlet_id'],
     array['fb_banquet_requirements', 'outlet_id'],
@@ -200,8 +199,11 @@ select public.remap_pk_ids('fb_live_tables');
 select public.remap_pk_ids('fb_orders');
 select public.remap_pk_ids('fb_kds_tickets');
 select public.remap_pk_ids('fb_reservations');
-select public.remap_pk_ids('fb_menu_categories');
-select public.remap_pk_ids('fb_menu_items');
+select public.remap_pk_ids('fnb_menu_categories');
+select public.remap_pk_ids('fnb_menu_items');
+select public.remap_pk_ids('fnb_units');
+select public.remap_pk_ids('fnb_tax_groups');
+select public.remap_pk_ids('fnb_stations');
 select public.remap_pk_ids('fb_modifiers');
 select public.remap_pk_ids('fb_combos');
 select public.remap_pk_ids('fb_pricing_rules');
@@ -210,12 +212,12 @@ select public.remap_pk_ids('fb_banquet_packages');
 select public.remap_pk_ids('fb_banquet_requirements');
 select public.remap_pk_ids('fb_banquet_billing');
 select public.remap_pk_ids('fb_ingredients');
-select public.remap_pk_ids('fb_suppliers');
-select public.remap_pk_ids('fb_purchase_orders');
-select public.remap_pk_ids('fb_grn');
-select public.remap_pk_ids('fb_stock_movements');
+select public.remap_pk_ids('fb_units');
+select public.remap_pk_ids('fb_tax_groups');
+select public.remap_pk_ids('fb_modifier_groups');
+select public.remap_pk_ids('fb_stations');
+select public.remap_pk_ids('fb_outlet_types');
 select public.remap_pk_ids('fb_wastage');
-select public.remap_pk_ids('fb_stock_counts');
 select public.remap_pk_ids('fb_stock_adjustments');
 select public.remap_pk_ids('fb_drink_categories');
 select public.remap_pk_ids('fb_drinks');

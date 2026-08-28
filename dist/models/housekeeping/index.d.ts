@@ -11,7 +11,7 @@ export declare const hkTables: {
     readonly shifts: "hk_shifts";
     readonly inventory: "hk_inventory";
     readonly laundryJobs: "hk_laundry_jobs";
-    readonly damageReports: "hk_damage_reports";
+    readonly damageReports: "damage_reports";
     readonly requisitions: "hk_requisitions";
     readonly history: "hk_history";
     readonly luggageJobs: "hk_luggage_jobs";
@@ -47,7 +47,7 @@ export declare const hkModel: {
         readonly shifts: "hk_shifts";
         readonly inventory: "hk_inventory";
         readonly laundryJobs: "hk_laundry_jobs";
-        readonly damageReports: "hk_damage_reports";
+        readonly damageReports: "damage_reports";
         readonly requisitions: "hk_requisitions";
         readonly history: "hk_history";
         readonly luggageJobs: "hk_luggage_jobs";

@@ -75,6 +75,9 @@ export async function checkOut(req, res) {
         return ok(res, await ReservationService.checkOut(String(req.params.id), {
             paymentMode: typeof body.paymentMode === "string" ? body.paymentMode : undefined,
             amountReceived: Number(body.amountReceived ?? 0),
+            externalReference: typeof body.externalReference === "string"
+                ? body.externalReference.trim() || null
+                : null,
         }));
     }
     catch (e) {

@@ -54,6 +54,7 @@ export async function settleTable(req, res) {
             return fail(res, "Table not found", 404);
         const row = await fbModel.update(fbModel.tables.liveTables, id, {
             status: "Dirty",
+            housekeeping: "DIRTY",
             guest: "—",
             server: "—",
             covers: 0,
@@ -71,6 +72,7 @@ export async function cleanTable(req, res) {
         const id = String(req.params.id);
         const row = await fbModel.update(fbModel.tables.liveTables, id, {
             status: "Available",
+            housekeeping: "CLEAN",
             guest: "—",
             server: "—",
             covers: 0,

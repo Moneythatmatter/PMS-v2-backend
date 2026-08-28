@@ -104,12 +104,15 @@ export async function getReport(req, res) {
                     }));
                 case "damage":
                     return damage.map((d) => ({
-                        id: d.id,
-                        room: d.room,
+                        id: d.reportNumber ?? d.id,
+                        room: d.roomNo ?? d.roomId ?? "—",
                         damageType: d.damageType,
+                        severity: d.severity,
+                        responsibility: d.responsibility,
                         estimatedCost: Number(d.estimatedCost ?? 0),
+                        actualCost: Number(d.actualCost ?? 0),
                         status: d.status,
-                        reportedBy: d.reportedBy,
+                        reportedBy: d.reportedByName ?? d.reportedBy,
                         reportedAt: d.reportedAt,
                     }));
                 case "staff-performance":
@@ -144,7 +147,7 @@ export async function getReport(req, res) {
             dirtyRooms: rooms.filter((r) => ["Dirty", "Vacant Dirty", "Occupied Dirty"].includes(String(r.hkStatus ?? r.status))).length,
             openLaundry: laundry.filter((j) => j.status !== "Delivered").length,
             belowParItems: inventory.filter((i) => Number(i.available ?? 0) < Number(i.parStock ?? 0)).length,
-            openDamage: damage.filter((d) => ["Reported", "Approved"].includes(String(d.status))).length,
+            openDamage: damage.filter((d) => !["REPAIRED", "RECOVERED", "CLOSED", "CANCELLED"].includes(String(d.status ?? "").toUpperCase())).length,
             historyEvents: history.length,
         };
         return ok(res, {

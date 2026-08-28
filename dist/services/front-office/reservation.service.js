@@ -6,11 +6,19 @@ import { AppError, ConflictError, DatabaseError, NotFoundError, } from "../../er
 import { formatDate, formatTime, isArrivingTodayReservation, timestamp, } from "../../utils/date.js";
 import { IdService } from "../shared/id.service.js";
 import { ActivityService } from "../shared/activity.service.js";
-import { PaymentService } from "../shared/payment.service.js";
-import { enrichReservation, enrichReservations, isRealRoomRef, normalizeReservationRoomRef, normalizeReservationSourceRef, resolveRoomRef, sanitizeReservationInput, } from "./reservation-enrich.js";
+import { TransactionService } from "../shared/transaction.service.js";
+import { enrichReservation, enrichReservations, displayRoomNo, isRealRoomRef, normalizeReservationRoomRef, normalizeReservationSourceRef, resolveRoomRef, sanitizeReservationInput, } from "./reservation-enrich.js";
 import { getRoomByRef, resolveRoomId } from "./room-resolver.js";
 import { getReservationByKey, } from "./reservation-lookup.js";
 import { HkTaskService } from "../housekeeping/hk-task.service.js";
+async function ensureReservationFolio(reservation) {
+    try {
+        await TransactionService.ensureFolioForBooking(reservation.id, reservation.guestId ?? null);
+    }
+    catch {
+        // Do not block reservation reads if folios schema is not applied yet
+    }
+}
 async function getOrThrow(id) {
     const row = await getReservationByKey(id);
     if (!row)
@@ -59,13 +67,23 @@ export const ReservationService = {
         return enrichReservations(rows);
     },
     async getById(id) {
-        return getOrThrow(id);
+        const row = await getOrThrow(id);
+        await ensureReservationFolio(row);
+        return row;
     },
     async create(input) {
         if (!input.guestId?.trim()) {
             throw new AppError("guestId is required — create or select a guest profile first");
         }
+        const externalReference = String(input.externalReference ?? input.paymentReference ?? "").trim();
+        const advancePaid = Number(input.advancePaid ?? 0);
+        const totalAmount = Number(input.totalAmount ?? 0);
+        if (advancePaid > 0 && !String(input.paymentMode ?? "").trim()) {
+            throw new AppError("Payment method is required when advance amount is collected");
+        }
         const body = sanitizeReservationInput(input);
+        delete body.externalReference;
+        delete body.paymentReference;
         await normalizeReservationRoomRef(body);
         await normalizeReservationSourceRef(body);
         if (!body.id)
@@ -90,6 +108,23 @@ export const ReservationService = {
             room: roomRef,
             reservationId: String(body.id ?? ""),
         });
+        const guestId = String(body.guestId ?? input.guestId ?? "");
+        const folioId = await TransactionService.ensureFolioForBooking(enriched.id, guestId);
+        if (totalAmount > 0) {
+            await foModel.update(foModel.tables.folios, folioId, {
+                subtotal: totalAmount,
+            });
+        }
+        if (advancePaid > 0) {
+            await TransactionService.recordReservationAdvance({
+                amount: advancePaid,
+                bookingId: enriched.id,
+                guestId,
+                paymentMethod: String(input.paymentMode ?? body.paymentMode ?? "Cash"),
+                externalReference: externalReference || null,
+                notes: "Reservation advance payment",
+            });
+        }
         return enriched;
     },
     async update(id, input) {
@@ -189,6 +224,7 @@ export const ReservationService = {
             if (finalRoom) {
                 await occupyRoom(finalRoom);
             }
+            await ensureReservationFolio(row);
             return row;
         }
         if (error &&
@@ -227,6 +263,7 @@ export const ReservationService = {
             room: roomRef || existingRoomRef(existing),
             reservationId,
         });
+        await ensureReservationFolio(enriched);
         return enriched;
     },
     /**
@@ -260,7 +297,18 @@ export const ReservationService = {
             p_activity_timestamp: activityTs,
         });
         if (!error && data) {
-            return enrichReservation(mapReservationRow(data));
+            const enriched = enrichReservation(mapReservationRow(data));
+            if (amountReceived > 0) {
+                await TransactionService.recordFrontOfficePayment({
+                    amount: amountReceived,
+                    paymentMethod: options.paymentMode || existing.paymentMode || "Cash",
+                    bookingId: reservationId,
+                    guestId: existing.guestId ?? null,
+                    externalReference: options.externalReference ?? null,
+                    notes: `Checkout payment — ${String(existing.guestName ?? "Guest")}`,
+                });
+            }
+            return enriched;
         }
         if (error &&
             !/fo_check_out_reservation|Could not find the function/i.test(error.message)) {
@@ -278,12 +326,13 @@ export const ReservationService = {
         });
         const enriched = await enrichReservation(row);
         if (amountReceived > 0) {
-            await PaymentService.record({
-                guestName: String(existing.guestName ?? "Guest"),
-                room: resolveRoomRef(existing),
-                reservationId: reservationId,
+            await TransactionService.recordFrontOfficePayment({
                 amount: amountReceived,
-                mode: paymentMode || existing.paymentMode || "Cash",
+                paymentMethod: paymentMode || existing.paymentMode || "Cash",
+                bookingId: reservationId,
+                guestId: existing.guestId ?? null,
+                externalReference: options.externalReference ?? null,
+                notes: `Checkout payment — ${String(existing.guestName ?? "Guest")}`,
             });
         }
         const roomRef = resolveRoomRef(existing);
@@ -372,15 +421,22 @@ export const ReservationService = {
         ];
     },
     async listInHouse() {
-        const rows = await enrichReservations(await foModel.list(foModel.tables.reservations, {
-            filters: { status: ReservationStatus.CHECKED_IN },
-        }));
+        const { data, error } = await supabase
+            .from(foModel.tables.reservations)
+            .select("*")
+            .in("status", [ReservationStatus.CHECKED_IN, ReservationStatus.IN_HOUSE])
+            .order("check_out", { ascending: true });
+        if (error)
+            throw new DatabaseError(error.message);
+        const rows = await enrichReservations((data ?? []).map((row) => toCamel(row)));
+        await Promise.all(rows.map((r) => ensureReservationFolio(r)));
         return rows.map((r) => ({
             id: r.id,
+            guestId: r.guestId ?? undefined,
             bookingNo: r.bookingNo,
             guestNo: r.guestNo,
             guestName: r.guestName ?? "",
-            room: resolveRoomRef(r),
+            room: displayRoomNo(r) || "TBA",
             roomType: r.roomType,
             checkIn: r.checkIn,
             checkOut: r.checkOut,

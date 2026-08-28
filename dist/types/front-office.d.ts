@@ -107,6 +107,7 @@ export interface DeskActivity {
 }
 export interface InHouseGuest {
     id: string;
+    guestId?: string;
     bookingNo?: string;
     guestNo?: string;
     guestName: string;

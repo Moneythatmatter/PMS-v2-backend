@@ -2,6 +2,71 @@ import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { hkModel } from "../../models/housekeeping/index.js";
 import { toCamel } from "../../utils/mappers.js";
+function isHkRoomStaffFkError(message) {
+    return /hk_rooms_(assigned_to|inspected_by)_fkey/i.test(message);
+}
+function appendStaffNote(notes, prefix, label) {
+    const line = `${prefix}: ${label}`;
+    const base = String(notes ?? "").trim();
+    if (!base)
+        return line;
+    if (base.includes(line))
+        return base;
+    return `${base} · ${line}`;
+}
+/** Update/create hk_rooms with fallback when users FK is still present. */
+export async function persistHkRoomRow(payload, options, staffLabels) {
+    const save = async (body) => {
+        if (options.mode === "create") {
+            return hkModel.create(hkModel.tables.rooms, body);
+        }
+        return hkModel.update(hkModel.tables.rooms, options.id, body);
+    };
+    try {
+        return await save(payload);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!isHkRoomStaffFkError(message))
+            throw error;
+        const fallback = { ...payload };
+        let notes = payload.notes;
+        if (staffLabels?.assigned) {
+            fallback.assignedTo = null;
+            notes = appendStaffNote(notes, "Assigned to", staffLabels.assigned);
+        }
+        if (staffLabels?.inspected) {
+            fallback.inspectedBy = null;
+            notes = appendStaffNote(notes, "Inspected by", staffLabels.inspected);
+        }
+        fallback.notes = notes;
+        return save(fallback);
+    }
+}
+async function fetchStaffByIds(ids) {
+    const map = new Map();
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (!unique.length)
+        return map;
+    const { data, error } = await supabase
+        .from(hkModel.tables.staff)
+        .select("id, name")
+        .in("id", unique);
+    if (error)
+        return map;
+    for (const row of data ?? []) {
+        const staff = toCamel(row);
+        map.set(staff.id, staff);
+    }
+    return map;
+}
+function staffOrUserName(key, staff, users) {
+    if (!key)
+        return undefined;
+    return (staff.get(String(key))?.name ??
+        users.get(String(key))?.name ??
+        String(key));
+}
 export function sanitizeHkRoomInput(input) {
     const body = { ...input };
     if (body.roomRefId != null && body.roomId == null) {
@@ -115,7 +180,7 @@ export async function resolveHkRoomId(key) {
         throw new Error(error.message);
     return data?.id ? String(data.id) : null;
 }
-function applyEnrichment(row, room, users = new Map()) {
+function applyEnrichment(row, room, staff = new Map(), users = new Map()) {
     return {
         ...row,
         roomNo: room?.roomNo ?? row.roomNo,
@@ -124,37 +189,36 @@ function applyEnrichment(row, room, users = new Map()) {
         bedType: room?.bedType ?? row.bedType,
         maxOccupancy: room?.maxOccupancy ?? row.maxOccupancy,
         isActive: room?.isActive ?? row.isActive,
-        assignedToName: row.assignedTo
-            ? users.get(String(row.assignedTo))?.name
-            : undefined,
-        inspectedByName: row.inspectedBy
-            ? users.get(String(row.inspectedBy))?.name
-            : undefined,
+        assignedToName: staffOrUserName(row.assignedTo, staff, users),
+        inspectedByName: staffOrUserName(row.inspectedBy, staff, users),
     };
 }
 export async function enrichHkRoom(row) {
     const roomId = String(row.roomId ?? "");
-    const [roomMap, userMap] = await Promise.all([
+    const staffIds = [row.assignedTo, row.inspectedBy].filter(Boolean).map(String);
+    const [roomMap, staffMap, userMap] = await Promise.all([
         roomId ? fetchFoRoomsByIds([roomId]) : Promise.resolve(new Map()),
-        fetchUsersByIds([row.assignedTo, row.inspectedBy].filter(Boolean).map(String)),
+        fetchStaffByIds(staffIds),
+        fetchUsersByIds(staffIds),
     ]);
-    return applyEnrichment(row, roomMap.get(roomId), userMap);
+    return applyEnrichment(row, roomMap.get(roomId), staffMap, userMap);
 }
 export async function enrichHkRooms(rows) {
     if (!rows.length)
         return [];
     const roomIds = [...new Set(rows.map((r) => String(r.roomId)).filter(Boolean))];
-    const userIds = [
+    const staffIds = [
         ...new Set(rows
             .flatMap((r) => [r.assignedTo, r.inspectedBy])
             .filter(Boolean)
             .map(String)),
     ];
-    const [roomMap, userMap] = await Promise.all([
+    const [roomMap, staffMap, userMap] = await Promise.all([
         fetchFoRoomsByIds(roomIds),
-        fetchUsersByIds(userIds),
+        fetchStaffByIds(staffIds),
+        fetchUsersByIds(staffIds),
     ]);
-    return rows.map((row) => applyEnrichment(row, roomMap.get(String(row.roomId)), userMap));
+    return rows.map((row) => applyEnrichment(row, roomMap.get(String(row.roomId)), staffMap, userMap));
 }
 export { resolveRoomId };
 //# sourceMappingURL=hk-room-enrich.js.map

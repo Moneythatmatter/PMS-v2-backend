@@ -1,6 +1,8 @@
 import type { Reservation } from "../../types/front-office.js";
 /** Placeholders like TBA must never touch the rooms table. */
 export declare function isRealRoomRef(roomRef: unknown): roomRef is string;
+/** Prefer human room number for UI (never expose rooms.id UUID). */
+export declare function displayRoomNo(row: Partial<Reservation>): string;
 /** Resolve room ref from API payload (roomRefId or legacy roomNo). */
 export declare function resolveRoomRef(input: Partial<Reservation>): string | null;
 /** Resolve source ref from API payload (sourceId or legacy source name). */

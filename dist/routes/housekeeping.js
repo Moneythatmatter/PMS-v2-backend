@@ -5,6 +5,8 @@ import * as rooms from "../controllers/housekeeping/rooms.js";
 import * as tasks from "../controllers/housekeeping/tasks.js";
 import * as guestRequests from "../controllers/housekeeping/guest-requests.js";
 import * as maintenanceRequests from "../controllers/housekeeping/maintenance-requests.js";
+import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
+import * as damageReports from "../controllers/housekeeping/damage-reports.js";
 import * as publicAreasMaster from "../controllers/housekeeping/public-areas-master.js";
 import * as laundry from "../controllers/housekeeping/laundry.js";
 import * as requisitions from "../controllers/housekeeping/requisitions.js";
@@ -115,16 +117,13 @@ mountCrud(router, "/inventory", createTableCrud({
         category: req.query.category,
     }),
 }));
-// Damage reports
-mountCrud(router, "/damage-reports", createTableCrud({
-    table: hkModel.tables.damageReports,
-    idPrefix: "DM",
-    listFilters: (req) => ({
-        status: req.query.status,
-        room: req.query.room,
-    }),
-    orderBy: "id",
-}));
+// Damage reports (slim asset damage workflow)
+router.get("/damage-reports", damageReports.listDamageReports);
+router.get("/damage-reports/:id", damageReports.getDamageReport);
+router.post("/damage-reports", damageReports.createDamageReport);
+router.put("/damage-reports/:id", damageReports.updateDamageReport);
+router.patch("/damage-reports/:id", damageReports.updateDamageReport);
+router.post("/damage-reports/:id/resolve", damageReports.resolveDamageReport);
 // History (read-heavy; create allowed for client logging)
 mountCrud(router, "/history", createTableCrud({
     table: hkModel.tables.history,
@@ -146,14 +145,16 @@ mountCrud(router, "/luggage", createTableCrud({
 }));
 // Settings (key/value store; id = setting key)
 mountCrud(router, "/settings", createTableCrud({ table: hkModel.tables.settings, idPrefix: "SET" }));
-// Lost & found (shared FO table)
-mountCrud(router, "/lost-found", createTableCrud({
-    table: hkModel.shared.lostFoundItems,
-    idPrefix: "LF",
-    listFilters: (req) => ({
-        status: req.query.status,
-    }),
-}));
+// Lost & found (slim custody workflow — shared FO table)
+router.get("/lost-found", lostFoundItems.listLostFoundItems);
+router.get("/lost-found/:id", lostFoundItems.getLostFoundItem);
+router.post("/lost-found", lostFoundItems.createLostFoundItem);
+router.put("/lost-found/:id", lostFoundItems.updateLostFoundItem);
+router.patch("/lost-found/:id", lostFoundItems.updateLostFoundItem);
+router.post("/lost-found/:id/return", lostFoundItems.returnLostFoundItem);
+router.post("/lost-found/:id/claim", lostFoundItems.claimLostFoundItem);
+router.post("/lost-found/:id/dispose", lostFoundItems.disposeLostFoundItem);
+router.post("/lost-found/:id/courier", lostFoundItems.courierLostFoundItem);
 // Reports
 router.get("/reports/:type", getReport);
 export default router;

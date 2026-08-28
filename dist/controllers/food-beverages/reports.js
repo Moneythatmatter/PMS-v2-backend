@@ -120,16 +120,15 @@ export async function getReport(req, res) {
         }
         const outletIdFilter = String(req.query.outletId ?? "").trim();
         const { from, to } = resolveRange(req);
-        const [ordersAll, outletsAll, ingredients, shiftsAll, tablesAll, kdsAll, discounts] = await Promise.all([
+        const [ordersAll, outletsAll, ingredients, shiftsAll, tablesAll, kdsAll] = await Promise.all([
             fbModel.list(fbModel.tables.orders),
             fbModel.list(fbModel.tables.outlets),
             fbModel.list(fbModel.tables.ingredients),
             fbModel.list(fbModel.tables.cashierShifts),
             fbModel.list(fbModel.tables.liveTables),
             fbModel.list(fbModel.tables.kdsTickets),
-            fbModel.list(fbModel.tables.discounts),
         ]);
-        const diningOutletsAll = outletsAll.filter((o) => ["restaurant", "cafe", "bar", "banquet"].includes(String(o.type ?? "")));
+        const diningOutletsAll = outletsAll.filter((o) => ["restaurant", "cafe", "bar"].includes(String(o.type ?? "")));
         const diningOutlets = outletIdFilter
             ? diningOutletsAll.filter((o) => String(o.id) === outletIdFilter)
             : diningOutletsAll;
@@ -405,7 +404,7 @@ export async function getReport(req, res) {
                         status: o.status,
                     }));
                 case "discount": {
-                    const fromOrders = settled
+                    return settled
                         .filter((o) => {
                         const ref = String(o.ref ?? "").toLowerCase();
                         return ref.includes("discount") || ref.includes("comp");
@@ -420,18 +419,6 @@ export async function getReport(req, res) {
                         reason: o.ref || "Discount",
                         by: o.server || "—",
                         status: o.status,
-                    }));
-                    if (fromOrders.length)
-                        return fromOrders;
-                    return discounts.map((d) => ({
-                        id: String(d.id),
-                        billNo: d.code || d.id,
-                        outlet: "All",
-                        gross: "—",
-                        discount: `${d.value ?? 0}${String(d.type ?? "").toLowerCase().includes("percent") ? "%" : ""}`,
-                        reason: d.name,
-                        by: "Config",
-                        status: d.status,
                     }));
                 }
                 default:

@@ -10,7 +10,9 @@ export declare const tables: {
     readonly reservations: "reservations";
     readonly guestStayHistory: "guest_stay_history";
     readonly folioEntries: "folio_entries";
+    readonly folios: "folios";
     readonly payments: "payments";
+    readonly transactions: "transactions";
     readonly invoices: "invoices";
     readonly roomTransfers: "room_transfers";
     readonly wakeUpCalls: "wake_up_calls";
@@ -46,7 +48,9 @@ export declare const foModel: {
         readonly reservations: "reservations";
         readonly guestStayHistory: "guest_stay_history";
         readonly folioEntries: "folio_entries";
+        readonly folios: "folios";
         readonly payments: "payments";
+        readonly transactions: "transactions";
         readonly invoices: "invoices";
         readonly roomTransfers: "room_transfers";
         readonly wakeUpCalls: "wake_up_calls";

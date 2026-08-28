@@ -1,10 +1,12 @@
 import { foModel } from "../../models/front-office/index.js";
 import { reservationDisplayNo } from "../../services/front-office/reservation-lookup.js";
+import { buildActiveBookingByRoomNo, deriveFoRoomStatus, fetchHkStatusByRoomIds, } from "../../services/front-office/room-hk-status.js";
+import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
 import { isArrivingTodayReservation } from "../../utils/date.js";
 import { fromError, ok } from "../../utils/response.js";
 export async function getDashboard(_req, res) {
     try {
-        const [reservations, rooms, activity] = await Promise.all([
+        const [reservationsRaw, rooms, activity] = await Promise.all([
             foModel.list(foModel.tables.reservations),
             foModel.list(foModel.tables.rooms),
             foModel.list(foModel.tables.deskActivity, {
@@ -13,17 +15,22 @@ export async function getDashboard(_req, res) {
                 limit: 20,
             }),
         ]);
+        const reservations = await enrichReservations(reservationsRaw);
         const inHouse = reservations.filter((r) => r.status === "Checked In" || r.status === "In-House");
         const arrivals = reservations.filter((r) => isArrivingTodayReservation(r) &&
             r.status !== "Cancelled" &&
             r.status !== "Checked Out");
         const departures = reservations.filter((r) => r.status === "Checked In");
-        const occupied = rooms.filter((r) => r.status === "Occupied").length;
+        const hkByRoomId = await fetchHkStatusByRoomIds(rooms.map((room) => String(room.id)));
+        const bookingByRoom = buildActiveBookingByRoomNo(reservations);
+        const occupied = inHouse.length;
         const total = rooms.length || 1;
         const statusCounts = {};
         for (const room of rooms) {
-            const s = String(room.status);
-            statusCounts[s] = (statusCounts[s] ?? 0) + 1;
+            const roomNo = String(room.roomNo);
+            const hkStatus = hkByRoomId.get(String(room.id)) ?? "DIRTY";
+            const status = deriveFoRoomStatus(hkStatus, bookingByRoom.get(roomNo), room.isActive !== false);
+            statusCounts[status] = (statusCounts[status] ?? 0) + 1;
         }
         const colorMap = {
             Occupied: "#16a34a",

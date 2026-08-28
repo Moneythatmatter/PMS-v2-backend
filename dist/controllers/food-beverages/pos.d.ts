@@ -1,0 +1,13 @@
+import type { Request, Response } from "express";
+export declare function sendKot(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getOpenTableOrder(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getOrderDetails(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function printBill(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function printBillForOrder(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listBills(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listKots(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function acceptKot(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function rejectKot(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function cancelKotItem(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function advanceKot(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function payBill(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

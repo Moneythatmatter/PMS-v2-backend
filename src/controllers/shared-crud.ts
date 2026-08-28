@@ -15,7 +15,10 @@ type CrudOptions = {
   idColumn?: string;
   listFilters?: (req: Request) => Record<string, string | undefined>;
   orderBy?: string;
-  mapIncoming?: (body: Record<string, unknown>) => Record<string, unknown>;
+  mapIncoming?: (
+    body: Record<string, unknown>,
+    ctx?: { isCreate: boolean },
+  ) => Record<string, unknown>;
   mapOutgoing?: <T>(row: T) => T;
 };
 
@@ -54,7 +57,7 @@ export function createTableCrud(options: CrudOptions) {
     async create(req: Request, res: Response) {
       try {
         let body = { ...(req.body as Record<string, unknown>) };
-        if (options.mapIncoming) body = options.mapIncoming(body);
+        if (options.mapIncoming) body = options.mapIncoming(body, { isCreate: true });
         if (!body[idCol]) body[idCol] = newId(options.idPrefix);
         let row = await insertRow(options.table, body);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
@@ -70,7 +73,7 @@ export function createTableCrud(options: CrudOptions) {
         let body = { ...(req.body as Record<string, unknown>) };
         delete body[idCol];
         delete body.id;
-        if (options.mapIncoming) body = options.mapIncoming(body);
+        if (options.mapIncoming) body = options.mapIncoming(body, { isCreate: false });
         let row = await updateRow(options.table, id, body, idCol);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
         return ok(res, row);

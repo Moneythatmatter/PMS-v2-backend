@@ -66,6 +66,8 @@ export declare const reservationCreateSchema: z.ZodObject<{
     totalAmount: z.ZodOptional<z.ZodCoercedNumber<unknown>>;
     advancePaid: z.ZodOptional<z.ZodCoercedNumber<unknown>>;
     paymentMode: z.ZodOptional<z.ZodString>;
+    externalReference: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+    paymentReference: z.ZodNullable<z.ZodOptional<z.ZodString>>;
     specialRequests: z.ZodOptional<z.ZodString>;
     bookedBy: z.ZodOptional<z.ZodString>;
     createdAt: z.ZodOptional<z.ZodString>;
@@ -96,6 +98,8 @@ export declare const reservationUpdateSchema: z.ZodObject<{
     totalAmount: z.ZodOptional<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
     advancePaid: z.ZodOptional<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
     paymentMode: z.ZodOptional<z.ZodOptional<z.ZodString>>;
+    externalReference: z.ZodOptional<z.ZodNullable<z.ZodOptional<z.ZodString>>>;
+    paymentReference: z.ZodOptional<z.ZodNullable<z.ZodOptional<z.ZodString>>>;
     specialRequests: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     bookedBy: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     createdAt: z.ZodOptional<z.ZodOptional<z.ZodString>>;

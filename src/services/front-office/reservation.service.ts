@@ -628,6 +628,7 @@ export const ReservationService = {
     await Promise.all(rows.map((r) => ensureReservationFolio(r)));
     return rows.map((r) => ({
       id: r.id,
+      guestId: r.guestId ?? undefined,
       bookingNo: r.bookingNo,
       guestNo: r.guestNo,
       guestName: r.guestName ?? "",

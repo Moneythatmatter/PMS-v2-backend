@@ -6,7 +6,10 @@ import type { InHouseGuest, Reservation, SummaryCard } from "../../types/front-o
 export declare const ReservationService: {
     list(status?: string): Promise<Reservation[]>;
     getById(id: string): Promise<Reservation>;
-    create(input: Partial<Reservation>): Promise<Reservation>;
+    create(input: Partial<Reservation> & {
+        externalReference?: string | null;
+        paymentReference?: string | null;
+    }): Promise<Reservation>;
     update(id: string, input: Partial<Reservation>): Promise<Reservation>;
     remove(id: string): Promise<{
         id: string;
@@ -23,10 +26,12 @@ export declare const ReservationService: {
     checkOut(id: string, options?: {
         paymentMode?: string;
         amountReceived?: number;
+        externalReference?: string | null;
     }): Promise<Reservation>;
     checkOutFallback(reservationId: string, existing: Reservation, options: {
         paymentMode?: string;
         amountReceived?: number;
+        externalReference?: string | null;
     }): Promise<Reservation>;
     extendStay(id: string, payload: {
         checkOut: string;

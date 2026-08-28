@@ -73,6 +73,7 @@ export async function insertRow<T>(
   payload: Record<string, unknown>,
 ): Promise<T> {
   const row = toSnake(payload) as Record<string, unknown>;
+  let lastError = "";
   for (let attempt = 0; attempt < 8; attempt++) {
     const { data, error } = await supabase
       .from(table)
@@ -81,11 +82,14 @@ export async function insertRow<T>(
       .single();
 
     if (!error) return toCamel<T>(data);
+    lastError = error.message;
     if (!stripMissingColumn(row, error.message)) {
       throwIfRlsError(error.message);
     }
   }
-  throw new Error(`Insert into ${table} failed after stripping unknown columns`);
+  throw new Error(
+    `Insert into ${table} failed after stripping unknown columns: ${lastError}`,
+  );
 }
 
 export async function updateRow<T>(

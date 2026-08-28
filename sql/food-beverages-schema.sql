@@ -1,6 +1,8 @@
 -- Food & Beverages schema for Hotel PMS
 -- Run in Supabase SQL Editor after front-office-schema.sql
 
+create extension if not exists pgcrypto;
+
 -- ========== CORE ==========
 create table if not exists fb_outlets (
   id text primary key,
@@ -95,28 +97,96 @@ create table if not exists fb_reservations (
   created_at timestamptz default now()
 );
 
--- ========== MENU ==========
-create table if not exists fb_menu_categories (
+-- ========== MASTERS ==========
+create table if not exists fnb_units (
+  id uuid primary key default gen_random_uuid(),
+  code varchar unique not null,
+  name varchar not null,
+  symbol varchar default '',
+  unit_type varchar default 'Count',
+  decimal_places integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists fnb_tax_groups (
+  id uuid primary key default gen_random_uuid(),
+  code varchar unique not null,
+  name varchar not null,
+  description text default '',
+  tax_codes text default '',
+  total_rate numeric default 0,
+  applies_to varchar default '',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists fb_modifier_groups (
   id text primary key,
   code text,
   name text not null,
-  item_count int default 0,
-  sort_order int default 0,
+  options_count int default 0,
+  min_select int default 0,
+  max_select int default 1,
+  is_required boolean default false,
   status text default 'Active',
   created_at timestamptz default now()
 );
 
-create table if not exists fb_menu_items (
+create table if not exists fb_outlet_types (
   id text primary key,
-  code text,
+  code text not null,
   name text not null,
-  category text default '',
-  price numeric default 0,
-  cost numeric default 0,
+  description text default '',
+  has_tables text default 'Yes',
+  has_kds text default 'No',
   status text default 'Active',
-  outlet_id text,
   created_at timestamptz default now()
 );
+
+-- ========== MENU ==========
+create table if not exists fnb_menu_categories (
+  id uuid primary key default gen_random_uuid(),
+  name varchar not null,
+  code varchar unique,
+  description text,
+  parent_id uuid references fnb_menu_categories (id) on delete set null,
+  display_order integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_fnb_menu_categories_parent on fnb_menu_categories (parent_id);
+create index if not exists idx_fnb_menu_categories_display_order on fnb_menu_categories (display_order);
+
+do $$
+begin
+  create type fnb_item_type as enum ('FOOD', 'BEVERAGE', 'ALCOHOL', 'SERVICE', 'OTHER');
+exception
+  when duplicate_object then null;
+end $$;
+
+create table if not exists fnb_menu_items (
+  id uuid primary key default gen_random_uuid(),
+  item_code varchar unique not null,
+  name varchar not null,
+  description text,
+  category_id uuid not null references fnb_menu_categories (id) on delete restrict,
+  unit_id uuid references fnb_units (id) on delete set null,
+  tax_group_id uuid references fnb_tax_groups (id) on delete set null,
+  item_type fnb_item_type not null default 'FOOD',
+  is_vegetarian boolean not null default false,
+  is_active boolean not null default true,
+  display_order integer not null default 0,
+  image_url text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_fnb_menu_items_category on fnb_menu_items (category_id);
 
 create table if not exists fb_modifiers (
   id text primary key,
@@ -126,73 +196,6 @@ create table if not exists fb_modifiers (
   price numeric default 0,
   linked_items text default '',
   status text default 'Active',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_combos (
-  id text primary key,
-  code text,
-  name text not null,
-  item_count int default 0,
-  price numeric default 0,
-  status text default 'Active',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_pricing_rules (
-  id text primary key,
-  item text not null,
-  outlet_id text,
-  base_price numeric default 0,
-  outlet_price numeric default 0,
-  online_price numeric default 0,
-  status text default 'Active',
-  created_at timestamptz default now()
-);
-
--- ========== BANQUET ==========
-create table if not exists fb_banquet_bookings (
-  id text primary key,
-  booking_no text not null,
-  venue_id text,
-  event text default '',
-  company text default '',
-  date text default '',
-  pax int default 0,
-  amount numeric default 0,
-  status text default 'Confirmed',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_banquet_packages (
-  id text primary key,
-  code text,
-  name text not null,
-  rate_per_pax numeric default 0,
-  courses int default 0,
-  status text default 'Active',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_banquet_requirements (
-  id text primary key,
-  booking_no text,
-  requirement text not null,
-  dept text default '',
-  time text default '',
-  status text default 'Pending',
-  outlet_id text,
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_banquet_billing (
-  id text primary key,
-  booking_no text,
-  event text default '',
-  charges numeric default 0,
-  paid numeric default 0,
-  balance numeric default 0,
-  status text default 'Pending',
   created_at timestamptz default now()
 );
 
@@ -208,50 +211,6 @@ create table if not exists fb_ingredients (
   created_at timestamptz default now()
 );
 
-create table if not exists fb_suppliers (
-  id text primary key,
-  code text,
-  name text not null,
-  category text default '',
-  phone text default '',
-  lead_days int default 0,
-  status text default 'Active',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_purchase_orders (
-  id text primary key,
-  po_no text not null,
-  supplier text default '',
-  items int default 0,
-  value numeric default 0,
-  eta text default '',
-  status text default 'Draft',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_grn (
-  id text primary key,
-  grn_no text not null,
-  po_no text default '',
-  supplier text default '',
-  items int default 0,
-  value numeric default 0,
-  status text default 'Pending',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_stock_movements (
-  id text primary key,
-  move_no text not null,
-  from_location text default '',
-  to_location text default '',
-  items int default 0,
-  value numeric default 0,
-  status text default 'Completed',
-  created_at timestamptz default now()
-);
-
 create table if not exists fb_wastage (
   id text primary key,
   entry_no text,
@@ -264,17 +223,6 @@ create table if not exists fb_wastage (
   created_at timestamptz default now()
 );
 
-create table if not exists fb_stock_counts (
-  id text primary key,
-  count_no text,
-  store text default '',
-  items int default 0,
-  variance numeric default 0,
-  date text default '',
-  status text default 'Draft',
-  created_at timestamptz default now()
-);
-
 create table if not exists fb_stock_adjustments (
   id text primary key,
   adj_no text,
@@ -283,109 +231,6 @@ create table if not exists fb_stock_adjustments (
   reason text default '',
   value numeric default 0,
   status text default 'Posted',
-  created_at timestamptz default now()
-);
-
--- ========== BAR ==========
-create table if not exists fb_drink_categories (
-  id text primary key,
-  code text,
-  name text not null,
-  item_count int default 0,
-  status text default 'Active',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_drinks (
-  id text primary key,
-  code text,
-  name text not null,
-  category text default '',
-  pour text default '',
-  price numeric default 0,
-  status text default 'Active',
-  outlet_id text,
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_cocktails (
-  id text primary key,
-  code text,
-  name text not null,
-  base_spirit text default '',
-  price numeric default 0,
-  cost numeric default 0,
-  status text default 'Active',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_happy_hour (
-  id text primary key,
-  name text not null,
-  time_window text default '',
-  discount text default '',
-  days text default '',
-  status text default 'Active',
-  outlet_id text,
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_bar_stock (
-  id text primary key,
-  item text not null,
-  on_hand numeric default 0,
-  unit text default 'btl',
-  reorder numeric default 0,
-  status text default 'OK',
-  outlet_id text,
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_bottle_tracking (
-  id text primary key,
-  bottle_id text,
-  brand text default '',
-  opened text default '',
-  pours int default 0,
-  remaining_pct numeric default 100,
-  status text default 'Open',
-  outlet_id text,
-  created_at timestamptz default now()
-);
-
--- ========== SETTINGS ==========
-create table if not exists fb_taxes (
-  id text primary key,
-  code text,
-  name text not null,
-  rate numeric default 0,
-  status text default 'Active',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_discounts (
-  id text primary key,
-  code text,
-  name text not null,
-  type text default '',
-  value numeric default 0,
-  status text default 'Active',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_payment_modes (
-  id text primary key,
-  code text,
-  name text not null,
-  status text default 'Active',
-  created_at timestamptz default now()
-);
-
-create table if not exists fb_order_types (
-  id text primary key,
-  code text,
-  name text not null,
-  status text default 'Active',
   created_at timestamptz default now()
 );
 
@@ -414,12 +259,9 @@ declare
 begin
   foreach t in array array[
     'fb_outlets','fb_live_tables','fb_orders','fb_kds_tickets','fb_cashier_shifts',
-    'fb_reservations','fb_menu_categories','fb_menu_items','fb_modifiers','fb_combos',
-    'fb_pricing_rules','fb_banquet_bookings','fb_banquet_packages','fb_banquet_requirements',
-    'fb_banquet_billing','fb_ingredients','fb_suppliers','fb_purchase_orders','fb_grn',
-    'fb_stock_movements','fb_wastage','fb_stock_counts','fb_stock_adjustments',
-    'fb_drink_categories','fb_drinks','fb_cocktails','fb_happy_hour','fb_bar_stock',
-    'fb_bottle_tracking','fb_taxes','fb_discounts','fb_payment_modes','fb_order_types',
+    'fb_reservations','fnb_units','fnb_tax_groups','fb_modifier_groups','fb_outlet_types',
+    'fnb_menu_categories','fnb_menu_items','fb_modifiers',
+    'fb_ingredients','fb_wastage','fb_stock_adjustments',
     'fb_day_closings'
   ]
   loop
@@ -438,11 +280,6 @@ insert into fb_outlets (id, name, type, status, tables, covers, sales) values
   ('rest-2','Restaurant #2','restaurant','Active',12,54,'₹31,200'),
   ('cafe-1','Lobby Cafe','cafe','Active',10,38,'₹14,800'),
   ('cafe-2','Pool Cafe','cafe','Active',10,22,'₹9,400'),
-  ('conf-a','Conference Hall A','banquet','Active',0,0,'₹0'),
-  ('conf-b','Conference Hall B','banquet','Active',0,0,'₹0'),
-  ('lawn','Lawn','banquet','Active',0,0,'₹0'),
-  ('pool','Pool Side','banquet','Active',0,0,'₹0'),
-  ('rooftop','Roof Top','banquet','Active',0,0,'₹0'),
   ('main-kitchen','Main Kitchen','kitchen','Active',0,0,'₹0'),
   ('indian-kitchen','Indian Kitchen','kitchen','Active',0,0,'₹0'),
   ('continental-kitchen','Continental Kitchen','kitchen','Active',0,0,'₹0'),
@@ -496,20 +333,65 @@ insert into fb_cashier_shifts (id, outlet_id, cashier, shift, opened_at, opening
   ('C3','rest-1','Neha Singh','Breakfast','7:00 AM',1500,3200,5400,2100,150,4850,'Closed')
 on conflict (id) do nothing;
 
-insert into fb_menu_categories (id, code, name, item_count, sort_order, status) values
-  ('MC1','STAR','Starters',12,1,'Active'),
-  ('MC2','MAIN','Mains',24,2,'Active'),
-  ('MC3','BEV','Beverages',18,3,'Active'),
-  ('MC4','DST','Desserts',8,4,'Active')
+insert into fnb_units (id, code, name, symbol, unit_type, decimal_places, is_active) values
+  ('b2000001-0000-4000-8000-000000000001', 'KG', 'Kilogram', 'kg', 'Weight', 2, true),
+  ('b2000001-0000-4000-8000-000000000002', 'LTR', 'Litre', 'L', 'Volume', 2, true),
+  ('b2000001-0000-4000-8000-000000000003', 'PCS', 'Pieces', 'pcs', 'Count', 0, true)
 on conflict (id) do nothing;
 
-insert into fb_menu_items (id, code, name, category, price, cost, status) values
-  ('MI1','BC01','Butter Chicken','Mains',420,180,'Active'),
-  ('MI2','GN01','Garlic Naan','Mains',80,25,'Active'),
-  ('MI3','DM01','Dal Makhani','Mains',280,90,'Active'),
-  ('MI4','PT01','Paneer Tikka','Starters',320,110,'Active'),
-  ('MI5','CB01','Chicken Biryani','Mains',380,150,'Active'),
-  ('MI6','CS01','Club Sandwich','Mains',340,120,'Active')
+insert into fnb_tax_groups (id, code, name, tax_codes, total_rate, applies_to, is_active) values
+  ('c2000001-0000-4000-8000-000000000001', 'TG-FOOD5', 'Food GST 5%', 'CGST2.5,SGST2.5', 5, 'Food', true),
+  ('c2000001-0000-4000-8000-000000000002', 'TG-LIQ18', 'Liquor GST 18%', 'CGST9,SGST9', 18, 'Liquor', true)
+on conflict (id) do nothing;
+
+insert into fb_modifier_groups (id, code, name, options_count, min_select, max_select, is_required, status) values
+  ('MG1', 'MG-SPICE', 'Spice Level', 4, 1, 1, true, 'Active'),
+  ('MG2', 'MG-TOP', 'Toppings', 8, 0, 5, false, 'Active')
+on conflict (id) do nothing;
+
+insert into fb_outlet_types (id, code, name, description, has_tables, has_kds, status) values
+  ('OFT1', 'REST', 'Restaurant', 'Full-service dining', 'Yes', 'Yes', 'Active'),
+  ('OFT2', 'CAFE', 'Cafe', 'Quick-service cafe', 'Yes', 'Yes', 'Active'),
+  ('OFT3', 'BAR', 'Bar', 'Bar service', 'Yes', 'No', 'Active')
+on conflict (id) do nothing;
+
+insert into fnb_menu_categories (id, code, name, description, display_order, is_active) values
+  ('a1000001-0000-4000-8000-000000000001', 'STAR', 'Starters', 'Appetizers and small plates', 1, true),
+  ('a1000001-0000-4000-8000-000000000002', 'MAIN', 'Main Course', 'Curries, grills, and mains', 2, true),
+  ('a1000001-0000-4000-8000-000000000003', 'BEV', 'Beverages', 'Hot and cold drinks', 3, true),
+  ('a1000001-0000-4000-8000-000000000004', 'DST', 'Desserts', 'Sweets and desserts', 4, true)
+on conflict (id) do nothing;
+
+insert into fnb_menu_items (
+  id, item_code, name, description, category_id, unit_id, tax_group_id,
+  item_type, is_vegetarian, is_active, display_order
+) values
+  (
+    'e3000001-0000-4000-8000-000000000001',
+    'IT-BC01',
+    'Butter Chicken',
+    'Creamy tomato-based curry',
+    'a1000001-0000-4000-8000-000000000002',
+    'b2000001-0000-4000-8000-000000000003',
+    'c2000001-0000-4000-8000-000000000001',
+    'FOOD',
+    false,
+    true,
+    1
+  ),
+  (
+    'e3000001-0000-4000-8000-000000000002',
+    'IT-PT01',
+    'Paneer Tikka',
+    'Grilled cottage cheese starter',
+    'a1000001-0000-4000-8000-000000000001',
+    'b2000001-0000-4000-8000-000000000003',
+    'c2000001-0000-4000-8000-000000000001',
+    'FOOD',
+    true,
+    true,
+    2
+  )
 on conflict (id) do nothing;
 
 insert into fb_ingredients (id, code, name, uom, on_hand, reorder, status) values
@@ -517,32 +399,6 @@ insert into fb_ingredients (id, code, name, uom, on_hand, reorder, status) value
   ('ING2','PNR','Paneer','kg',22,10,'Active'),
   ('ING3','RCE','Basmati Rice','kg',110,40,'Active'),
   ('ING4','OIL','Cooking Oil','ltr',35,15,'Active')
-on conflict (id) do nothing;
-
-insert into fb_suppliers (id, code, name, category, phone, lead_days, status) values
-  ('SUP1','VF01','Fresh Farms','Vegetables','+91 90000 11111',1,'Active'),
-  ('SUP2','MT01','Metro Meats','Meat','+91 90000 22222',2,'Active'),
-  ('SUP3','BV01','Beverage Hub','Beverages','+91 90000 33333',3,'Active')
-on conflict (id) do nothing;
-
-insert into fb_taxes (id, code, name, rate, status) values
-  ('TX1','CGST','CGST',2.5,'Active'),
-  ('TX2','SGST','SGST',2.5,'Active'),
-  ('TX3','SERV','Service Charge',5,'Active')
-on conflict (id) do nothing;
-
-insert into fb_payment_modes (id, code, name, status) values
-  ('PM1','CASH','Cash','Active'),
-  ('PM2','CARD','Card','Active'),
-  ('PM3','UPI','UPI','Active'),
-  ('PM4','ROOM','Room Charge','Active')
-on conflict (id) do nothing;
-
-insert into fb_order_types (id, code, name, status) values
-  ('OT1','DI','Dine In','Active'),
-  ('OT2','TA','Takeaway','Active'),
-  ('OT3','RS','Room Service','Active'),
-  ('OT4','OL','Online','Active')
 on conflict (id) do nothing;
 
 insert into fb_reservations (id, res_no, outlet_id, guest, phone, time, covers, table_no, status) values

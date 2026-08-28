@@ -25,9 +25,9 @@ export interface HkRoom {
 export declare function isHkRoomStatus(value: string): value is HkRoomStatus;
 /** Map legacy UI labels to DB enum. */
 export declare function normalizeHkRoomStatus(input: unknown): HkRoomStatus;
-export declare const HK_TASK_TYPES: readonly ["CHECKOUT_CLEANING", "REGULAR_CLEANING", "DEEP_CLEANING", "INSPECTION", "TURNDOWN", "SPECIAL_REQUEST"];
+export declare const HK_TASK_TYPES: readonly ["CHECKOUT_CLEANING", "REGULAR_CLEANING", "DEEP_CLEANING", "GUEST_REQUEST", "TURNDOWN", "INSPECTION", "OTHER"];
 export type HkTaskType = (typeof HK_TASK_TYPES)[number];
-export declare const HK_TASK_STATUSES: readonly ["PENDING", "ASSIGNED", "IN_PROGRESS", "COMPLETED", "APPROVED", "CANCELLED"];
+export declare const HK_TASK_STATUSES: readonly ["PENDING", "ASSIGNED", "IN_PROGRESS", "COMPLETED", "PENDING_INSPECTION", "APPROVED", "CANCELLED"];
 export type HkTaskStatus = (typeof HK_TASK_STATUSES)[number];
 export declare const HK_TASK_PRIORITIES: readonly ["LOW", "MEDIUM", "HIGH", "URGENT"];
 export type HkTaskPriority = (typeof HK_TASK_PRIORITIES)[number];
@@ -36,6 +36,7 @@ export interface HkTask {
     taskNumber?: string;
     roomId: string;
     bookingId?: string | null;
+    requestId?: string | null;
     taskType: HkTaskType;
     status: HkTaskStatus;
     assignedTo?: string | null;
@@ -49,17 +50,25 @@ export interface HkTask {
     approvedBy?: string | null;
     createdAt?: string;
     updatedAt?: string;
-    /** Enriched */
+    scheduledDate?: string | null;
+    scheduledStartAt?: string | null;
+    dueAt?: string | null;
+    /** Enriched — not stored */
+    isOverdue?: boolean;
     roomNo?: string;
     bookingNo?: string;
     assignedToName?: string;
     createdByName?: string;
     approvedByName?: string;
+    requestNumber?: string;
+    requestDescription?: string;
 }
 export declare function isHkTaskType(value: string): value is HkTaskType;
 export declare function isHkTaskStatus(value: string): value is HkTaskStatus;
 export declare function normalizeHkTaskType(input: unknown): HkTaskType;
 export declare function normalizeHkTaskStatus(input: unknown): HkTaskStatus;
+export declare const HK_TASK_OVERDUE_EXCLUDED_STATUSES: Set<"CANCELLED" | "PENDING" | "ASSIGNED" | "IN_PROGRESS" | "COMPLETED" | "PENDING_INSPECTION" | "APPROVED">;
+export declare function computeHkTaskOverdue(task: Pick<HkTask, "dueAt" | "status">): boolean;
 export declare function normalizeHkTaskPriority(input: unknown): HkTaskPriority;
 export declare const PUBLIC_AREA_PRIORITIES: readonly ["LOW", "MEDIUM", "HIGH", "URGENT"];
 export type PublicAreaPriority = (typeof PUBLIC_AREA_PRIORITIES)[number];
@@ -152,3 +161,78 @@ export declare function isMaintenanceRequestStatus(value: string): value is Main
 export declare function normalizeMaintenanceIssueType(input: unknown): MaintenanceIssueType;
 export declare function normalizeMaintenanceRequestStatus(input: unknown): MaintenanceRequestStatus;
 export declare function normalizeMaintenanceRequestPriority(input: unknown): MaintenanceRequestPriority;
+export declare const LOST_FOUND_CATEGORIES: readonly ["ELECTRONICS", "JEWELRY", "CLOTHING", "DOCUMENTS", "CASH", "BAGS", "ACCESSORIES", "MEDICINE", "KEYS", "PERSONAL_ITEMS", "OTHER"];
+export type LostFoundCategory = (typeof LOST_FOUND_CATEGORIES)[number];
+export declare const LOST_FOUND_STATUSES: readonly ["STORED", "AWAITING_CLAIM", "UNDER_VERIFICATION", "CLAIMED", "RETURNED", "DISPOSED", "COURIER_DISPATCHED"];
+export type LostFoundStatus = (typeof LOST_FOUND_STATUSES)[number];
+export declare const LOST_FOUND_RETURN_METHODS: readonly ["IN_PERSON", "COURIER", "AUTHORIZED_PICKUP", "MAILED", "OTHER"];
+export type LostFoundReturnMethod = (typeof LOST_FOUND_RETURN_METHODS)[number];
+export interface LostFoundItemRow {
+    id: string;
+    itemNumber?: string;
+    roomId?: string | null;
+    bookingId?: string | null;
+    guestId?: string | null;
+    itemName: string;
+    description?: string | null;
+    category: LostFoundCategory;
+    foundLocation: string;
+    foundBy?: string | null;
+    foundAt?: string | null;
+    status: LostFoundStatus;
+    storedLocation?: string | null;
+    claimedBy?: string | null;
+    claimedAt?: string | null;
+    returnedTo?: string | null;
+    returnMethod?: LostFoundReturnMethod | null;
+    notes?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+    /** Enriched */
+    roomNo?: string;
+    guestName?: string;
+    foundByName?: string;
+    claimedByName?: string;
+}
+export declare function isLostFoundCategory(value: string): value is LostFoundCategory;
+export declare function isLostFoundStatus(value: string): value is LostFoundStatus;
+export declare function normalizeLostFoundCategory(input: unknown): LostFoundCategory;
+export declare function normalizeLostFoundStatus(input: unknown): LostFoundStatus;
+export declare function normalizeLostFoundReturnMethod(input: unknown): LostFoundReturnMethod | null;
+export declare const DAMAGE_TYPES: readonly ["ELECTRICAL", "PLUMBING", "HVAC", "FURNITURE", "WALL", "LINEN", "GLASS", "FLOORING", "EQUIPMENT", "ELECTRONICS", "BATHROOM", "DECOR", "OTHER"];
+export type DamageType = (typeof DAMAGE_TYPES)[number];
+export declare const DAMAGE_SEVERITIES: readonly ["CRITICAL", "MAJOR", "MODERATE", "MINOR"];
+export type DamageSeverity = (typeof DAMAGE_SEVERITIES)[number];
+export declare const DAMAGE_RESPONSIBILITIES: readonly ["GUEST", "HOTEL", "NATURAL_WEAR", "VENDOR", "SPLIT"];
+export type DamageResponsibility = (typeof DAMAGE_RESPONSIBILITIES)[number];
+export declare const DAMAGE_REPORT_STATUSES: readonly ["REPORTED", "UNDER_REVIEW", "PENDING_FINANCE", "PENDING_ENGINEERING", "INSURANCE_CLAIM", "REPAIRED", "RECOVERED", "CLOSED", "CANCELLED"];
+export type DamageReportStatus = (typeof DAMAGE_REPORT_STATUSES)[number];
+export interface DamageReportRow {
+    id: string;
+    reportNumber?: string;
+    roomId?: string | null;
+    bookingId?: string | null;
+    guestId?: string | null;
+    assetId?: string | null;
+    reportedBy?: string | null;
+    damageType: DamageType;
+    severity: DamageSeverity;
+    responsibility: DamageResponsibility;
+    description: string;
+    estimatedCost: number;
+    actualCost?: number | null;
+    status: DamageReportStatus;
+    reportedAt?: string | null;
+    resolvedAt?: string | null;
+    notes?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+    /** Enriched */
+    roomNo?: string;
+    guestName?: string;
+    reportedByName?: string;
+}
+export declare function normalizeDamageType(input: unknown): DamageType;
+export declare function normalizeDamageSeverity(input: unknown): DamageSeverity;
+export declare function normalizeDamageResponsibility(input: unknown): DamageResponsibility;
+export declare function normalizeDamageReportStatus(input: unknown): DamageReportStatus;

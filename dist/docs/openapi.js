@@ -195,11 +195,9 @@ const TAGS = [
     { name: "FB · Outlets", description: "Outlet masters" },
     { name: "FB · Tables Master", description: "Table configuration CRUD" },
     { name: "FB · Reservations", description: "F&B table reservations" },
-    { name: "FB · Menu", description: "Categories, items, modifiers, combos, pricing" },
-    { name: "FB · Banquet", description: "Banquet bookings, packages, requirements, billing" },
-    { name: "FB · Inventory", description: "Ingredients, suppliers, POs, GRN, stock, wastage" },
-    { name: "FB · Bar", description: "Drinks, cocktails, happy hour, bar stock, bottles" },
-    { name: "FB · Settings", description: "Taxes, discounts, payment modes, order types, day close" },
+    { name: "FB · Masters", description: "Units, tax groups, modifier groups, outlet types" },
+    { name: "FB · Menu", description: "Categories, items, modifiers, recipes" },
+    { name: "FB · Inventory", description: "Ingredients, wastage, adjustments" },
     { name: "FB · Reports", description: "F&B sales and kitchen reports" },
     { name: "HK · Dashboard", description: "Housekeeping dashboard" },
     { name: "HK · Rooms", description: "Room cleaning workflow and status" },
@@ -607,33 +605,11 @@ const fbPaths = mergePaths({
 }), crudPaths(`${fbBase}/outlets`, "FB · Outlets", "outlets", { idPrefix: "OUT" }), crudPaths(`${fbBase}/reservations`, "FB · Reservations", "F&B reservations", {
     idPrefix: "RES",
     listQuery: [outletQ],
-}), crudPaths(`${fbBase}/menu/categories`, "FB · Menu", "menu categories", { idPrefix: "MC" }), crudPaths(`${fbBase}/menu/items`, "FB · Menu", "menu items", {
-    idPrefix: "MI",
-    listQuery: [outletQ],
-}), crudPaths(`${fbBase}/menu/modifiers`, "FB · Menu", "modifiers", { idPrefix: "MOD" }), crudPaths(`${fbBase}/menu/combos`, "FB · Menu", "combos", { idPrefix: "CMB" }), crudPaths(`${fbBase}/menu/pricing`, "FB · Menu", "pricing rules", {
-    idPrefix: "PR",
-    listQuery: [outletQ],
-}), crudPaths(`${fbBase}/banquet/bookings`, "FB · Banquet", "banquet bookings", { idPrefix: "BB" }), crudPaths(`${fbBase}/banquet/packages`, "FB · Banquet", "banquet packages", { idPrefix: "BP" }), crudPaths(`${fbBase}/banquet/requirements`, "FB · Banquet", "banquet requirements", {
-    idPrefix: "BR",
-    listQuery: [outletQ],
-}), crudPaths(`${fbBase}/banquet/billing`, "FB · Banquet", "banquet billing records", {
-    idPrefix: "BL",
-}), crudPaths(`${fbBase}/inventory/ingredients`, "FB · Inventory", "ingredients", { idPrefix: "ING" }), crudPaths(`${fbBase}/inventory/suppliers`, "FB · Inventory", "suppliers", { idPrefix: "SUP" }), crudPaths(`${fbBase}/inventory/purchase-orders`, "FB · Inventory", "purchase orders", {
-    idPrefix: "PO",
-}), crudPaths(`${fbBase}/inventory/grn`, "FB · Inventory", "GRN records", { idPrefix: "GRN" }), crudPaths(`${fbBase}/inventory/stock-movements`, "FB · Inventory", "stock movements", {
-    idPrefix: "SM",
-}), crudPaths(`${fbBase}/inventory/wastage`, "FB · Inventory", "wastage records", { idPrefix: "WST" }), crudPaths(`${fbBase}/inventory/stock-counts`, "FB · Inventory", "stock counts", { idPrefix: "SC" }), crudPaths(`${fbBase}/inventory/adjustments`, "FB · Inventory", "stock adjustments", {
+}), crudPaths(`${fbBase}/menu/categories`, "FB · Menu", "menu categories", { idPrefix: "uuid" }), crudPaths(`${fbBase}/masters/units`, "FB · Masters", "units of measure", { idPrefix: "UN" }), crudPaths(`${fbBase}/masters/tax-groups`, "FB · Masters", "tax groups", { idPrefix: "TG" }), crudPaths(`${fbBase}/masters/modifier-groups`, "FB · Masters", "modifier groups", {
+    idPrefix: "MGR",
+}), crudPaths(`${fbBase}/masters/outlet-types`, "FB · Masters", "outlet types", { idPrefix: "OFT" }), crudPaths(`${fbBase}/menu/items`, "FB · Menu", "menu items", { idPrefix: "uuid" }), crudPaths(`${fbBase}/menu/modifiers`, "FB · Menu", "modifiers", { idPrefix: "MOD" }), crudPaths(`${fbBase}/menu/recipes`, "FB · Menu", "recipes", { idPrefix: "RC" }), crudPaths(`${fbBase}/inventory/ingredients`, "FB · Inventory", "ingredients", { idPrefix: "ING" }), crudPaths(`${fbBase}/inventory/wastage`, "FB · Inventory", "wastage records", { idPrefix: "WST" }), crudPaths(`${fbBase}/inventory/adjustments`, "FB · Inventory", "stock adjustments", {
     idPrefix: "ADJ",
-}), crudPaths(`${fbBase}/bar/drink-categories`, "FB · Bar", "drink categories", { idPrefix: "DC" }), crudPaths(`${fbBase}/bar/drinks`, "FB · Bar", "drinks", { idPrefix: "DR", listQuery: [outletQ] }), crudPaths(`${fbBase}/bar/cocktails`, "FB · Bar", "cocktails", { idPrefix: "CK" }), crudPaths(`${fbBase}/bar/happy-hour`, "FB · Bar", "happy-hour rules", {
-    idPrefix: "HH",
-    listQuery: [outletQ],
-}), crudPaths(`${fbBase}/bar/stock`, "FB · Bar", "bar stock items", {
-    idPrefix: "BS",
-    listQuery: [outletQ],
-}), crudPaths(`${fbBase}/bar/bottles`, "FB · Bar", "bottle tracking records", {
-    idPrefix: "BT",
-    listQuery: [outletQ],
-}), crudPaths(`${fbBase}/settings/taxes`, "FB · Settings", "taxes", { idPrefix: "TX" }), crudPaths(`${fbBase}/settings/discounts`, "FB · Settings", "discounts", { idPrefix: "DSC" }), crudPaths(`${fbBase}/settings/payment-modes`, "FB · Settings", "payment modes", { idPrefix: "PM" }), crudPaths(`${fbBase}/settings/order-types`, "FB · Settings", "order types", { idPrefix: "OT" }), crudPaths(`${fbBase}/day-close`, "FB · Settings", "day close records", {
+}), crudPaths(`${fbBase}/day-close`, "FB · Restaurants", "day close records", {
     idPrefix: "DC",
     listQuery: [outletQ],
 }), {

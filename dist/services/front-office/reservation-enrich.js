@@ -10,6 +10,16 @@ export function isRealRoomRef(roomRef) {
         return false;
     return !/^(tba|n\/?a|unassigned|-)$/i.test(value);
 }
+/** Prefer human room number for UI (never expose rooms.id UUID). */
+export function displayRoomNo(row) {
+    const no = String(row.roomNo ?? "").trim();
+    if (no)
+        return no;
+    const ref = String(row.roomRefId ?? "").trim();
+    if (ref && !/^[0-9a-f-]{36}$/i.test(ref))
+        return ref;
+    return "";
+}
 /** Resolve room ref from API payload (roomRefId or legacy roomNo). */
 export function resolveRoomRef(input) {
     const ref = String(input.roomRefId ?? input.roomNo ?? "").trim();
@@ -54,6 +64,8 @@ export function sanitizeReservationInput(input) {
     delete body.source;
     delete body.bookingNo;
     delete body.guestNo;
+    delete body.paymentReference;
+    delete body.externalReference;
     return body;
 }
 /** Resolve room number / UUID from API to rooms.id for FK storage. */

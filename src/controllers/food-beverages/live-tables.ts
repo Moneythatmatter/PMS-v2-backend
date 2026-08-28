@@ -58,6 +58,7 @@ export async function settleTable(req: Request, res: Response) {
 
     const row = await fbModel.update(fbModel.tables.liveTables, id, {
       status: "Dirty",
+      housekeeping: "DIRTY",
       guest: "—",
       server: "—",
       covers: 0,
@@ -75,6 +76,7 @@ export async function cleanTable(req: Request, res: Response) {
     const id = String(req.params.id);
     const row = await fbModel.update(fbModel.tables.liveTables, id, {
       status: "Available",
+      housekeeping: "CLEAN",
       guest: "—",
       server: "—",
       covers: 0,
