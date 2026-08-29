@@ -5,7 +5,9 @@ type CrudOptions = {
     idColumn?: string;
     listFilters?: (req: Request) => Record<string, string | undefined>;
     orderBy?: string;
-    mapIncoming?: (body: Record<string, unknown>) => Record<string, unknown>;
+    mapIncoming?: (body: Record<string, unknown>, ctx?: {
+        isCreate: boolean;
+    }) => Record<string, unknown>;
     mapOutgoing?: <T>(row: T) => T;
 };
 export declare function createTableCrud(options: CrudOptions): {

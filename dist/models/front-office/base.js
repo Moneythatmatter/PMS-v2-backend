@@ -46,6 +46,7 @@ function stripMissingColumn(payload, message) {
 }
 export async function insertRow(table, payload) {
     const row = toSnake(payload);
+    let lastError = "";
     for (let attempt = 0; attempt < 8; attempt++) {
         const { data, error } = await supabase
             .from(table)
@@ -54,11 +55,12 @@ export async function insertRow(table, payload) {
             .single();
         if (!error)
             return toCamel(data);
+        lastError = error.message;
         if (!stripMissingColumn(row, error.message)) {
             throwIfRlsError(error.message);
         }
     }
-    throw new Error(`Insert into ${table} failed after stripping unknown columns`);
+    throw new Error(`Insert into ${table} failed after stripping unknown columns: ${lastError}`);
 }
 export async function updateRow(table, id, payload, idColumn = "id") {
     const row = toSnake(payload);

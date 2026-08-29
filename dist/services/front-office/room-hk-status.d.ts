@@ -20,5 +20,19 @@ type ReservationLike = {
     checkOut?: unknown;
 };
 export declare function buildActiveBookingByRoomNo<T extends ReservationLike>(reservations: T[]): Map<string, T>;
+export declare function availabilityCalendarDayStatus(params: {
+    dayIso: string;
+    todayIso: string;
+    isActive: boolean;
+    hasBooking: boolean;
+    bookingInHouse: boolean;
+    /** Date-scoped block from room_availability_blocks or blocking maintenance_requests */
+    datedBlock: "none" | "maintenance" | "blocked";
+    /** Current HK readiness — used for today-only dirty/OOS indicator, not month-wide paint */
+    hkStatus?: HkRoomStatus;
+}): "available" | "reserved" | "occupied" | "dirty" | "maintenance" | "blocked";
+/**
+ * @deprecated Use availabilityCalendarDayStatus — applies HK status to every day (incorrect for calendar).
+ */
 export declare function availabilityDayStatus(hkStatus: HkRoomStatus, isActive: boolean, hasBooking: boolean, bookingInHouse: boolean): "available" | "reserved" | "occupied" | "dirty" | "maintenance" | "blocked";
 export {};

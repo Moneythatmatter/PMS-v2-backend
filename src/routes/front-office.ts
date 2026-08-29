@@ -46,6 +46,7 @@ router.post("/reservations/:id/extend-stay", reservations.extendStay);
 
 // Rooms
 router.get("/rooms/availability", rooms.roomAvailability);
+router.get("/rooms/blocks", rooms.listRoomBlocks);
 router.get("/rooms/status", rooms.roomStatusCards);
 router.get("/rooms", rooms.listRooms);
 router.get("/rooms/:id", rooms.getRoom);

@@ -37,7 +37,7 @@ export function createTableCrud(options) {
             try {
                 let body = { ...req.body };
                 if (options.mapIncoming)
-                    body = options.mapIncoming(body);
+                    body = options.mapIncoming(body, { isCreate: true });
                 if (!body[idCol])
                     body[idCol] = newId(options.idPrefix);
                 let row = await insertRow(options.table, body);
@@ -56,7 +56,7 @@ export function createTableCrud(options) {
                 delete body[idCol];
                 delete body.id;
                 if (options.mapIncoming)
-                    body = options.mapIncoming(body);
+                    body = options.mapIncoming(body, { isCreate: false });
                 let row = await updateRow(options.table, id, body, idCol);
                 if (options.mapOutgoing)
                     row = options.mapOutgoing(row);

@@ -2,7 +2,8 @@ import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
-import { availabilityDayStatus, buildActiveBookingByRoomNo, deriveFoRoomStatus, ensureHkRoomForFoRoom, fetchHkStatusByRoomIds, foStatusQueryToHkStatuses, hkStatusToHousekeeping, hkStatusToMaintenance, } from "../../services/front-office/room-hk-status.js";
+import { availabilityCalendarDayStatus, buildActiveBookingByRoomNo, deriveFoRoomStatus, ensureHkRoomForFoRoom, fetchHkStatusByRoomIds, foStatusQueryToHkStatuses, hkStatusToHousekeeping, hkStatusToMaintenance, } from "../../services/front-office/room-hk-status.js";
+import { blockKindForDay, fetchRoomAvailabilityBlocks, listRoomAvailabilityBlocksForRange, } from "../../services/front-office/room-availability-blocks.js";
 import { sanitizeRoomInput } from "../../services/front-office/room-sanitize.js";
 import { fromError, ok } from "../../utils/response.js";
 async function findRoomByParam(param) {
@@ -90,6 +91,20 @@ function daysInMonth(year, month) {
 function compareFloor(a, b) {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
+export async function listRoomBlocks(req, res) {
+    try {
+        const start = String(req.query.start ?? req.query.checkIn ?? "").slice(0, 10);
+        const end = String(req.query.end ?? req.query.checkOut ?? "").slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+            return fromError(res, new Error("start and end query params required (YYYY-MM-DD)"), 400);
+        }
+        const blocks = await listRoomAvailabilityBlocksForRange(start, end);
+        return ok(res, blocks);
+    }
+    catch (e) {
+        return fromError(res, e);
+    }
+}
 export async function roomAvailability(req, res) {
     try {
         const startParam = req.query.start || undefined;
@@ -107,6 +122,10 @@ export async function roomAvailability(req, res) {
             enrichReservations(await foModel.list(foModel.tables.reservations)),
         ]);
         const hkByRoomId = await fetchHkStatusByRoomIds(rooms.map((room) => String(room.id)));
+        const rangeStart = days[0];
+        const rangeEnd = days[days.length - 1];
+        const blocksByRoomId = await fetchRoomAvailabilityBlocks(rooms.map((room) => String(room.id)), rangeStart, rangeEnd);
+        const todayIso = toIsoDate(startOfDay(new Date()));
         const activeReservations = reservations
             .filter((r) => r.status !== "Cancelled" &&
             r.status !== "Checked Out" &&
@@ -133,12 +152,21 @@ export async function roomAvailability(req, res) {
             const roomId = String(room.id);
             const hkStatus = hkByRoomId.get(roomId) ?? "DIRTY";
             const isActive = room.isActive !== false;
+            const roomBlocks = blocksByRoomId.get(roomId) ?? [];
             for (const dayIso of days) {
                 const day = parseIsoDate(dayIso);
                 const booking = activeReservations.find((r) => r.roomNo === String(room.roomNo) &&
                     startOfDay(day).getTime() >= startOfDay(r.checkIn).getTime() &&
                     startOfDay(day).getTime() < startOfDay(r.checkOut).getTime());
-                dayMap[dayIso] = availabilityDayStatus(hkStatus, isActive, Boolean(booking), booking ? inHouseStatuses.has(booking.status) : false);
+                dayMap[dayIso] = availabilityCalendarDayStatus({
+                    dayIso,
+                    todayIso,
+                    isActive,
+                    hasBooking: Boolean(booking),
+                    bookingInHouse: booking ? inHouseStatuses.has(booking.status) : false,
+                    datedBlock: blockKindForDay(roomBlocks, dayIso),
+                    hkStatus,
+                });
             }
             return {
                 room: String(room.roomNo ?? ""),
@@ -148,11 +176,13 @@ export async function roomAvailability(req, res) {
                 days: dayMap,
             };
         });
+        const blockRows = await listRoomAvailabilityBlocksForRange(rangeStart, rangeEnd);
         return ok(res, {
             start: toIsoDate(monthStart),
             month: `${year}-${String(month + 1).padStart(2, "0")}`,
             days,
             rows,
+            blocks: blockRows,
         });
     }
     catch (e) {

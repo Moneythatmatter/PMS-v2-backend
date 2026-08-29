@@ -4,7 +4,7 @@ import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
 import {
-  availabilityDayStatus,
+  availabilityCalendarDayStatus,
   buildActiveBookingByRoomNo,
   deriveFoRoomStatus,
   ensureHkRoomForFoRoom,
@@ -13,6 +13,11 @@ import {
   hkStatusToHousekeeping,
   hkStatusToMaintenance,
 } from "../../services/front-office/room-hk-status.js";
+import {
+  blockKindForDay,
+  fetchRoomAvailabilityBlocks,
+  listRoomAvailabilityBlocksForRange,
+} from "../../services/front-office/room-availability-blocks.js";
 import { sanitizeRoomInput } from "../../services/front-office/room-sanitize.js";
 import { fromError, ok } from "../../utils/response.js";
 import type { Reservation } from "../../types/front-office.js";
@@ -109,6 +114,20 @@ function compareFloor(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
+export async function listRoomBlocks(req: Request, res: Response) {
+  try {
+    const start = String(req.query.start ?? req.query.checkIn ?? "").slice(0, 10);
+    const end = String(req.query.end ?? req.query.checkOut ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+      return fromError(res, new Error("start and end query params required (YYYY-MM-DD)"), 400);
+    }
+    const blocks = await listRoomAvailabilityBlocksForRange(start, end);
+    return ok(res, blocks);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
 export async function roomAvailability(req: Request, res: Response) {
   try {
     const startParam = (req.query.start as string) || undefined;
@@ -133,6 +152,15 @@ export async function roomAvailability(req: Request, res: Response) {
     const hkByRoomId = await fetchHkStatusByRoomIds(
       rooms.map((room) => String(room.id)),
     );
+
+    const rangeStart = days[0]!;
+    const rangeEnd = days[days.length - 1]!;
+    const blocksByRoomId = await fetchRoomAvailabilityBlocks(
+      rooms.map((room) => String(room.id)),
+      rangeStart,
+      rangeEnd,
+    );
+    const todayIso = toIsoDate(startOfDay(new Date()));
 
     const activeReservations = reservations
       .filter(
@@ -174,6 +202,8 @@ export async function roomAvailability(req: Request, res: Response) {
       const hkStatus: HkRoomStatus = hkByRoomId.get(roomId) ?? "DIRTY";
       const isActive = room.isActive !== false;
 
+      const roomBlocks = blocksByRoomId.get(roomId) ?? [];
+
       for (const dayIso of days) {
         const day = parseIsoDate(dayIso)!;
         const booking = activeReservations.find(
@@ -183,12 +213,15 @@ export async function roomAvailability(req: Request, res: Response) {
             startOfDay(day).getTime() < startOfDay(r.checkOut).getTime(),
         );
 
-        dayMap[dayIso] = availabilityDayStatus(
-          hkStatus,
+        dayMap[dayIso] = availabilityCalendarDayStatus({
+          dayIso,
+          todayIso,
           isActive,
-          Boolean(booking),
-          booking ? inHouseStatuses.has(booking.status) : false,
-        );
+          hasBooking: Boolean(booking),
+          bookingInHouse: booking ? inHouseStatuses.has(booking.status) : false,
+          datedBlock: blockKindForDay(roomBlocks, dayIso),
+          hkStatus,
+        });
       }
 
       return {
@@ -200,11 +233,14 @@ export async function roomAvailability(req: Request, res: Response) {
       };
     });
 
+    const blockRows = await listRoomAvailabilityBlocksForRange(rangeStart, rangeEnd);
+
     return ok(res, {
       start: toIsoDate(monthStart),
       month: `${year}-${String(month + 1).padStart(2, "0")}`,
       days,
       rows,
+      blocks: blockRows,
     });
   } catch (e) {
     return fromError(res, e);

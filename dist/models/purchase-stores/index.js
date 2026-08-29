@@ -1,0 +1,25 @@
+export const psTables = {
+    units: "ps_units",
+    categories: "ps_categories",
+    suppliers: "ps_suppliers",
+    products: "ps_products",
+    warehouses: "ps_warehouses",
+    purchaseRequisitions: "ps_purchase_requisitions",
+    rfqs: "ps_rfqs",
+    purchaseOrders: "ps_purchase_orders",
+    dsp: "ps_direct_store_purchases",
+    contracts: "ps_rate_contracts",
+    invoices: "ps_invoices",
+    grns: "ps_grns",
+    qualityInspections: "ps_quality_inspections",
+    vendorReturns: "ps_vendor_returns",
+    stockBalances: "ps_stock_balances",
+    stockLedger: "ps_stock_ledger",
+    stockIssues: "ps_stock_issues",
+    stockTransfers: "ps_stock_transfers",
+    stockAdjustments: "ps_stock_adjustments",
+    parStock: "ps_par_stock",
+    batches: "ps_batches",
+};
+export const psModel = { tables: psTables };
+//# sourceMappingURL=index.js.map

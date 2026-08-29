@@ -166,16 +166,50 @@ export function buildActiveBookingByRoomNo<T extends ReservationLike>(
   return bookingByRoom;
 }
 
+export function availabilityCalendarDayStatus(params: {
+  dayIso: string;
+  todayIso: string;
+  isActive: boolean;
+  hasBooking: boolean;
+  bookingInHouse: boolean;
+  /** Date-scoped block from room_availability_blocks or blocking maintenance_requests */
+  datedBlock: "none" | "maintenance" | "blocked";
+  /** Current HK readiness — used for today-only dirty/OOS indicator, not month-wide paint */
+  hkStatus?: HkRoomStatus;
+}): "available" | "reserved" | "occupied" | "dirty" | "maintenance" | "blocked" {
+  const { dayIso, todayIso, isActive, hasBooking, bookingInHouse, datedBlock, hkStatus } =
+    params;
+
+  if (!isActive) return "blocked";
+
+  if (datedBlock === "blocked") return "blocked";
+  if (datedBlock === "maintenance") return "maintenance";
+
+  if (hasBooking) return bookingInHouse ? "occupied" : "reserved";
+
+  if (dayIso === todayIso && hkStatus === "OUT_OF_SERVICE") return "blocked";
+  if (dayIso === todayIso && hkStatus === "DIRTY") return "dirty";
+
+  return "available";
+}
+
+/**
+ * @deprecated Use availabilityCalendarDayStatus — applies HK status to every day (incorrect for calendar).
+ */
 export function availabilityDayStatus(
   hkStatus: HkRoomStatus,
   isActive: boolean,
   hasBooking: boolean,
   bookingInHouse: boolean,
 ): "available" | "reserved" | "occupied" | "dirty" | "maintenance" | "blocked" {
-  if (!isActive) return "blocked";
-  if (hkStatus === "OUT_OF_SERVICE") return "blocked";
-  if (hkStatus === "INSPECTING") return "maintenance";
-  if (hasBooking) return bookingInHouse ? "occupied" : "reserved";
-  if (hkStatus === "DIRTY") return "dirty";
-  return "available";
+  const todayIso = new Date().toISOString().slice(0, 10);
+  return availabilityCalendarDayStatus({
+    dayIso: todayIso,
+    todayIso,
+    isActive,
+    hasBooking,
+    bookingInHouse,
+    datedBlock: "none",
+    hkStatus,
+  });
 }

@@ -125,17 +125,35 @@ export function buildActiveBookingByRoomNo(reservations) {
     }
     return bookingByRoom;
 }
-export function availabilityDayStatus(hkStatus, isActive, hasBooking, bookingInHouse) {
+export function availabilityCalendarDayStatus(params) {
+    const { dayIso, todayIso, isActive, hasBooking, bookingInHouse, datedBlock, hkStatus } = params;
     if (!isActive)
         return "blocked";
-    if (hkStatus === "OUT_OF_SERVICE")
+    if (datedBlock === "blocked")
         return "blocked";
-    if (hkStatus === "INSPECTING")
+    if (datedBlock === "maintenance")
         return "maintenance";
     if (hasBooking)
         return bookingInHouse ? "occupied" : "reserved";
-    if (hkStatus === "DIRTY")
+    if (dayIso === todayIso && hkStatus === "OUT_OF_SERVICE")
+        return "blocked";
+    if (dayIso === todayIso && hkStatus === "DIRTY")
         return "dirty";
     return "available";
+}
+/**
+ * @deprecated Use availabilityCalendarDayStatus — applies HK status to every day (incorrect for calendar).
+ */
+export function availabilityDayStatus(hkStatus, isActive, hasBooking, bookingInHouse) {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    return availabilityCalendarDayStatus({
+        dayIso: todayIso,
+        todayIso,
+        isActive,
+        hasBooking,
+        bookingInHouse,
+        datedBlock: "none",
+        hkStatus,
+    });
 }
 //# sourceMappingURL=room-hk-status.js.map

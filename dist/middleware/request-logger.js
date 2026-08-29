@@ -2,6 +2,8 @@
 function moduleTag(url) {
     if (url.startsWith("/api/housekeeping"))
         return "HK";
+    if (url.startsWith("/api/purchase-stores"))
+        return "PS";
     if (url.startsWith("/api/food-beverages"))
         return "FB";
     if (url.startsWith("/api/front-office"))

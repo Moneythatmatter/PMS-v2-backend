@@ -1,0 +1,48 @@
+export declare const psTables: {
+    readonly units: "ps_units";
+    readonly categories: "ps_categories";
+    readonly suppliers: "ps_suppliers";
+    readonly products: "ps_products";
+    readonly warehouses: "ps_warehouses";
+    readonly purchaseRequisitions: "ps_purchase_requisitions";
+    readonly rfqs: "ps_rfqs";
+    readonly purchaseOrders: "ps_purchase_orders";
+    readonly dsp: "ps_direct_store_purchases";
+    readonly contracts: "ps_rate_contracts";
+    readonly invoices: "ps_invoices";
+    readonly grns: "ps_grns";
+    readonly qualityInspections: "ps_quality_inspections";
+    readonly vendorReturns: "ps_vendor_returns";
+    readonly stockBalances: "ps_stock_balances";
+    readonly stockLedger: "ps_stock_ledger";
+    readonly stockIssues: "ps_stock_issues";
+    readonly stockTransfers: "ps_stock_transfers";
+    readonly stockAdjustments: "ps_stock_adjustments";
+    readonly parStock: "ps_par_stock";
+    readonly batches: "ps_batches";
+};
+export declare const psModel: {
+    tables: {
+        readonly units: "ps_units";
+        readonly categories: "ps_categories";
+        readonly suppliers: "ps_suppliers";
+        readonly products: "ps_products";
+        readonly warehouses: "ps_warehouses";
+        readonly purchaseRequisitions: "ps_purchase_requisitions";
+        readonly rfqs: "ps_rfqs";
+        readonly purchaseOrders: "ps_purchase_orders";
+        readonly dsp: "ps_direct_store_purchases";
+        readonly contracts: "ps_rate_contracts";
+        readonly invoices: "ps_invoices";
+        readonly grns: "ps_grns";
+        readonly qualityInspections: "ps_quality_inspections";
+        readonly vendorReturns: "ps_vendor_returns";
+        readonly stockBalances: "ps_stock_balances";
+        readonly stockLedger: "ps_stock_ledger";
+        readonly stockIssues: "ps_stock_issues";
+        readonly stockTransfers: "ps_stock_transfers";
+        readonly stockAdjustments: "ps_stock_adjustments";
+        readonly parStock: "ps_par_stock";
+        readonly batches: "ps_batches";
+    };
+};
