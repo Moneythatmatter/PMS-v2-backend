@@ -17,6 +17,7 @@ type JwtPayload = {
   sub: string;
   email: string;
   role: string;
+  isSuperAdmin?: boolean;
 };
 
 function toPublic(user: AuthUserRow): AuthUserPublic {
@@ -26,6 +27,7 @@ function toPublic(user: AuthUserRow): AuthUserPublic {
     email: user.email,
     role: user.role,
     initials: user.initials,
+    isSuperAdmin: Boolean(user.isSuperAdmin),
   };
 }
 
@@ -34,6 +36,7 @@ function signToken(user: AuthUserPublic): string {
     sub: user.id,
     email: user.email,
     role: user.role,
+    isSuperAdmin: user.isSuperAdmin,
   };
   return jwt.sign(payload, config.jwtSecret, {
     expiresIn: config.jwtExpiresIn as jwt.SignOptions["expiresIn"],

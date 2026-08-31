@@ -1,8 +1,32 @@
 import { supabase } from "../../utils/supabase.js";
 import { toCamel, toSnake } from "../../utils/mappers.js";
 import { throwIfRlsError } from "../../utils/db-errors.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
+import { isPropertyScopedTable } from "../../utils/property-scoped-tables.js";
 
 export type FilterMap = Record<string, string | number | boolean | undefined>;
+
+function mergePropertyFilter(
+  table: string,
+  filters: FilterMap = {},
+): FilterMap {
+  const propertyId = getActivePropertyId();
+  if (propertyId && isPropertyScopedTable(table) && filters.property_id === undefined) {
+    return { ...filters, property_id: propertyId };
+  }
+  return filters;
+}
+
+function injectPropertyOnWrite(
+  table: string,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const propertyId = getActivePropertyId();
+  if (propertyId && isPropertyScopedTable(table) && payload.propertyId == null && payload.property_id == null) {
+    return { ...payload, propertyId };
+  }
+  return payload;
+}
 
 export async function listRows<T>(
   table: string,
@@ -15,11 +39,10 @@ export async function listRows<T>(
 ): Promise<T[]> {
   let query = supabase.from(table).select("*");
 
-  if (options?.filters) {
-    for (const [key, value] of Object.entries(options.filters)) {
-      if (value !== undefined && value !== "") {
-        query = query.eq(key, value);
-      }
+  const filters = mergePropertyFilter(table, options?.filters ?? {});
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== "") {
+      query = query.eq(key, value);
     }
   }
 
@@ -43,11 +66,12 @@ export async function getRowById<T>(
   id: string,
   idColumn = "id",
 ): Promise<T | null> {
-  const { data, error } = await supabase
-    .from(table)
-    .select("*")
-    .eq(idColumn, id)
-    .maybeSingle();
+  let query = supabase.from(table).select("*").eq(idColumn, id);
+  const propertyId = getActivePropertyId();
+  if (propertyId && isPropertyScopedTable(table)) {
+    query = query.eq("property_id", propertyId);
+  }
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw new Error(error.message);
   return data ? toCamel<T>(data) : null;
@@ -72,7 +96,8 @@ export async function insertRow<T>(
   table: string,
   payload: Record<string, unknown>,
 ): Promise<T> {
-  const row = toSnake(payload) as Record<string, unknown>;
+  const withProperty = injectPropertyOnWrite(table, payload);
+  const row = toSnake(withProperty) as Record<string, unknown>;
   let lastError = "";
   for (let attempt = 0; attempt < 8; attempt++) {
     const { data, error } = await supabase
@@ -100,12 +125,12 @@ export async function updateRow<T>(
 ): Promise<T> {
   const row = toSnake(payload) as Record<string, unknown>;
   for (let attempt = 0; attempt < 8; attempt++) {
-    const { data, error } = await supabase
-      .from(table)
-      .update(row)
-      .eq(idColumn, id)
-      .select()
-      .maybeSingle();
+    let query = supabase.from(table).update(row).eq(idColumn, id);
+    const propertyId = getActivePropertyId();
+    if (propertyId && isPropertyScopedTable(table)) {
+      query = query.eq("property_id", propertyId);
+    }
+    const { data, error } = await query.select().maybeSingle();
 
     if (!error) return toCamel<T>(data ?? ({} as T));
     if (!stripMissingColumn(row, error.message)) {
@@ -120,7 +145,12 @@ export async function deleteRow(
   id: string,
   idColumn = "id",
 ): Promise<void> {
-  const { error } = await supabase.from(table).delete().eq(idColumn, id);
+  let query = supabase.from(table).delete().eq(idColumn, id);
+  const propertyId = getActivePropertyId();
+  if (propertyId && isPropertyScopedTable(table)) {
+    query = query.eq("property_id", propertyId);
+  }
+  const { error } = await query;
   if (error) throw new Error(error.message);
 }
 

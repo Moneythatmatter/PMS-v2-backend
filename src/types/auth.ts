@@ -4,6 +4,7 @@ export type AuthUserPublic = {
   email: string;
   role: string;
   initials: string;
+  isSuperAdmin?: boolean;
 };
 
 export type AuthUserRow = AuthUserPublic & {

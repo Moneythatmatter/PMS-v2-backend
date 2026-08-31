@@ -10,6 +10,7 @@ import frontOfficeRoutes from "./routes/front-office.js";
 import foodBeveragesRoutes from "./routes/food-beverages.js";
 import housekeepingRoutes from "./routes/housekeeping.js";
 import purchaseStoresRoutes from "./routes/purchase-stores.js";
+import platformRoutes from "./routes/platform.js";
 import transactionsRoutes from "./routes/transactions.js";
 
 const app = express();
@@ -35,6 +36,7 @@ app.get("/health", (_req, res) => {
 mountApiDocs(app);
 
 app.use("/api/auth", authRoutes);
+app.use("/api/platform", platformRoutes);
 app.use("/api/front-office", frontOfficeRoutes);
 app.use("/api/food-beverages", foodBeveragesRoutes);
 app.use("/api/housekeeping", housekeepingRoutes);

@@ -1,4 +1,7 @@
 import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { requireProperty } from "../middleware/property.js";
+import { attachRequestContext } from "../middleware/request-context.js";
 import {
   createCrudController,
   mountCrud,
@@ -26,6 +29,10 @@ import {
 import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 
 const router = Router();
+
+router.use(requireAuth);
+router.use(requireProperty);
+router.use(attachRequestContext);
 
 // Dashboard
 router.get("/dashboard", getDashboard);

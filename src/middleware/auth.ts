@@ -8,6 +8,7 @@ export type AuthedRequest = Request & {
     userId: string;
     email: string;
     role: string;
+    isSuperAdmin?: boolean;
   };
 };
 
@@ -28,6 +29,7 @@ export function requireAuth(
       userId: payload.sub,
       email: payload.email,
       role: payload.role,
+      isSuperAdmin: payload.isSuperAdmin,
     };
     next();
   } catch (e) {

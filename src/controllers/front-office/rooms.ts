@@ -229,6 +229,10 @@ export async function roomAvailability(req: Request, res: Response) {
         type: String(room.roomType ?? ""),
         floor: String(room.floor ?? "").trim() || "Unassigned",
         bedType: String(room.bedType ?? "").trim() || undefined,
+        maxOccupancy:
+          room.maxOccupancy != null && Number.isFinite(Number(room.maxOccupancy))
+            ? Number(room.maxOccupancy)
+            : undefined,
         days: dayMap,
       };
     });
