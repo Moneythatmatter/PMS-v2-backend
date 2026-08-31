@@ -14,7 +14,7 @@ Express + Supabase API for Hotel PMS (Front Office, Food & Beverages, Housekeepi
 4. Start: `npm run dev` → http://localhost:5001
 
 ## API Documentation (OpenAPI)
-
+jfjfj
 Interactive Swagger UI with all endpoints, categorized by module:
 
 - **Swagger UI:** http://localhost:5001/api-docs
