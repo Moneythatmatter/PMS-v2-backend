@@ -102,6 +102,31 @@ function queryParam(name: string, description: string, example?: string) {
   };
 }
 
+function headerParam(name: string, description: string, required = false, example?: string) {
+  return {
+    name,
+    in: "header",
+    required,
+    schema: { type: "string", ...(example ? { example } : {}) },
+    description,
+  };
+}
+
+const bearerSecurity = [{ bearerAuth: [] }] as Operation["security"];
+
+const propertyDtoSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string", format: "uuid" },
+    name: { type: "string", example: "Shaw Hotel" },
+    code: { type: "string", example: "SHAW" },
+    city: { type: "string", example: "Kolkata" },
+    timezone: { type: "string", example: "Asia/Kolkata" },
+    isDefault: { type: "boolean" },
+    status: { type: "string", example: "Active" },
+  },
+};
+
 /** Standard list / get / create / update / delete for a resource */
 function crudPaths(
   basePath: string,
@@ -221,6 +246,10 @@ const TAGS = [
   { name: "System", description: "Health and API metadata" },
   { name: "Auth", description: "Authentication and current user" },
 
+  { name: "Platform · Properties", description: "Multi-property workspace — hotels the user can access" },
+  { name: "Platform · Users", description: "Super-admin user and permission management" },
+  { name: "Platform · Permissions", description: "Module permissions for the active property" },
+
   { name: "FO · Dashboard", description: "Front Office dashboard overview" },
   { name: "FO · Reservations", description: "Bookings, check-in, check-out, extend stay" },
   { name: "FO · Rooms", description: "Room inventory, availability, and status cards" },
@@ -308,6 +337,150 @@ const authPaths: Paths = {
     },
   },
 };
+
+const platformBase = "/api/platform";
+
+const platformPaths: Paths = mergePaths(
+  {
+    [`${platformBase}/properties`]: {
+      get: {
+        tags: ["Platform · Properties"],
+        summary: "List properties for current user",
+        description:
+          "Returns hotels/properties the authenticated user can open. Super admins see all active properties.",
+        security: bearerSecurity,
+        responses: {
+          "200": okResponse("List of properties", {
+            ...successSchema,
+            properties: {
+              success: { type: "boolean", example: true },
+              data: { type: "array", items: propertyDtoSchema },
+            },
+          }),
+          ...errorResponses(),
+        },
+      },
+      post: {
+        tags: ["Platform · Properties"],
+        summary: "Create property",
+        description: "Super admin only. Creates a new hotel/property workspace.",
+        security: bearerSecurity,
+        requestBody: jsonBody("New property", {
+          name: "Grand Palace",
+          code: "GPR",
+          city: "Mumbai",
+          timezone: "Asia/Kolkata",
+          isDefault: false,
+        }),
+        responses: {
+          "201": okResponse("Created property"),
+          ...errorResponses(),
+        },
+      },
+    },
+    [`${platformBase}/properties/{id}`]: {
+      put: {
+        tags: ["Platform · Properties"],
+        summary: "Update property",
+        description: "Super admin only.",
+        security: bearerSecurity,
+        parameters: [idParam("id", "Property UUID")],
+        requestBody: jsonBody("Property fields to update", {
+          name: "Grand Palace",
+          code: "GPR",
+          city: "Mumbai",
+          timezone: "Asia/Kolkata",
+          status: "Active",
+        }),
+        responses: {
+          "200": okResponse("Updated property"),
+          ...errorResponses(),
+        },
+      },
+    },
+    [`${platformBase}/modules`]: {
+      get: {
+        tags: ["Platform · Permissions"],
+        summary: "List platform modules",
+        description: "Module keys used for per-property permission assignment.",
+        security: bearerSecurity,
+        responses: {
+          "200": okResponse("Module catalog"),
+          ...errorResponses(),
+        },
+      },
+    },
+    [`${platformBase}/permissions/me`]: {
+      get: {
+        tags: ["Platform · Permissions"],
+        summary: "My permissions for a property",
+        description:
+          "Returns module permission levels for the current user on the given property. Pass `propertyId` query or `X-Property-Id` header.",
+        security: bearerSecurity,
+        parameters: [
+          queryParam("propertyId", "Property UUID", "00000000-0000-0000-0000-000000000001"),
+          headerParam(
+            "X-Property-Id",
+            "Active property UUID (alternative to propertyId query)",
+            false,
+            "00000000-0000-0000-0000-000000000001",
+          ),
+        ],
+        responses: {
+          "200": okResponse("Permission map by module key"),
+          ...errorResponses(),
+        },
+      },
+    },
+    [`${platformBase}/users`]: {
+      get: {
+        tags: ["Platform · Users"],
+        summary: "List users",
+        description: "Super admin only.",
+        security: bearerSecurity,
+        responses: {
+          "200": okResponse("Users with property access and permissions"),
+          ...errorResponses(),
+        },
+      },
+      post: {
+        tags: ["Platform · Users"],
+        summary: "Create user",
+        description: "Super admin only.",
+        security: bearerSecurity,
+        requestBody: jsonBody("New user", {
+          name: "Front Office User",
+          email: "fo.shaw@hotel.com",
+          password: "123456",
+          role: "Front Office",
+          isSuperAdmin: false,
+          propertyIds: ["00000000-0000-0000-0000-000000000001"],
+          permissions: [
+            { propertyId: "00000000-0000-0000-0000-000000000001", moduleKey: "front_office", permission: "write" },
+          ],
+        }),
+        responses: {
+          "201": okResponse("Created user"),
+          ...errorResponses(),
+        },
+      },
+    },
+    [`${platformBase}/users/{id}`]: {
+      put: {
+        tags: ["Platform · Users"],
+        summary: "Update user",
+        description: "Super admin only — role, status, property access, permissions.",
+        security: bearerSecurity,
+        parameters: [idParam("id", "User UUID")],
+        requestBody: jsonBody(),
+        responses: {
+          "200": okResponse("Updated user"),
+          ...errorResponses(),
+        },
+      },
+    },
+  },
+);
 
 const foBase = "/api/front-office";
 
@@ -999,15 +1172,19 @@ export const openApiDocument = {
     title: "Hotel PMS API",
     version: "1.0.0",
     description: [
-      "REST API for **IMPACT PMS** — Front Office, Food & Beverages, Housekeeping, and Auth.",
+      "REST API for **IMPACT PMS** — Platform, Front Office, Food & Beverages, Housekeeping, and Auth.",
       "",
       "### Modules",
       "| Prefix | Module |",
       "|--------|--------|",
       "| `/api/auth` | Authentication |",
+      "| `/api/platform` | Multi-property workspace, users & permissions |",
       "| `/api/front-office` | Front Office (FO) |",
       "| `/api/food-beverages` | Food & Beverages (FB) |",
       "| `/api/housekeeping` | Housekeeping (HK) |",
+      "",
+      "### Property scoping",
+      "Most module APIs expect `X-Property-Id` header with the active property UUID after login.",
       "",
       "### Response envelope",
       "Success: `{ success: true, data: ... }`",
@@ -1036,5 +1213,5 @@ export const openApiDocument = {
       ErrorEnvelope: errorSchema,
     },
   },
-  paths: mergePaths(systemPaths, authPaths, foPaths, fbPaths, hkPaths),
+  paths: mergePaths(systemPaths, authPaths, platformPaths, foPaths, fbPaths, hkPaths),
 };

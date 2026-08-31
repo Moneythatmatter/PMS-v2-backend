@@ -101,16 +101,15 @@ export async function fetchRoomAvailabilityBlocks(roomIds, rangeStart, rangeEnd)
     return byRoom;
 }
 export function blockKindForDay(blocks, dayIso) {
-    let kind = "none";
+    let hasMaintenance = false;
     for (const block of blocks) {
         if (dayIso >= block.startDate && dayIso <= block.endDate) {
             if (block.kind === "blocked")
                 return "blocked";
-            if (kind !== "blocked")
-                kind = "maintenance";
+            hasMaintenance = true;
         }
     }
-    return kind;
+    return hasMaintenance ? "maintenance" : "none";
 }
 export function blocksOverlapStay(blocks, checkIn, checkOut) {
     const stayEnd = checkOut;

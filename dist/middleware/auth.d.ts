@@ -4,6 +4,7 @@ export type AuthedRequest = Request & {
         userId: string;
         email: string;
         role: string;
+        isSuperAdmin?: boolean;
     };
 };
 /** Optional auth middleware for protecting routes later. */

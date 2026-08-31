@@ -14,6 +14,7 @@ export function requireAuth(req, res, next) {
             userId: payload.sub,
             email: payload.email,
             role: payload.role,
+            isSuperAdmin: payload.isSuperAdmin,
         };
         next();
     }

@@ -1,4 +1,7 @@
 import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { requireProperty } from "../middleware/property.js";
+import { attachRequestContext } from "../middleware/request-context.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import { getDashboard } from "../controllers/housekeeping/dashboard.js";
 import * as rooms from "../controllers/housekeeping/rooms.js";
@@ -13,6 +16,9 @@ import * as requisitions from "../controllers/housekeeping/requisitions.js";
 import { getReport } from "../controllers/housekeeping/reports.js";
 import { hkModel } from "../models/housekeeping/index.js";
 const router = Router();
+router.use(requireAuth);
+router.use(requireProperty);
+router.use(attachRequestContext);
 // Dashboard
 router.get("/dashboard", getDashboard);
 // Rooms (ops + CRUD)

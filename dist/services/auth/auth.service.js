@@ -12,6 +12,7 @@ function toPublic(user) {
         email: user.email,
         role: user.role,
         initials: user.initials,
+        isSuperAdmin: Boolean(user.isSuperAdmin),
     };
 }
 function signToken(user) {
@@ -19,6 +20,7 @@ function signToken(user) {
         sub: user.id,
         email: user.email,
         role: user.role,
+        isSuperAdmin: user.isSuperAdmin,
     };
     return jwt.sign(payload, config.jwtSecret, {
         expiresIn: config.jwtExpiresIn,

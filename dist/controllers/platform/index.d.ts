@@ -1,0 +1,10 @@
+import type { Response } from "express";
+import type { ContextRequest } from "../../middleware/request-context.js";
+export declare function listProperties(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function createProperty(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function updateProperty(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listModules(_req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listUsers(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function createUser(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function updateUser(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function myPermissions(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;

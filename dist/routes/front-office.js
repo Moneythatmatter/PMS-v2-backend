@@ -1,4 +1,7 @@
 import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { requireProperty } from "../middleware/property.js";
+import { attachRequestContext } from "../middleware/request-context.js";
 import { createCrudController, mountCrud, } from "../controllers/front-office/crud.js";
 import { getDashboard } from "../controllers/front-office/dashboard.js";
 import { getReport } from "../controllers/front-office/reports.js";
@@ -9,6 +12,9 @@ import { guestCreateSchema, guestUpdateSchema, paymentCreateSchema, paymentUpdat
 import { assertGuestContactUnique, getGuestByKey, sanitizeGuestInput, } from "../services/front-office/guest-lookup.js";
 import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 const router = Router();
+router.use(requireAuth);
+router.use(requireProperty);
+router.use(attachRequestContext);
 // Dashboard
 router.get("/dashboard", getDashboard);
 // Reservations

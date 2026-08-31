@@ -3,6 +3,7 @@ type JwtPayload = {
     sub: string;
     email: string;
     role: string;
+    isSuperAdmin?: boolean;
 };
 export declare const AuthService: {
     login(email: string, password: string): Promise<{
