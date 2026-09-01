@@ -6,7 +6,6 @@ export declare const guestCreateSchema: z.ZodObject<{
     mobile: z.ZodString;
     email: z.ZodOptional<z.ZodString>;
     nationality: z.ZodOptional<z.ZodString>;
-    totalStays: z.ZodOptional<z.ZodCoercedNumber<unknown>>;
     loyaltyPoints: z.ZodOptional<z.ZodCoercedNumber<unknown>>;
     idType: z.ZodOptional<z.ZodString>;
     idNumber: z.ZodOptional<z.ZodString>;
@@ -27,7 +26,6 @@ export declare const guestUpdateSchema: z.ZodObject<{
     mobile: z.ZodOptional<z.ZodString>;
     email: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     nationality: z.ZodOptional<z.ZodOptional<z.ZodString>>;
-    totalStays: z.ZodOptional<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
     loyaltyPoints: z.ZodOptional<z.ZodOptional<z.ZodCoercedNumber<unknown>>>;
     idType: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     idNumber: z.ZodOptional<z.ZodOptional<z.ZodString>>;

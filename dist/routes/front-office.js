@@ -9,7 +9,7 @@ import * as reservations from "../controllers/front-office/reservations.js";
 import * as rooms from "../controllers/front-office/rooms.js";
 import { foModel, mapTaxiForUi, normalizeTaxiPayload, } from "../models/front-office/index.js";
 import { guestCreateSchema, guestUpdateSchema, paymentCreateSchema, paymentUpdateSchema, } from "../validators/front-office.js";
-import { assertGuestContactUnique, getGuestByKey, sanitizeGuestInput, } from "../services/front-office/guest-lookup.js";
+import { assertGuestContactUnique, attachGuestStayCount, attachGuestStayCounts, getGuestByKey, sanitizeGuestInput, } from "../services/front-office/guest-lookup.js";
 import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 const router = Router();
 router.use(requireAuth);
@@ -48,10 +48,6 @@ mountCrud(router, "/masters/tariff-plans", createCrudController({
     table: foModel.tables.tariffPlans,
     idPrefix: "TP",
 }));
-mountCrud(router, "/masters/market-segments", createCrudController({
-    table: foModel.tables.marketSegments,
-    idPrefix: "MS",
-}));
 mountCrud(router, "/masters/companies", createCrudController({
     table: foModel.tables.companies,
     idPrefix: "CO",
@@ -70,6 +66,8 @@ mountCrud(router, "/guests", createCrudController({
     resolveId: async (key) => (await getGuestByKey(key))?.id ?? null,
     beforeCreate: async (body) => assertGuestContactUnique(body),
     beforeUpdate: async (id, body) => assertGuestContactUnique(body, id),
+    afterList: attachGuestStayCounts,
+    afterGet: attachGuestStayCount,
 }));
 mountCrud(router, "/guest-stay-history", createCrudController({
     table: foModel.tables.guestStayHistory,

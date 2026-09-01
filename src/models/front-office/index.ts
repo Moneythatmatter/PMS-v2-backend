@@ -12,7 +12,6 @@ export const tables = {
   roomTypes: "room_types",
   rooms: "rooms",
   tariffPlans: "tariff_plans",
-  marketSegments: "market_segments",
   companies: "companies",
   bookingSources: "booking_sources",
   guests: "guests",

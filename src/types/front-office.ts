@@ -11,6 +11,7 @@ export interface Guest {
   mobile: string;
   email?: string;
   nationality?: string;
+  /** Computed from non-cancelled reservations — not stored on guests */
   totalStays?: number;
   loyaltyPoints?: number;
   idType?: string;
@@ -130,6 +131,7 @@ export interface InHouseGuest {
   laundry: number;
   status: string;
   isVip: boolean;
+  phone?: string;
   email?: string;
   adults: number;
   children: number;

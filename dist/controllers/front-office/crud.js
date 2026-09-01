@@ -22,6 +22,9 @@ export function createCrudController(options) {
                 if (options.mapOutgoing) {
                     rows = rows.map((r) => options.mapOutgoing(r));
                 }
+                if (options.afterList) {
+                    rows = await options.afterList(rows);
+                }
                 return ok(res, rows);
             }
             catch (e) {
@@ -36,6 +39,8 @@ export function createCrudController(options) {
                     return fail(res, "Not found", 404);
                 if (options.mapOutgoing)
                     row = options.mapOutgoing(row);
+                if (options.afterGet)
+                    row = await options.afterGet(row);
                 return ok(res, row);
             }
             catch (e) {
@@ -59,6 +64,8 @@ export function createCrudController(options) {
                 let row = await foModel.create(options.table, body);
                 if (options.mapOutgoing)
                     row = options.mapOutgoing(row);
+                if (options.afterGet)
+                    row = await options.afterGet(row);
                 return ok(res, row, 201);
             }
             catch (e) {
@@ -82,6 +89,8 @@ export function createCrudController(options) {
                 let row = await foModel.update(options.table, id, body, idCol);
                 if (options.mapOutgoing)
                     row = options.mapOutgoing(row);
+                if (options.afterGet)
+                    row = await options.afterGet(row);
                 return ok(res, row);
             }
             catch (e) {

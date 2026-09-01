@@ -3,7 +3,6 @@ export const PROPERTY_SCOPED_TABLES = new Set([
   "room_types",
   "rooms",
   "tariff_plans",
-  "market_segments",
   "companies",
   "booking_sources",
   "guests",

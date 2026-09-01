@@ -8,10 +8,6 @@ create table if not exists room_types (
   name text not null,
   description text default '',
   base_rate numeric not null default 0,
-  max_occupancy int not null default 2,
-  max_adults int not null default 2,
-  max_children int not null default 0,
-  total_rooms int not null default 0,
   size_sq_ft int not null default 0,
   amenities text[] default '{}',
   status text not null default 'Active',
@@ -115,19 +111,6 @@ create table if not exists tariff_plans (
   created_at timestamptz default now()
 );
 
-create table if not exists market_segments (
-  id text primary key,
-  code text not null unique,
-  name text not null,
-  category text not null,
-  discount_percent numeric not null default 0,
-  description text default '',
-  contact_person text,
-  commission_percent numeric,
-  status text not null default 'Active',
-  created_at timestamptz default now()
-);
-
 create table if not exists companies (
   id text primary key,
   code text not null unique,
@@ -162,7 +145,6 @@ create table if not exists guests (
   mobile text not null default '',
   email text default '',
   nationality text default '',
-  total_stays int not null default 0,
   loyalty_points int not null default 0,
   id_type text,
   id_number text,
@@ -892,7 +874,6 @@ create index if not exists idx_payments_date on payments(date);
 alter table room_types enable row level security;
 alter table rooms enable row level security;
 alter table tariff_plans enable row level security;
-alter table market_segments enable row level security;
 alter table companies enable row level security;
 alter table booking_sources enable row level security;
 alter table guests enable row level security;
@@ -920,7 +901,7 @@ declare
   t text;
 begin
   foreach t in array array[
-    'room_types','rooms','tariff_plans','market_segments','companies','booking_sources',
+    'room_types','rooms','tariff_plans','companies','booking_sources',
     'guests','reservations','guest_stay_history','folio_entries','payments',
     'invoices','room_transfers','wake_up_calls','taxi_bookings','luggage_items',
     'messages','guest_feedback','lost_found_items','housekeeping_requests',
@@ -937,11 +918,11 @@ begin
 end $$;
 
 -- ========== SEED ==========
-insert into room_types (id, code, name, description, base_rate, max_occupancy, max_adults, max_children, total_rooms, size_sq_ft, amenities, status) values
-  ('RT-01','STD','Standard','Comfortable room with essential amenities',2800,2,2,1,24,220,array['Wi-Fi','AC','TV','Work Desk'],'Active'),
-  ('RT-02','DLX','Deluxe','Spacious room with premium bedding',4200,3,2,2,18,320,array['Wi-Fi','AC','Smart TV','Mini Bar','Bathtub'],'Active'),
-  ('RT-03','STE','Suite','Luxury suite with separate living area',8500,4,3,2,8,580,array['Wi-Fi','AC','Smart TV','Mini Bar','Jacuzzi'],'Active'),
-  ('RT-04','PRM','Premium','Top-floor premium rooms',6200,3,2,1,6,400,array['Wi-Fi','AC','Smart TV','Mini Bar','Balcony'],'Active')
+insert into room_types (id, code, name, description, base_rate, size_sq_ft, amenities, status) values
+  ('RT-01','STD','Standard','Comfortable room with essential amenities',2800,220,array['Wi-Fi','AC','TV','Work Desk'],'Active'),
+  ('RT-02','DLX','Deluxe','Spacious room with premium bedding',4200,320,array['Wi-Fi','AC','Smart TV','Mini Bar','Bathtub'],'Active'),
+  ('RT-03','STE','Suite','Luxury suite with separate living area',8500,580,array['Wi-Fi','AC','Smart TV','Mini Bar','Jacuzzi'],'Active'),
+  ('RT-04','PRM','Premium','Top-floor premium rooms',6200,400,array['Wi-Fi','AC','Smart TV','Mini Bar','Balcony'],'Active')
 on conflict (id) do nothing;
 
 insert into tariff_plans (id, code, name, room_type, base_rate, weekend_rate, meal_plan, cancellation_policy, min_nights, valid_from, valid_to, status) values
@@ -949,14 +930,6 @@ insert into tariff_plans (id, code, name, room_type, base_rate, weekend_rate, me
   ('RP-02','CORP','Corporate Rate','Standard, Deluxe',3200,3200,'CP','Free cancellation 48 hrs before arrival',1,'2026-01-01','2026-12-31','Active'),
   ('RP-03','WKND','Weekend Package','Deluxe, Suite',4800,4800,'MAP','Non-refundable',2,'2026-01-01','2026-12-31','Active'),
   ('RP-04','OTA','OTA Rate','All Types',3000,3600,'EP','As per OTA policy',1,'2026-01-01','2026-12-31','Active')
-on conflict (id) do nothing;
-
-insert into market_segments (id, code, name, category, discount_percent, description, status) values
-  ('MS-01','CORP','Corporate','Corporate',15,'Business travellers and company accounts','Active'),
-  ('MS-02','LEIS','Leisure','Leisure',5,'Vacation and leisure guests','Active'),
-  ('MS-03','OTA','Online Travel','OTA',10,'Booking.com, Agoda, MakeMyTrip','Active'),
-  ('MS-04','GOVT','Government','Government',20,'Government and PSU bookings','Active'),
-  ('MS-05','GRP','Group','Group',12,'Tour groups and events','Active')
 on conflict (id) do nothing;
 
 insert into companies (id, code, name, type, contact_person, email, phone, address, city, corporate_discount, credit_limit, status) values
@@ -989,13 +962,13 @@ insert into rooms (id, room_no, room_type, floor, max_occupancy, bed_type, is_ac
   (gen_random_uuid()::text,'602','Suite','6th Floor',4,'King',true)
 on conflict (room_no) do nothing;
 
-insert into guests (id, guest_no, name, mobile, email, nationality, total_stays, loyalty_points, id_type, id_number, member_since) values
-  ('660e8400-e29b-41d4-a716-446655440001','G-0','Rahul Sharma','+91 98765 43210','rahul@email.com','Indian',5,1200,'Aadhaar','XXXX-XXXX-4521','2024-01-15'),
-  ('660e8400-e29b-41d4-a716-446655440002','G-1','James Wilson','+91 87654 32109','james.w@email.com','British',3,800,'Passport','GB9823412','2024-06-01'),
-  ('660e8400-e29b-41d4-a716-446655440003','G-2','Anita Desai','+91 76543 21098','anita.d@email.com','Indian',2,400,'Driving Licence','DL-MH-2019-8821','2025-02-10'),
-  ('660e8400-e29b-41d4-a716-446655440004','G-3','Priya Patel','+91 99887 76655','priya@email.com','Indian',8,2500,'Aadhaar','XXXX-XXXX-8899','2023-08-20'),
-  ('660e8400-e29b-41d4-a716-446655440005','G-4','Michael Brown','+91 88776 65544','m.brown@corp.com','American',4,1100,'Passport','US4412299','2024-11-05'),
-  ('660e8400-e29b-41d4-a716-446655440006','G-5','Sneha Reddy','+91 91234 56789','sneha.r@email.com','Indian',0,0,null,null,'2026-06-22')
+insert into guests (id, guest_no, name, mobile, email, nationality, loyalty_points, id_type, id_number, member_since) values
+  ('660e8400-e29b-41d4-a716-446655440001','G-0','Rahul Sharma','+91 98765 43210','rahul@email.com','Indian',1200,'Aadhaar','XXXX-XXXX-4521','2024-01-15'),
+  ('660e8400-e29b-41d4-a716-446655440002','G-1','James Wilson','+91 87654 32109','james.w@email.com','British',800,'Passport','GB9823412','2024-06-01'),
+  ('660e8400-e29b-41d4-a716-446655440003','G-2','Anita Desai','+91 76543 21098','anita.d@email.com','Indian',400,'Driving Licence','DL-MH-2019-8821','2025-02-10'),
+  ('660e8400-e29b-41d4-a716-446655440004','G-3','Priya Patel','+91 99887 76655','priya@email.com','Indian',2500,'Aadhaar','XXXX-XXXX-8899','2023-08-20'),
+  ('660e8400-e29b-41d4-a716-446655440005','G-4','Michael Brown','+91 88776 65544','m.brown@corp.com','American',1100,'Passport','US4412299','2024-11-05'),
+  ('660e8400-e29b-41d4-a716-446655440006','G-5','Sneha Reddy','+91 91234 56789','sneha.r@email.com','Indian',0,null,null,'2026-06-22')
 on conflict (id) do nothing;
 
 insert into reservations (id, booking_no, guest_id, room_ref_id, source_id, check_in, check_out, balance, status, arriving_today, adults, children, nights, tariff_plan, meal_plan, room_rate, total_amount, advance_paid, payment_mode, special_requests, created_at, booked_by, restaurant_bill, laundry, is_vip) values

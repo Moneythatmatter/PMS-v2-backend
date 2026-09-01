@@ -1,6 +1,7 @@
 import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
 import type { Guest } from "../../types/front-office.js";
 
 /** Load guest by UUID id or display guest_no (e.g. G-12). */
@@ -25,13 +26,55 @@ export function guestDisplayNo(row: Partial<Guest>): string {
   return String(row.guestNo ?? row.id ?? "").trim();
 }
 
-/** Strip auto-assigned guest_no from API writes. */
+/** Strip auto-assigned guest_no and computed fields from API writes. */
 export function sanitizeGuestInput(
   input: Record<string, unknown>,
 ): Record<string, unknown> {
   const body = { ...input };
   delete body.guestNo;
+  delete body.totalStays;
   return body;
+}
+
+/** Count non-cancelled bookings per guest (property-scoped when active). */
+export async function attachGuestStayCounts<T extends { id: string }>(
+  guests: T[],
+): Promise<(T & { totalStays: number })[]> {
+  if (guests.length === 0) return [];
+
+  const guestIds = guests.map((g) => g.id);
+  const propertyId = getActivePropertyId();
+
+  let query = supabase
+    .from(foModel.tables.reservations)
+    .select("guest_id")
+    .in("guest_id", guestIds)
+    .neq("status", "Cancelled");
+
+  if (propertyId) {
+    query = query.eq("property_id", propertyId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    const guestId = String(row.guest_id);
+    counts.set(guestId, (counts.get(guestId) ?? 0) + 1);
+  }
+
+  return guests.map((guest) => ({
+    ...guest,
+    totalStays: counts.get(guest.id) ?? 0,
+  }));
+}
+
+export async function attachGuestStayCount<T extends { id: string }>(
+  guest: T,
+): Promise<T & { totalStays: number }> {
+  const [enriched] = await attachGuestStayCounts([guest]);
+  return enriched;
 }
 
 function normalizeMobile(value: unknown): string {

@@ -1,6 +1,7 @@
 import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
 /** Load guest by UUID id or display guest_no (e.g. G-12). */
 export async function getGuestByKey(key) {
     const trimmed = key.trim();
@@ -21,11 +22,43 @@ export async function getGuestByKey(key) {
 export function guestDisplayNo(row) {
     return String(row.guestNo ?? row.id ?? "").trim();
 }
-/** Strip auto-assigned guest_no from API writes. */
+/** Strip auto-assigned guest_no and computed fields from API writes. */
 export function sanitizeGuestInput(input) {
     const body = { ...input };
     delete body.guestNo;
+    delete body.totalStays;
     return body;
+}
+/** Count non-cancelled bookings per guest (property-scoped when active). */
+export async function attachGuestStayCounts(guests) {
+    if (guests.length === 0)
+        return [];
+    const guestIds = guests.map((g) => g.id);
+    const propertyId = getActivePropertyId();
+    let query = supabase
+        .from(foModel.tables.reservations)
+        .select("guest_id")
+        .in("guest_id", guestIds)
+        .neq("status", "Cancelled");
+    if (propertyId) {
+        query = query.eq("property_id", propertyId);
+    }
+    const { data, error } = await query;
+    if (error)
+        throw new Error(error.message);
+    const counts = new Map();
+    for (const row of data ?? []) {
+        const guestId = String(row.guest_id);
+        counts.set(guestId, (counts.get(guestId) ?? 0) + 1);
+    }
+    return guests.map((guest) => ({
+        ...guest,
+        totalStays: counts.get(guest.id) ?? 0,
+    }));
+}
+export async function attachGuestStayCount(guest) {
+    const [enriched] = await attachGuestStayCounts([guest]);
+    return enriched;
 }
 function normalizeMobile(value) {
     return String(value ?? "").replace(/\D/g, "");

@@ -82,7 +82,7 @@ begin
     'housekeeping_tasks', 'guest_requests', 'housekeeping_requests', 'desk_activity',
     'cashier_shifts', 'day_closings', 'guest_stay_history', 'reservations', 'guests',
     'hk_rooms', 'room_availability_blocks', 'rooms', 'public_areas', 'hk_public_areas',
-    'room_types', 'tariff_plans', 'booking_sources', 'companies', 'market_segments'
+    'room_types', 'tariff_plans', 'booking_sources', 'companies'
   ] loop
     begin
       execute format('delete from public.%I', t);
@@ -94,9 +94,9 @@ begin
 end $$;
 
 -- ========== SHAW HOTEL SEED ==========
-insert into public.room_types (id, property_id, code, name, description, base_rate, max_occupancy, status) values
-  ('shaw-rt-std', 'prop-shaw-hotel', 'STD', 'Standard', 'Comfortable standard room', 2800, 2, 'Active'),
-  ('shaw-rt-dlx', 'prop-shaw-hotel', 'DLX', 'Deluxe', 'Spacious deluxe room', 4200, 3, 'Active')
+insert into public.room_types (id, property_id, code, name, description, base_rate, status) values
+  ('shaw-rt-std', 'prop-shaw-hotel', 'STD', 'Standard', 'Comfortable standard room', 2800, 'Active'),
+  ('shaw-rt-dlx', 'prop-shaw-hotel', 'DLX', 'Deluxe', 'Spacious deluxe room', 4200, 'Active')
 on conflict (id) do nothing;
 
 insert into public.booking_sources (id, property_id, code, name, description, status) values
@@ -122,9 +122,9 @@ insert into public.hk_rooms (id, property_id, room_id, status) values
   ('shaw-hk-204', 'prop-shaw-hotel', 'shaw-rm-204', 'INSPECTED')
 on conflict (id) do nothing;
 
-insert into public.guests (id, property_id, guest_no, name, mobile, email, nationality, total_stays, loyalty_points) values
-  ('shaw-g-1', 'prop-shaw-hotel', 'G-SH-1', 'Rajesh Mohapatra', '+91 98765 11111', 'rajesh@email.com', 'Indian', 3, 600),
-  ('shaw-g-2', 'prop-shaw-hotel', 'G-SH-2', 'Atul Kumar', '+91 98765 22222', 'atul@email.com', 'Indian', 1, 100)
+insert into public.guests (id, property_id, guest_no, name, mobile, email, nationality, loyalty_points) values
+  ('shaw-g-1', 'prop-shaw-hotel', 'G-SH-1', 'Rajesh Mohapatra', '+91 98765 11111', 'rajesh@email.com', 'Indian', 600),
+  ('shaw-g-2', 'prop-shaw-hotel', 'G-SH-2', 'Atul Kumar', '+91 98765 22222', 'atul@email.com', 'Indian', 100)
 on conflict (id) do nothing;
 
 insert into public.reservations (id, property_id, booking_no, guest_id, room_ref_id, source_id, check_in, check_out, balance, status, adults, children, nights, room_rate, total_amount, advance_paid, payment_mode) values
@@ -133,9 +133,9 @@ insert into public.reservations (id, property_id, booking_no, guest_id, room_ref
 on conflict (id) do nothing;
 
 -- ========== GRAND PALACE SEED ==========
-insert into public.room_types (id, property_id, code, name, description, base_rate, max_occupancy, status) values
-  ('gpr-rt-std', 'prop-grand-palace', 'STD', 'Standard', 'Coastal standard room', 3200, 2, 'Active'),
-  ('gpr-rt-ste', 'prop-grand-palace', 'STE', 'Suite', 'Ocean-view suite', 9500, 4, 'Active')
+insert into public.room_types (id, property_id, code, name, description, base_rate, status) values
+  ('gpr-rt-std', 'prop-grand-palace', 'STD', 'Standard', 'Coastal standard room', 3200, 'Active'),
+  ('gpr-rt-ste', 'prop-grand-palace', 'STE', 'Suite', 'Ocean-view suite', 9500, 'Active')
 on conflict (id) do nothing;
 
 insert into public.booking_sources (id, property_id, code, name, description, status) values
@@ -157,9 +157,9 @@ insert into public.hk_rooms (id, property_id, room_id, status) values
   ('gpr-hk-503', 'prop-grand-palace', 'gpr-rm-503', 'OUT_OF_SERVICE')
 on conflict (id) do nothing;
 
-insert into public.guests (id, property_id, guest_no, name, mobile, email, nationality, total_stays, loyalty_points) values
-  ('gpr-g-1', 'prop-grand-palace', 'G-GP-1', 'Sneha Reddy', '+91 91234 56789', 'sneha@email.com', 'Indian', 2, 300),
-  ('gpr-g-2', 'prop-grand-palace', 'G-GP-2', 'Michael Brown', '+91 88776 65544', 'm.brown@corp.com', 'American', 4, 1100)
+insert into public.guests (id, property_id, guest_no, name, mobile, email, nationality, loyalty_points) values
+  ('gpr-g-1', 'prop-grand-palace', 'G-GP-1', 'Sneha Reddy', '+91 91234 56789', 'sneha@email.com', 'Indian', 300),
+  ('gpr-g-2', 'prop-grand-palace', 'G-GP-2', 'Michael Brown', '+91 88776 65544', 'm.brown@corp.com', 'American', 1100)
 on conflict (id) do nothing;
 
 insert into public.reservations (id, property_id, booking_no, guest_id, room_ref_id, source_id, check_in, check_out, balance, status, adults, children, nights, room_rate, total_amount, advance_paid, payment_mode) values

@@ -3,7 +3,6 @@ export declare const tables: {
     readonly roomTypes: "room_types";
     readonly rooms: "rooms";
     readonly tariffPlans: "tariff_plans";
-    readonly marketSegments: "market_segments";
     readonly companies: "companies";
     readonly bookingSources: "booking_sources";
     readonly guests: "guests";
@@ -41,7 +40,6 @@ export declare const foModel: {
         readonly roomTypes: "room_types";
         readonly rooms: "rooms";
         readonly tariffPlans: "tariff_plans";
-        readonly marketSegments: "market_segments";
         readonly companies: "companies";
         readonly bookingSources: "booking_sources";
         readonly guests: "guests";

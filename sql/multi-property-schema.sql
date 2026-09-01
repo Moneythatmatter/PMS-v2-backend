@@ -44,7 +44,7 @@ declare
   t text;
 begin
   foreach t in array array[
-    'room_types', 'rooms', 'tariff_plans', 'market_segments', 'companies', 'booking_sources',
+    'room_types', 'rooms', 'tariff_plans', 'companies', 'booking_sources',
     'guests', 'reservations', 'guest_stay_history', 'folio_entries', 'folios', 'payments',
     'transactions', 'invoices', 'room_transfers', 'wake_up_calls', 'taxi_bookings',
     'luggage_items', 'messages', 'guest_feedback', 'lost_found_items', 'housekeeping_requests',
@@ -96,7 +96,6 @@ begin
     select * from (values
       ('room_types', 'code'),
       ('tariff_plans', 'code'),
-      ('market_segments', 'code'),
       ('booking_sources', 'code'),
       ('companies', 'code')
     ) as t(table_name, column_name)

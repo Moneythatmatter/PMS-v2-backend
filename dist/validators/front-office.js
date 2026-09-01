@@ -8,7 +8,6 @@ export const guestCreateSchema = z
     mobile: nonEmptyString("mobile"),
     email: optionalEmail,
     nationality: z.string().optional(),
-    totalStays: z.coerce.number().int().min(0).optional(),
     loyaltyPoints: z.coerce.number().int().min(0).optional(),
     idType: z.string().optional(),
     idNumber: z.string().optional(),

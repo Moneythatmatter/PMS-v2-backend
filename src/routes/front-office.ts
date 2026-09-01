@@ -21,8 +21,11 @@ import {
   paymentCreateSchema,
   paymentUpdateSchema,
 } from "../validators/front-office.js";
+import type { Guest } from "../types/front-office.js";
 import {
   assertGuestContactUnique,
+  attachGuestStayCount,
+  attachGuestStayCounts,
   getGuestByKey,
   sanitizeGuestInput,
 } from "../services/front-office/guest-lookup.js";
@@ -80,14 +83,6 @@ mountCrud(
 );
 mountCrud(
   router,
-  "/masters/market-segments",
-  createCrudController({
-    table: foModel.tables.marketSegments,
-    idPrefix: "MS",
-  }),
-);
-mountCrud(
-  router,
   "/masters/companies",
   createCrudController({
     table: foModel.tables.companies,
@@ -116,6 +111,10 @@ mountCrud(
     resolveId: async (key) => (await getGuestByKey(key))?.id ?? null,
     beforeCreate: async (body) => assertGuestContactUnique(body),
     beforeUpdate: async (id, body) => assertGuestContactUnique(body, id),
+    afterList: async (rows) =>
+      attachGuestStayCounts(rows as Guest[]) as Promise<typeof rows>,
+    afterGet: async (row) =>
+      attachGuestStayCount(row as Guest) as Promise<typeof row>,
   }),
 );
 mountCrud(

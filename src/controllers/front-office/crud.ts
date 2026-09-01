@@ -20,6 +20,8 @@ type CrudOptions = {
   resolveId?: (key: string) => Promise<string | null>;
   beforeCreate?: (body: Record<string, unknown>) => Promise<void>;
   beforeUpdate?: (id: string, body: Record<string, unknown>) => Promise<void>;
+  afterList?: <T>(rows: T[]) => Promise<T[]>;
+  afterGet?: <T>(row: T) => Promise<T>;
 };
 
 export function createCrudController(options: CrudOptions) {
@@ -44,6 +46,9 @@ export function createCrudController(options: CrudOptions) {
         if (options.mapOutgoing) {
           rows = rows.map((r) => options.mapOutgoing!(r));
         }
+        if (options.afterList) {
+          rows = await options.afterList(rows);
+        }
         return ok(res, rows);
       } catch (e) {
         return fromError(res, e);
@@ -56,6 +61,7 @@ export function createCrudController(options: CrudOptions) {
         let row = await foModel.get(options.table, id, idCol);
         if (!row) return fail(res, "Not found", 404);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
+        if (options.afterGet) row = await options.afterGet(row);
         return ok(res, row);
       } catch (e) {
         return fromError(res, e);
@@ -77,6 +83,7 @@ export function createCrudController(options: CrudOptions) {
         }
         let row = await foModel.create(options.table, body);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
+        if (options.afterGet) row = await options.afterGet(row);
         return ok(res, row, 201);
       } catch (e) {
         return fromError(res, e);
@@ -98,6 +105,7 @@ export function createCrudController(options: CrudOptions) {
         }
         let row = await foModel.update(options.table, id, body, idCol);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
+        if (options.afterGet) row = await options.afterGet(row);
         return ok(res, row);
       } catch (e) {
         return fromError(res, e);

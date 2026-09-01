@@ -7,6 +7,7 @@ export interface Guest {
     mobile: string;
     email?: string;
     nationality?: string;
+    /** Computed from non-cancelled reservations — not stored on guests */
     totalStays?: number;
     loyaltyPoints?: number;
     idType?: string;

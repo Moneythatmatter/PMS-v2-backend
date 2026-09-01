@@ -642,6 +642,7 @@ export const ReservationService = {
       laundry: r.laundry ?? 0,
       status: String(r.status),
       isVip: r.isVip ?? false,
+      phone: r.phone,
       email: r.email,
       adults: r.adults ?? 1,
       children: r.children ?? 0,

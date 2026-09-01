@@ -17,6 +17,8 @@ type CrudOptions = {
     resolveId?: (key: string) => Promise<string | null>;
     beforeCreate?: (body: Record<string, unknown>) => Promise<void>;
     beforeUpdate?: (id: string, body: Record<string, unknown>) => Promise<void>;
+    afterList?: <T>(rows: T[]) => Promise<T[]>;
+    afterGet?: <T>(row: T) => Promise<T>;
 };
 export declare function createCrudController(options: CrudOptions): {
     list(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

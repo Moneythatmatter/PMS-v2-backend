@@ -8,13 +8,6 @@ alter table public.rooms add column if not exists bed_type text not null default
 alter table public.rooms add column if not exists is_active boolean not null default true;
 alter table public.rooms add column if not exists updated_at timestamptz default now();
 
--- Backfill max_occupancy from room_types when possible
-update public.rooms r
-set max_occupancy = rt.max_occupancy
-from public.room_types rt
-where rt.name = r.room_type
-  and r.max_occupancy = 2;
-
 alter table public.rooms drop column if exists guest_name;
 alter table public.rooms drop column if exists housekeeping;
 alter table public.rooms drop column if exists maintenance;

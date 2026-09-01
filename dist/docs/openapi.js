@@ -46,16 +46,18 @@ function errorResponses() {
         },
     };
 }
-function jsonBody(description = "Request body", example) {
+function jsonBody(description = "Request body", example, schemaRef) {
     return {
         required: true,
         content: {
             "application/json": {
-                schema: {
-                    type: "object",
-                    additionalProperties: true,
-                    ...(example ? { example } : {}),
-                },
+                schema: schemaRef
+                    ? { $ref: `#/components/schemas/${schemaRef}` }
+                    : {
+                        type: "object",
+                        additionalProperties: true,
+                        ...(example ? { example } : {}),
+                    },
             },
         },
         description,
@@ -89,16 +91,269 @@ function headerParam(name, description, required = false, example) {
     };
 }
 const bearerSecurity = [{ bearerAuth: [] }];
-const propertyDtoSchema = {
-    type: "object",
-    properties: {
-        id: { type: "string", format: "uuid" },
-        name: { type: "string", example: "Shaw Hotel" },
-        code: { type: "string", example: "SHAW" },
-        city: { type: "string", example: "Kolkata" },
-        timezone: { type: "string", example: "Asia/Kolkata" },
-        isDefault: { type: "boolean" },
-        status: { type: "string", example: "Active" },
+function envelope(dataSchema) {
+    return {
+        type: "object",
+        properties: {
+            success: { type: "boolean", example: true },
+            data: dataSchema,
+        },
+        required: ["success", "data"],
+    };
+}
+function envelopeRef(schemaName) {
+    return envelope({ $ref: `#/components/schemas/${schemaName}` });
+}
+function envelopeArrayRef(schemaName) {
+    return envelope({
+        type: "array",
+        items: { $ref: `#/components/schemas/${schemaName}` },
+    });
+}
+const apiSchemas = {
+    SuccessEnvelope: successSchema,
+    ErrorEnvelope: errorSchema,
+    HealthStatus: {
+        type: "object",
+        properties: {
+            status: { type: "string", example: "ok" },
+        },
+        required: ["status"],
+    },
+    ApiRootInfo: {
+        type: "object",
+        properties: {
+            message: { type: "string", example: "PMS API is running" },
+            version: { type: "string", example: "1.0.0" },
+            docs: { type: "string", example: "/api-docs" },
+            openapi: { type: "string", example: "/api-docs.json" },
+        },
+    },
+    LoginRequest: {
+        type: "object",
+        required: ["email", "password"],
+        properties: {
+            email: { type: "string", format: "email", example: "admin@gmail.com" },
+            password: { type: "string", format: "password", example: "123456" },
+        },
+    },
+    AuthUser: {
+        type: "object",
+        properties: {
+            id: { type: "string", example: "U-ADMIN" },
+            name: { type: "string", example: "ritgb" },
+            email: { type: "string", format: "email", example: "admin@gmail.com" },
+            role: { type: "string", example: "Administrator" },
+            initials: { type: "string", example: "RI" },
+            isSuperAdmin: { type: "boolean", example: true },
+        },
+        required: ["id", "name", "email", "role", "initials"],
+    },
+    LoginResponse: {
+        type: "object",
+        properties: {
+            token: {
+                type: "string",
+                description: "JWT bearer token — use in Authorization header",
+                example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+            },
+            user: { $ref: "#/components/schemas/AuthUser" },
+        },
+        required: ["token", "user"],
+    },
+    Property: {
+        type: "object",
+        properties: {
+            id: { type: "string", example: "prop-shaw-hotel" },
+            name: { type: "string", example: "Shaw Hotel" },
+            code: { type: "string", example: "bbsr" },
+            city: { type: "string", example: "Bhubaneswar" },
+            timezone: { type: "string", example: "Asia/Kolkata" },
+            isDefault: { type: "boolean", example: true },
+            status: { type: "string", enum: ["Active", "Inactive"], example: "Active" },
+        },
+        required: ["id", "name", "code", "city", "timezone", "isDefault", "status"],
+    },
+    CreatePropertyRequest: {
+        type: "object",
+        required: ["name", "code"],
+        properties: {
+            name: { type: "string", example: "Grand Palace Resort" },
+            code: { type: "string", example: "gpr" },
+            city: { type: "string", example: "Puri" },
+            timezone: { type: "string", example: "Asia/Kolkata" },
+            isDefault: { type: "boolean", default: false },
+        },
+    },
+    UpdatePropertyRequest: {
+        type: "object",
+        properties: {
+            name: { type: "string" },
+            code: { type: "string" },
+            city: { type: "string" },
+            timezone: { type: "string" },
+            status: { type: "string", enum: ["Active", "Inactive"] },
+        },
+    },
+    PlatformModule: {
+        type: "object",
+        properties: {
+            key: {
+                type: "string",
+                example: "front_office",
+                enum: [
+                    "dashboard",
+                    "front_office",
+                    "food_beverages",
+                    "housekeeping",
+                    "purchase_stores",
+                    "human_resources",
+                    "accounts",
+                    "sales_marketing",
+                    "system_settings",
+                ],
+            },
+            label: { type: "string", example: "Front Office" },
+        },
+        required: ["key", "label"],
+    },
+    PermissionLevel: {
+        type: "string",
+        enum: ["read", "write", "admin"],
+        example: "write",
+    },
+    UserPermission: {
+        type: "object",
+        properties: {
+            id: { type: "string" },
+            userId: { type: "string" },
+            propertyId: { type: "string" },
+            moduleKey: { type: "string", example: "front_office" },
+            permission: { $ref: "#/components/schemas/PermissionLevel" },
+        },
+        required: ["id", "userId", "propertyId", "moduleKey", "permission"],
+    },
+    PermissionAssignment: {
+        type: "object",
+        required: ["propertyId", "moduleKey", "permission"],
+        properties: {
+            propertyId: { type: "string", example: "prop-shaw-hotel" },
+            moduleKey: { type: "string", example: "front_office" },
+            permission: { $ref: "#/components/schemas/PermissionLevel" },
+        },
+    },
+    MyPermissionsMap: {
+        type: "object",
+        additionalProperties: { $ref: "#/components/schemas/PermissionLevel" },
+        example: {
+            dashboard: "read",
+            front_office: "write",
+            housekeeping: "read",
+        },
+    },
+    ManagedUser: {
+        type: "object",
+        allOf: [
+            { $ref: "#/components/schemas/AuthUser" },
+            {
+                type: "object",
+                properties: {
+                    status: { type: "string", example: "Active" },
+                    propertyIds: {
+                        type: "array",
+                        items: { type: "string" },
+                        example: ["prop-shaw-hotel"],
+                    },
+                    permissions: {
+                        type: "array",
+                        items: { $ref: "#/components/schemas/UserPermission" },
+                    },
+                },
+                required: ["status", "propertyIds", "permissions"],
+            },
+        ],
+    },
+    CreateUserRequest: {
+        type: "object",
+        required: ["name", "email", "password"],
+        properties: {
+            name: { type: "string", example: "FO Shaw" },
+            email: { type: "string", format: "email", example: "fo.shaw@hotel.com" },
+            password: { type: "string", format: "password", example: "123456" },
+            role: { type: "string", example: "Front Office" },
+            initials: { type: "string", example: "FS" },
+            isSuperAdmin: { type: "boolean", default: false },
+            propertyIds: {
+                type: "array",
+                items: { type: "string" },
+                example: ["prop-shaw-hotel"],
+            },
+            permissions: {
+                type: "array",
+                items: { $ref: "#/components/schemas/PermissionAssignment" },
+            },
+        },
+    },
+    UpdateUserRequest: {
+        type: "object",
+        properties: {
+            name: { type: "string" },
+            role: { type: "string" },
+            status: { type: "string", enum: ["Active", "Inactive"] },
+            isSuperAdmin: { type: "boolean" },
+            propertyIds: { type: "array", items: { type: "string" } },
+            permissions: {
+                type: "array",
+                items: { $ref: "#/components/schemas/PermissionAssignment" },
+            },
+        },
+    },
+    FoRoom: {
+        type: "object",
+        properties: {
+            id: { type: "string" },
+            roomNo: { type: "string", example: "201" },
+            type: { type: "string", example: "Standard" },
+            floor: { type: "string", example: "2nd Floor" },
+            bedType: { type: "string", example: "Queen" },
+            maxOccupancy: { type: "integer", example: 2 },
+            status: {
+                type: "string",
+                enum: ["Vacant", "Occupied", "Dirty", "Clean", "Maintenance", "Blocked", "Reserved"],
+            },
+            housekeeping: { type: "string" },
+            maintenance: { type: "string" },
+        },
+    },
+    FoRoomStatusCard: {
+        type: "object",
+        properties: {
+            roomNo: { type: "string", example: "201" },
+            type: { type: "string", example: "Standard" },
+            floor: { type: "string", example: "2nd Floor" },
+            status: { type: "string", example: "Vacant" },
+            guestName: { type: "string", nullable: true },
+            checkoutDate: { type: "string", nullable: true },
+            maintenance: { type: "string", example: "OK" },
+        },
+    },
+    FoReservation: {
+        type: "object",
+        properties: {
+            id: { type: "string" },
+            bookingNo: { type: "string", example: "BK-2026-001" },
+            guestName: { type: "string", example: "Rahul Sharma" },
+            phone: { type: "string" },
+            roomType: { type: "string", example: "Deluxe" },
+            checkIn: { type: "string", format: "date", example: "2026-08-05" },
+            checkOut: { type: "string", format: "date", example: "2026-08-08" },
+            status: {
+                type: "string",
+                enum: ["Reserved", "Checked In", "Checked Out", "Cancelled", "No Show"],
+            },
+            roomNo: { type: "string", nullable: true },
+            amount: { type: "number" },
+        },
     },
 };
 /** Standard list / get / create / update / delete for a resource */
@@ -206,7 +461,7 @@ const TAGS = [
     { name: "FO · Dashboard", description: "Front Office dashboard overview" },
     { name: "FO · Reservations", description: "Bookings, check-in, check-out, extend stay" },
     { name: "FO · Rooms", description: "Room inventory, availability, and status cards" },
-    { name: "FO · Masters", description: "Room types, tariff plans, market segments, companies, booking sources" },
+    { name: "FO · Masters", description: "Room types, tariff plans, companies, booking sources" },
     { name: "FO · Guests", description: "Guest profiles and stay history" },
     { name: "FO · Billing", description: "Folio, payments, and invoices" },
     { name: "FO · Guest Services", description: "Transfers, wake-ups, taxi, luggage, messages, feedback, HK & maintenance requests, lost & found" },
@@ -241,7 +496,7 @@ const systemPaths = {
         get: {
             tags: ["System"],
             summary: "API root",
-            responses: { "200": okResponse("API is running") },
+            responses: { "200": okResponse("API is running", envelopeRef("ApiRootInfo")) },
         },
     },
     "/health": {
@@ -249,10 +504,7 @@ const systemPaths = {
             tags: ["System"],
             summary: "Health check",
             responses: {
-                "200": okResponse("Service healthy", {
-                    type: "object",
-                    properties: { status: { type: "string", example: "ok" } },
-                }),
+                "200": okResponse("Service healthy", envelopeRef("HealthStatus")),
             },
         },
     },
@@ -263,12 +515,9 @@ const authPaths = {
             tags: ["Auth"],
             summary: "Login",
             description: "Authenticate with email and password. Returns JWT and user profile.",
-            requestBody: jsonBody("Credentials", {
-                email: "admin@hotel.com",
-                password: "password",
-            }),
+            requestBody: jsonBody("Credentials", undefined, "LoginRequest"),
             responses: {
-                "200": okResponse("Login success — token + user"),
+                "200": okResponse("Login success — token + user", envelopeRef("LoginResponse")),
                 ...errorResponses(),
             },
         },
@@ -280,7 +529,7 @@ const authPaths = {
             description: "Returns the authenticated user from Bearer token.",
             security: [{ bearerAuth: [] }],
             responses: {
-                "200": okResponse("Current user"),
+                "200": okResponse("Current user", envelopeRef("AuthUser")),
                 ...errorResponses(),
             },
         },
@@ -295,13 +544,7 @@ const platformPaths = mergePaths({
             description: "Returns hotels/properties the authenticated user can open. Super admins see all active properties.",
             security: bearerSecurity,
             responses: {
-                "200": okResponse("List of properties", {
-                    ...successSchema,
-                    properties: {
-                        success: { type: "boolean", example: true },
-                        data: { type: "array", items: propertyDtoSchema },
-                    },
-                }),
+                "200": okResponse("List of properties", envelopeArrayRef("Property")),
                 ...errorResponses(),
             },
         },
@@ -310,15 +553,9 @@ const platformPaths = mergePaths({
             summary: "Create property",
             description: "Super admin only. Creates a new hotel/property workspace.",
             security: bearerSecurity,
-            requestBody: jsonBody("New property", {
-                name: "Grand Palace",
-                code: "GPR",
-                city: "Mumbai",
-                timezone: "Asia/Kolkata",
-                isDefault: false,
-            }),
+            requestBody: jsonBody("New property", undefined, "CreatePropertyRequest"),
             responses: {
-                "201": okResponse("Created property"),
+                "201": okResponse("Created property", envelopeRef("Property")),
                 ...errorResponses(),
             },
         },
@@ -330,15 +567,9 @@ const platformPaths = mergePaths({
             description: "Super admin only.",
             security: bearerSecurity,
             parameters: [idParam("id", "Property UUID")],
-            requestBody: jsonBody("Property fields to update", {
-                name: "Grand Palace",
-                code: "GPR",
-                city: "Mumbai",
-                timezone: "Asia/Kolkata",
-                status: "Active",
-            }),
+            requestBody: jsonBody("Property fields to update", undefined, "UpdatePropertyRequest"),
             responses: {
-                "200": okResponse("Updated property"),
+                "200": okResponse("Updated property", envelopeRef("Property")),
                 ...errorResponses(),
             },
         },
@@ -350,7 +581,7 @@ const platformPaths = mergePaths({
             description: "Module keys used for per-property permission assignment.",
             security: bearerSecurity,
             responses: {
-                "200": okResponse("Module catalog"),
+                "200": okResponse("Module catalog", envelopeArrayRef("PlatformModule")),
                 ...errorResponses(),
             },
         },
@@ -362,11 +593,11 @@ const platformPaths = mergePaths({
             description: "Returns module permission levels for the current user on the given property. Pass `propertyId` query or `X-Property-Id` header.",
             security: bearerSecurity,
             parameters: [
-                queryParam("propertyId", "Property UUID", "00000000-0000-0000-0000-000000000001"),
-                headerParam("X-Property-Id", "Active property UUID (alternative to propertyId query)", false, "00000000-0000-0000-0000-000000000001"),
+                queryParam("propertyId", "Property UUID", "prop-shaw-hotel"),
+                headerParam("X-Property-Id", "Active property UUID (alternative to propertyId query)", false, "prop-shaw-hotel"),
             ],
             responses: {
-                "200": okResponse("Permission map by module key"),
+                "200": okResponse("Permission map by module key", envelopeRef("MyPermissionsMap")),
                 ...errorResponses(),
             },
         },
@@ -378,7 +609,7 @@ const platformPaths = mergePaths({
             description: "Super admin only.",
             security: bearerSecurity,
             responses: {
-                "200": okResponse("Users with property access and permissions"),
+                "200": okResponse("Users with property access and permissions", envelopeArrayRef("ManagedUser")),
                 ...errorResponses(),
             },
         },
@@ -387,19 +618,9 @@ const platformPaths = mergePaths({
             summary: "Create user",
             description: "Super admin only.",
             security: bearerSecurity,
-            requestBody: jsonBody("New user", {
-                name: "Front Office User",
-                email: "fo.shaw@hotel.com",
-                password: "123456",
-                role: "Front Office",
-                isSuperAdmin: false,
-                propertyIds: ["00000000-0000-0000-0000-000000000001"],
-                permissions: [
-                    { propertyId: "00000000-0000-0000-0000-000000000001", moduleKey: "front_office", permission: "write" },
-                ],
-            }),
+            requestBody: jsonBody("New user", undefined, "CreateUserRequest"),
             responses: {
-                "201": okResponse("Created user"),
+                "201": okResponse("Created user", envelopeRef("ManagedUser")),
                 ...errorResponses(),
             },
         },
@@ -411,9 +632,9 @@ const platformPaths = mergePaths({
             description: "Super admin only — role, status, property access, permissions.",
             security: bearerSecurity,
             parameters: [idParam("id", "User UUID")],
-            requestBody: jsonBody(),
+            requestBody: jsonBody("User fields to update", undefined, "UpdateUserRequest"),
             responses: {
-                "200": okResponse("Updated user"),
+                "200": okResponse("Updated user", envelopeRef("ManagedUser")),
                 ...errorResponses(),
             },
         },
@@ -534,7 +755,10 @@ const foPaths = mergePaths({
             tags: ["FO · Rooms"],
             summary: "Room status cards",
             description: "Card view used by Room Status and check-in room picker.",
-            responses: { "200": okResponse(), ...errorResponses() },
+            responses: {
+                "200": okResponse("Room status cards", envelopeArrayRef("FoRoomStatusCard")),
+                ...errorResponses(),
+            },
         },
     },
     [`${foBase}/rooms/{id}`]: {
@@ -561,7 +785,7 @@ const foPaths = mergePaths({
     },
 }, 
 // Masters
-crudPaths(`${foBase}/masters/room-types`, "FO · Masters", "room types", { idPrefix: "RT" }), crudPaths(`${foBase}/masters/tariff-plans`, "FO · Masters", "tariff plans", { idPrefix: "TP" }), crudPaths(`${foBase}/masters/market-segments`, "FO · Masters", "market segments", { idPrefix: "MS" }), crudPaths(`${foBase}/masters/companies`, "FO · Masters", "companies", { idPrefix: "CO" }), crudPaths(`${foBase}/masters/booking-sources`, "FO · Masters", "booking sources", { idPrefix: "BS" }), 
+crudPaths(`${foBase}/masters/room-types`, "FO · Masters", "room types", { idPrefix: "RT" }), crudPaths(`${foBase}/masters/tariff-plans`, "FO · Masters", "tariff plans", { idPrefix: "TP" }), crudPaths(`${foBase}/masters/companies`, "FO · Masters", "companies", { idPrefix: "CO" }), crudPaths(`${foBase}/masters/booking-sources`, "FO · Masters", "booking sources", { idPrefix: "BS" }), 
 // Guests
 crudPaths(`${foBase}/guests`, "FO · Guests", "guests", { idPrefix: "G" }), crudPaths(`${foBase}/guest-stay-history`, "FO · Guests", "stay history records", {
     idPrefix: "SH",
@@ -1060,10 +1284,7 @@ export const openApiDocument = {
                 description: "JWT from `POST /api/auth/login`",
             },
         },
-        schemas: {
-            SuccessEnvelope: successSchema,
-            ErrorEnvelope: errorSchema,
-        },
+        schemas: apiSchemas,
     },
     paths: mergePaths(systemPaths, authPaths, platformPaths, foPaths, fbPaths, hkPaths),
 };
