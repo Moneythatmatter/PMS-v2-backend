@@ -65,26 +65,20 @@ function mapReservationRow(raw: unknown): Reservation {
   return toCamel<Reservation>(raw as Record<string, unknown>);
 }
 
-async function patchRoomInventory(
-  roomRef: string,
-  patch: Record<string, unknown>,
-) {
-  if (!isRealRoomRef(roomRef)) return;
-  const room = await getRoomByRef(roomRef);
-  if (!room?.id) return;
-  await foModel.update(foModel.tables.rooms, room.id, patch);
+async function markRoomDirty(roomId: string): Promise<void> {
+  const { error } = await supabase.rpc("hk_ensure_room_dirty", {
+    p_room_id: roomId,
+  });
+  if (error) throw new DatabaseError(error.message);
 }
 
-async function reserveRoom(roomRef: string) {
-  await patchRoomInventory(roomRef, {
-    status: RoomStatus.RESERVED,
-  });
+/** FO room cards derive Reserved/Occupied from reservations; hk_rooms holds HK readiness only. */
+async function reserveRoom(_roomRef: string) {
+  /* no-op — reservation status is the source of truth */
 }
 
-async function occupyRoom(roomRef: string) {
-  await patchRoomInventory(roomRef, {
-    status: RoomStatus.OCCUPIED,
-  });
+async function occupyRoom(_roomRef: string) {
+  /* no-op — checked-in reservation drives Occupied in FO views */
 }
 
 async function releaseRoom(
@@ -92,9 +86,10 @@ async function releaseRoom(
   toStatus: string = RoomStatus.VACANT,
 ) {
   if (!isRealRoomRef(roomRef)) return;
-  await patchRoomInventory(String(roomRef).trim(), {
-    status: toStatus,
-  });
+  if (toStatus !== RoomStatus.DIRTY) return;
+  const room = await getRoomByRef(String(roomRef).trim());
+  if (!room?.id) return;
+  await markRoomDirty(room.id);
 }
 
 /**

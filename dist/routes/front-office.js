@@ -66,8 +66,8 @@ mountCrud(router, "/guests", createCrudController({
     resolveId: async (key) => (await getGuestByKey(key))?.id ?? null,
     beforeCreate: async (body) => assertGuestContactUnique(body),
     beforeUpdate: async (id, body) => assertGuestContactUnique(body, id),
-    afterList: attachGuestStayCounts,
-    afterGet: attachGuestStayCount,
+    afterList: async (rows) => attachGuestStayCounts(rows),
+    afterGet: async (row) => attachGuestStayCount(row),
 }));
 mountCrud(router, "/guest-stay-history", createCrudController({
     table: foModel.tables.guestStayHistory,

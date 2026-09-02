@@ -122,6 +122,7 @@ export interface InHouseGuest {
     laundry: number;
     status: string;
     isVip: boolean;
+    phone?: string;
     email?: string;
     adults: number;
     children: number;

@@ -1,5 +1,5 @@
--- Front Office transactional RPCs (run in Supabase SQL Editor)
--- Each function runs as a single Postgres transaction: all succeed or all roll back.
+-- Patch: check-in / check-out RPCs — stop writing rooms.status (column removed; use hk_rooms + reservations)
+-- Run once in Supabase SQL Editor after rooms-drop-status.sql
 
 create or replace function public.fo_check_in_reservation(
   p_reservation_id text,
@@ -13,7 +13,6 @@ security definer
 as $$
 declare
   r reservations%rowtype;
-  g_name text;
   result jsonb;
 begin
   select * into r from reservations where id = p_reservation_id for update;
@@ -28,8 +27,6 @@ begin
   if r.status in ('Checked In', 'In-House') then
     raise exception 'Guest is already checked in' using errcode = 'P0001';
   end if;
-
-  select name into g_name from guests where id = r.guest_id;
 
   update reservations
   set status = 'Checked In', arriving_today = false
@@ -153,3 +150,5 @@ $$;
 
 grant execute on function public.fo_check_in_reservation(text, text, text, text) to anon, authenticated;
 grant execute on function public.fo_check_out_reservation(text, text, numeric, text, text, text, text, text, text, text) to anon, authenticated;
+
+notify pgrst, 'schema cache';
