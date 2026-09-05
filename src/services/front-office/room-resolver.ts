@@ -2,6 +2,7 @@ import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import type { Room } from "../../types/front-office.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -10,47 +11,64 @@ export function isRoomUuid(value: string): boolean {
   return UUID_RE.test(value.trim());
 }
 
-/** Resolve room number or UUID to the rooms.id UUID for FK storage. */
+function applyPropertyScope<T extends { eq: (column: string, value: string) => T }>(
+  query: T,
+): T {
+  const propertyId = getActivePropertyId();
+  return propertyId ? query.eq("property_id", propertyId) : query;
+}
+
+/** Resolve room id or room number to rooms.id for FK storage. */
 export async function resolveRoomId(
   ref: string | null | undefined,
 ): Promise<string | null> {
   const trimmed = String(ref ?? "").trim();
   if (!trimmed) return null;
 
+  const byId = applyPropertyScope(
+    supabase.from(foModel.tables.rooms).select("id").eq("id", trimmed),
+  );
+  const { data: idRow, error: idError } = await byId.maybeSingle();
+  if (idError) throw new Error(idError.message);
+  if (idRow?.id) return String(idRow.id);
+
   if (isRoomUuid(trimmed)) {
-    const byId = await foModel.get<Room>(foModel.tables.rooms, trimmed);
-    return byId ? trimmed : null;
+    const byFoModel = await foModel.get<Room>(foModel.tables.rooms, trimmed);
+    return byFoModel ? trimmed : null;
   }
 
-  const { data, error } = await supabase
-    .from(foModel.tables.rooms)
-    .select("id")
-    .eq("room_no", trimmed)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  return data?.id ? String(data.id) : null;
+  const byRoomNo = applyPropertyScope(
+    supabase.from(foModel.tables.rooms).select("id").eq("room_no", trimmed),
+  );
+  const { data: noRow, error: noError } = await byRoomNo.maybeSingle();
+  if (noError) throw new Error(noError.message);
+  return noRow?.id ? String(noRow.id) : null;
 }
 
-/** Load room by UUID id or display room number. */
+/** Load room by rooms.id or display room number. */
 export async function getRoomByRef(
   ref: string | null | undefined,
 ): Promise<Room | null> {
   const trimmed = String(ref ?? "").trim();
   if (!trimmed) return null;
 
+  const byId = applyPropertyScope(
+    supabase.from(foModel.tables.rooms).select("*").eq("id", trimmed),
+  );
+  const { data: idRow, error: idError } = await byId.maybeSingle();
+  if (idError) throw new Error(idError.message);
+  if (idRow) return toCamel<Room>(idRow);
+
   if (isRoomUuid(trimmed)) {
     return foModel.get<Room>(foModel.tables.rooms, trimmed);
   }
 
-  const { data, error } = await supabase
-    .from(foModel.tables.rooms)
-    .select("*")
-    .eq("room_no", trimmed)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  return data ? toCamel<Room>(data) : null;
+  const byRoomNo = applyPropertyScope(
+    supabase.from(foModel.tables.rooms).select("*").eq("room_no", trimmed),
+  );
+  const { data: noRow, error: noError } = await byRoomNo.maybeSingle();
+  if (noError) throw new Error(noError.message);
+  return noRow ? toCamel<Room>(noRow) : null;
 }
 
 /** Batch-fetch rooms by id and/or room_no; map keyed by rooms.id. */
@@ -61,44 +79,30 @@ export async function fetchRoomsByRefs(
   const unique = [...new Set(refs.map((r) => r.trim()).filter(Boolean))];
   if (!unique.length) return map;
 
-  const ids = unique.filter(isRoomUuid);
-  const roomNos = unique.filter((r) => !isRoomUuid(r));
+  const ingest = (rows: Record<string, unknown>[] | null) => {
+    for (const row of rows ?? []) {
+      const room = toCamel<Room>(row);
+      map.set(String(room.id), room);
+    }
+  };
 
-  const queries: Promise<void>[] = [];
+  const byIds = applyPropertyScope(
+    supabase.from(foModel.tables.rooms).select("*").in("id", unique),
+  );
+  const { data: idRows, error: idError } = await byIds;
+  if (idError) throw new Error(idError.message);
+  ingest(idRows);
 
-  if (ids.length) {
-    queries.push(
-      (async () => {
-        const { data, error } = await supabase
-          .from(foModel.tables.rooms)
-          .select("*")
-          .in("id", ids);
-        if (error) throw new Error(error.message);
-        for (const row of data ?? []) {
-          const room = toCamel<Room>(row);
-          map.set(String(room.id), room);
-        }
-      })(),
+  const unresolved = unique.filter((ref) => !lookupRoomInMap(map, ref));
+  if (unresolved.length) {
+    const byRoomNos = applyPropertyScope(
+      supabase.from(foModel.tables.rooms).select("*").in("room_no", unresolved),
     );
+    const { data: noRows, error: noError } = await byRoomNos;
+    if (noError) throw new Error(noError.message);
+    ingest(noRows);
   }
 
-  if (roomNos.length) {
-    queries.push(
-      (async () => {
-        const { data, error } = await supabase
-          .from(foModel.tables.rooms)
-          .select("*")
-          .in("room_no", roomNos);
-        if (error) throw new Error(error.message);
-        for (const row of data ?? []) {
-          const room = toCamel<Room>(row);
-          map.set(String(room.id), room);
-        }
-      })(),
-    );
-  }
-
-  await Promise.all(queries);
   return map;
 }
 
@@ -109,9 +113,8 @@ export function lookupRoomInMap(
   const trimmed = String(ref ?? "").trim();
   if (!trimmed) return undefined;
 
-  if (isRoomUuid(trimmed)) return map.get(trimmed);
-
   for (const room of map.values()) {
+    if (String(room.id) === trimmed) return room;
     if (String(room.roomNo ?? "") === trimmed) return room;
   }
   return undefined;

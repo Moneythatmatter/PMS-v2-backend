@@ -2,6 +2,7 @@ import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import type { Guest, Reservation, Room } from "../../types/front-office.js";
+import { AppError } from "../../errors/index.js";
 import {
   fetchRoomsByRefs,
   lookupRoomInMap,
@@ -20,13 +21,9 @@ export function isRealRoomRef(roomRef: unknown): roomRef is string {
   return !/^(tba|n\/?a|unassigned|-)$/i.test(value);
 }
 
-/** Prefer human room number for UI (never expose rooms.id UUID). */
+/** Prefer human room number for UI (never expose rooms.id). */
 export function displayRoomNo(row: Partial<Reservation>): string {
-  const no = String(row.roomNo ?? "").trim();
-  if (no) return no;
-  const ref = String(row.roomRefId ?? "").trim();
-  if (ref && !/^[0-9a-f-]{36}$/i.test(ref)) return ref;
-  return "";
+  return String(row.roomNo ?? "").trim();
 }
 
 /** Resolve room ref from API payload (roomRefId or legacy roomNo). */
@@ -89,9 +86,13 @@ export async function normalizeReservationRoomRef(
   body: Record<string, unknown>,
 ): Promise<void> {
   if (body.roomRefId == null || body.roomRefId === "") return;
-  const resolved = await resolveRoomId(String(body.roomRefId));
-  if (resolved) body.roomRefId = resolved;
-  else delete body.roomRefId;
+  const raw = String(body.roomRefId).trim();
+  const resolved = await resolveRoomId(raw);
+  if (resolved) {
+    body.roomRefId = resolved;
+    return;
+  }
+  throw new AppError(`Room "${raw}" was not found for this property.`);
 }
 
 /** Resolve source name / code / UUID from API to booking_sources.id for FK storage. */
