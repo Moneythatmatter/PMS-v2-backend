@@ -12,10 +12,14 @@ import {
   resolveHkTaskId,
   resolveRoomIdForTask,
   sanitizeHkTaskInput,
+  validateHkTaskScheduleNotInPast,
   type HkTaskScheduleInput,
 } from "./hk-task-enrich.js";
 import { persistHkRoomRow, resolveHkRoomId } from "./hk-room-enrich.js";
 import { throwIfRlsError } from "../../utils/db-errors.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
+import { ReservationService } from "../front-office/reservation.service.js";
+import { ReservationStatus } from "../../constants/front-office.js";
 import {
   normalizeHkTaskPriority,
   normalizeHkTaskStatus,
@@ -177,6 +181,18 @@ export const HkTaskService = {
     if (body.bookingId === "") body.bookingId = null;
     if (body.requestId === "") body.requestId = null;
 
+    if (body.bookingId) {
+      const current = await ReservationService.findCurrentForRoom(roomKey);
+      const isActiveInHouse =
+        current &&
+        String(current.id) === String(body.bookingId) &&
+        (current.status === ReservationStatus.CHECKED_IN ||
+          current.status === ReservationStatus.IN_HOUSE);
+      if (!isActiveInHouse) {
+        body.bookingId = null;
+      }
+    }
+
     if (!schedule.scheduledDate && schedule.scheduledStartAt) {
       schedule.scheduledDate = schedule.scheduledStartAt.slice(0, 10);
     }
@@ -184,7 +200,19 @@ export const HkTaskService = {
       schedule.scheduledDate = schedule.dueAt.slice(0, 10);
     }
 
+    const scheduleError = validateHkTaskScheduleNotInPast(schedule);
+    if (scheduleError) throw new AppError(scheduleError, 400);
+
     Object.assign(body, buildHkTaskSchedulePayload(schedule));
+
+    const propertyId = getActivePropertyId();
+    if (propertyId) {
+      const created = await persistHkTaskRow(body, { mode: "create" });
+      if (body.status === "PENDING" && body.taskType !== "INSPECTION") {
+        await syncHkRoomForTask(roomId, { status: "DIRTY" });
+      }
+      return enrichHkTask(created);
+    }
 
     let row: HkTask;
 

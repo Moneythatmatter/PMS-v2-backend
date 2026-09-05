@@ -2,6 +2,9 @@ import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { hkModel } from "../../models/housekeeping/index.js";
 import { toCamel } from "../../utils/mappers.js";
+import type { Reservation } from "../../types/front-office.js";
+import { enrichReservations } from "../front-office/reservation-enrich.js";
+import { buildActiveBookingByRoomNo } from "../front-office/room-hk-status.js";
 import type { HkRoom } from "../../types/housekeeping.js";
 
 type FoRoom = {
@@ -16,6 +19,39 @@ type FoRoom = {
 
 type UserRow = { id: string; name?: string };
 type StaffRow = { id: string; name?: string };
+
+type BookingOverlay = {
+  guestName?: string;
+  checkoutDate?: string;
+  isOccupied: boolean;
+};
+
+function isInHouseReservation(status: unknown): boolean {
+  const value = String(status ?? "");
+  return value === "Checked In" || value === "In-House";
+}
+
+async function fetchActiveBookingsByRoomNo(): Promise<Map<string, BookingOverlay>> {
+  try {
+    const reservations = await enrichReservations(
+      await foModel.list<Reservation>(foModel.tables.reservations),
+    );
+    const bookingByRoom = buildActiveBookingByRoomNo(reservations);
+    const map = new Map<string, BookingOverlay>();
+
+    for (const [roomNo, booking] of bookingByRoom) {
+      map.set(roomNo, {
+        guestName: String(booking.guestName ?? "").trim() || undefined,
+        checkoutDate: String(booking.checkOut ?? "").trim() || undefined,
+        isOccupied: isInHouseReservation(booking.status),
+      });
+    }
+
+    return map;
+  } catch {
+    return new Map();
+  }
+}
 
 function isHkRoomStaffFkError(message: string): boolean {
   return /hk_rooms_(assigned_to|inspected_by)_fkey/i.test(message);
@@ -226,6 +262,7 @@ function applyEnrichment(
   room?: FoRoom,
   staff: Map<string, StaffRow> = new Map(),
   users: Map<string, UserRow> = new Map(),
+  booking?: BookingOverlay,
 ): HkRoom {
   return {
     ...row,
@@ -237,18 +274,24 @@ function applyEnrichment(
     isActive: room?.isActive ?? row.isActive,
     assignedToName: staffOrUserName(row.assignedTo, staff, users),
     inspectedByName: staffOrUserName(row.inspectedBy, staff, users),
+    guestName: booking?.guestName,
+    checkoutDate: booking?.checkoutDate,
+    isOccupied: booking?.isOccupied ?? false,
   };
 }
 
 export async function enrichHkRoom(row: HkRoom): Promise<HkRoom> {
   const roomId = String(row.roomId ?? "");
   const staffIds = [row.assignedTo, row.inspectedBy].filter(Boolean).map(String);
-  const [roomMap, staffMap, userMap] = await Promise.all([
+  const [roomMap, staffMap, userMap, bookingByRoom] = await Promise.all([
     roomId ? fetchFoRoomsByIds([roomId]) : Promise.resolve(new Map()),
     fetchStaffByIds(staffIds),
     fetchUsersByIds(staffIds),
+    fetchActiveBookingsByRoomNo(),
   ]);
-  return applyEnrichment(row, roomMap.get(roomId), staffMap, userMap);
+  const foRoom = roomMap.get(roomId);
+  const booking = foRoom?.roomNo ? bookingByRoom.get(String(foRoom.roomNo)) : undefined;
+  return applyEnrichment(row, foRoom, staffMap, userMap, booking);
 }
 
 export async function enrichHkRooms(rows: HkRoom[]): Promise<HkRoom[]> {
@@ -264,20 +307,18 @@ export async function enrichHkRooms(rows: HkRoom[]): Promise<HkRoom[]> {
     ),
   ];
 
-  const [roomMap, staffMap, userMap] = await Promise.all([
+  const [roomMap, staffMap, userMap, bookingByRoom] = await Promise.all([
     fetchFoRoomsByIds(roomIds),
     fetchStaffByIds(staffIds),
     fetchUsersByIds(staffIds),
+    fetchActiveBookingsByRoomNo(),
   ]);
 
-  return rows.map((row) =>
-    applyEnrichment(
-      row,
-      roomMap.get(String(row.roomId)),
-      staffMap,
-      userMap,
-    ),
-  );
+  return rows.map((row) => {
+    const foRoom = roomMap.get(String(row.roomId));
+    const booking = foRoom?.roomNo ? bookingByRoom.get(String(foRoom.roomNo)) : undefined;
+    return applyEnrichment(row, foRoom, staffMap, userMap, booking);
+  });
 }
 
 export { resolveRoomId };

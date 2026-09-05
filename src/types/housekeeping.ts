@@ -29,6 +29,10 @@ export interface HkRoom {
   /** Enriched from users */
   assignedToName?: string;
   inspectedByName?: string;
+  /** Enriched from active reservation */
+  guestName?: string;
+  checkoutDate?: string;
+  isOccupied?: boolean;
 }
 
 export function isHkRoomStatus(value: string): value is HkRoomStatus {

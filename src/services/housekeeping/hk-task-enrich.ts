@@ -2,6 +2,7 @@ import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { hkModel } from "../../models/housekeeping/index.js";
 import { toCamel } from "../../utils/mappers.js";
+import { todayIso } from "../../utils/date.js";
 import { resolveRoomId } from "./hk-room-enrich.js";
 import {
   resolveGuestRequestAssignee,
@@ -207,6 +208,41 @@ export function buildHkTaskSchedulePayload(
   if (input.scheduledStartAt) payload.scheduledStartAt = input.scheduledStartAt;
   if (input.dueAt) payload.dueAt = input.dueAt;
   return payload;
+}
+
+function normalizeIsoDate(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const y = parsed.getFullYear();
+  const m = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function validateHkTaskScheduleNotInPast(
+  schedule: HkTaskScheduleInput,
+  minDate: string = todayIso(),
+): string | null {
+  const min = normalizeIsoDate(minDate);
+  if (!min) return null;
+
+  const dates = [
+    schedule.scheduledDate,
+    schedule.scheduledStartAt?.slice(0, 10),
+    schedule.dueAt?.slice(0, 10),
+  ].filter((value): value is string => Boolean(value));
+
+  for (const date of dates) {
+    const normalized = normalizeIsoDate(date);
+    if (normalized && normalized < min) {
+      return "Scheduled date cannot be in the past";
+    }
+  }
+
+  return null;
 }
 
 async function fetchRoomsByIds(ids: string[]): Promise<Map<string, FoRoom>> {
