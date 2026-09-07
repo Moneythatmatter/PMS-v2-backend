@@ -2,6 +2,30 @@ import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { hkModel } from "../../models/housekeeping/index.js";
 import { toCamel } from "../../utils/mappers.js";
+import { enrichReservations } from "../front-office/reservation-enrich.js";
+import { buildActiveBookingByRoomNo } from "../front-office/room-hk-status.js";
+function isInHouseReservation(status) {
+    const value = String(status ?? "");
+    return value === "Checked In" || value === "In-House";
+}
+async function fetchActiveBookingsByRoomNo() {
+    try {
+        const reservations = await enrichReservations(await foModel.list(foModel.tables.reservations));
+        const bookingByRoom = buildActiveBookingByRoomNo(reservations);
+        const map = new Map();
+        for (const [roomNo, booking] of bookingByRoom) {
+            map.set(roomNo, {
+                guestName: String(booking.guestName ?? "").trim() || undefined,
+                checkoutDate: String(booking.checkOut ?? "").trim() || undefined,
+                isOccupied: isInHouseReservation(booking.status),
+            });
+        }
+        return map;
+    }
+    catch {
+        return new Map();
+    }
+}
 function isHkRoomStaffFkError(message) {
     return /hk_rooms_(assigned_to|inspected_by)_fkey/i.test(message);
 }
@@ -180,7 +204,7 @@ export async function resolveHkRoomId(key) {
         throw new Error(error.message);
     return data?.id ? String(data.id) : null;
 }
-function applyEnrichment(row, room, staff = new Map(), users = new Map()) {
+function applyEnrichment(row, room, staff = new Map(), users = new Map(), booking) {
     return {
         ...row,
         roomNo: room?.roomNo ?? row.roomNo,
@@ -191,17 +215,23 @@ function applyEnrichment(row, room, staff = new Map(), users = new Map()) {
         isActive: room?.isActive ?? row.isActive,
         assignedToName: staffOrUserName(row.assignedTo, staff, users),
         inspectedByName: staffOrUserName(row.inspectedBy, staff, users),
+        guestName: booking?.guestName,
+        checkoutDate: booking?.checkoutDate,
+        isOccupied: booking?.isOccupied ?? false,
     };
 }
 export async function enrichHkRoom(row) {
     const roomId = String(row.roomId ?? "");
     const staffIds = [row.assignedTo, row.inspectedBy].filter(Boolean).map(String);
-    const [roomMap, staffMap, userMap] = await Promise.all([
+    const [roomMap, staffMap, userMap, bookingByRoom] = await Promise.all([
         roomId ? fetchFoRoomsByIds([roomId]) : Promise.resolve(new Map()),
         fetchStaffByIds(staffIds),
         fetchUsersByIds(staffIds),
+        fetchActiveBookingsByRoomNo(),
     ]);
-    return applyEnrichment(row, roomMap.get(roomId), staffMap, userMap);
+    const foRoom = roomMap.get(roomId);
+    const booking = foRoom?.roomNo ? bookingByRoom.get(String(foRoom.roomNo)) : undefined;
+    return applyEnrichment(row, foRoom, staffMap, userMap, booking);
 }
 export async function enrichHkRooms(rows) {
     if (!rows.length)
@@ -213,12 +243,17 @@ export async function enrichHkRooms(rows) {
             .filter(Boolean)
             .map(String)),
     ];
-    const [roomMap, staffMap, userMap] = await Promise.all([
+    const [roomMap, staffMap, userMap, bookingByRoom] = await Promise.all([
         fetchFoRoomsByIds(roomIds),
         fetchStaffByIds(staffIds),
         fetchUsersByIds(staffIds),
+        fetchActiveBookingsByRoomNo(),
     ]);
-    return rows.map((row) => applyEnrichment(row, roomMap.get(String(row.roomId)), staffMap, userMap));
+    return rows.map((row) => {
+        const foRoom = roomMap.get(String(row.roomId));
+        const booking = foRoom?.roomNo ? bookingByRoom.get(String(foRoom.roomNo)) : undefined;
+        return applyEnrichment(row, foRoom, staffMap, userMap, booking);
+    });
 }
 export { resolveRoomId };
 //# sourceMappingURL=hk-room-enrich.js.map

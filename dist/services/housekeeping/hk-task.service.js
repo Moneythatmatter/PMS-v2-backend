@@ -1,9 +1,12 @@
 import { supabase } from "../../utils/supabase.js";
 import { hkModel } from "../../models/housekeeping/index.js";
 import { AppError, ConflictError, NotFoundError } from "../../errors/index.js";
-import { enrichHkTask, enrichHkTasks, buildHkTaskSchedulePayload, parseHkTaskScheduleInput, persistHkTaskRow, resolveHkTaskAssignee, resolveHkTaskAssigneeLabel, resolveHkTaskId, resolveRoomIdForTask, sanitizeHkTaskInput, } from "./hk-task-enrich.js";
+import { enrichHkTask, enrichHkTasks, buildHkTaskSchedulePayload, parseHkTaskScheduleInput, persistHkTaskRow, resolveHkTaskAssignee, resolveHkTaskAssigneeLabel, resolveHkTaskId, resolveRoomIdForTask, sanitizeHkTaskInput, validateHkTaskScheduleNotInPast, } from "./hk-task-enrich.js";
 import { persistHkRoomRow, resolveHkRoomId } from "./hk-room-enrich.js";
 import { throwIfRlsError } from "../../utils/db-errors.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
+import { ReservationService } from "../front-office/reservation.service.js";
+import { ReservationStatus } from "../../constants/front-office.js";
 import { normalizeHkTaskPriority, normalizeHkTaskStatus, normalizeHkTaskType, } from "../../types/housekeeping.js";
 const ACTIVE_STATUSES = [
     "PENDING",
@@ -130,13 +133,34 @@ export const HkTaskService = {
             body.bookingId = null;
         if (body.requestId === "")
             body.requestId = null;
+        if (body.bookingId) {
+            const current = await ReservationService.findCurrentForRoom(roomKey);
+            const isActiveInHouse = current &&
+                String(current.id) === String(body.bookingId) &&
+                (current.status === ReservationStatus.CHECKED_IN ||
+                    current.status === ReservationStatus.IN_HOUSE);
+            if (!isActiveInHouse) {
+                body.bookingId = null;
+            }
+        }
         if (!schedule.scheduledDate && schedule.scheduledStartAt) {
             schedule.scheduledDate = schedule.scheduledStartAt.slice(0, 10);
         }
         if (!schedule.scheduledDate && schedule.dueAt) {
             schedule.scheduledDate = schedule.dueAt.slice(0, 10);
         }
+        const scheduleError = validateHkTaskScheduleNotInPast(schedule);
+        if (scheduleError)
+            throw new AppError(scheduleError, 400);
         Object.assign(body, buildHkTaskSchedulePayload(schedule));
+        const propertyId = getActivePropertyId();
+        if (propertyId) {
+            const created = await persistHkTaskRow(body, { mode: "create" });
+            if (body.status === "PENDING" && body.taskType !== "INSPECTION") {
+                await syncHkRoomForTask(roomId, { status: "DIRTY" });
+            }
+            return enrichHkTask(created);
+        }
         let row;
         const { data: rpcId, error: rpcError } = await supabase.rpc("hk_create_task", {
             p_room_id: roomId,

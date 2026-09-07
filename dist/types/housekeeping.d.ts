@@ -21,6 +21,10 @@ export interface HkRoom {
     /** Enriched from users */
     assignedToName?: string;
     inspectedByName?: string;
+    /** Enriched from active reservation */
+    guestName?: string;
+    checkoutDate?: string;
+    isOccupied?: boolean;
 }
 export declare function isHkRoomStatus(value: string): value is HkRoomStatus;
 /** Map legacy UI labels to DB enum. */

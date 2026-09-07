@@ -21,6 +21,7 @@ export type HkTaskScheduleInput = {
 };
 export declare function parseHkTaskScheduleInput(input: Record<string, unknown>): HkTaskScheduleInput;
 export declare function buildHkTaskSchedulePayload(input: HkTaskScheduleInput): Record<string, unknown>;
+export declare function validateHkTaskScheduleNotInPast(schedule: HkTaskScheduleInput, minDate?: string): string | null;
 export declare function enrichHkTask(row: HkTask): Promise<HkTask>;
 export declare function enrichHkTasks(rows: HkTask[]): Promise<HkTask[]>;
 export declare function resolveHkTaskId(key: string): Promise<string | null>;

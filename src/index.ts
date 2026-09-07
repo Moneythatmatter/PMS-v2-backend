@@ -12,6 +12,7 @@ import housekeepingRoutes from "./routes/housekeeping.js";
 import purchaseStoresRoutes from "./routes/purchase-stores.js";
 import platformRoutes from "./routes/platform.js";
 import transactionsRoutes from "./routes/transactions.js";
+import humanResourcesRoutes from "./routes/human-resources.js";
 
 const app = express();
 const PORT = config.port;
@@ -41,6 +42,7 @@ app.use("/api/front-office", frontOfficeRoutes);
 app.use("/api/food-beverages", foodBeveragesRoutes);
 app.use("/api/housekeeping", housekeepingRoutes);
 app.use("/api/purchase-stores", purchaseStoresRoutes);
+app.use("/api/human-resources", humanResourcesRoutes);
 app.use("/api", transactionsRoutes);
 
 app.use(errorHandler);
@@ -54,5 +56,6 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("  [FB]   /api/food-beverages");
   console.log("  [HK]   /api/housekeeping");
   console.log("  [PS]   /api/purchase-stores");
+  console.log("  [HR]   /api/human-resources");
   console.log("  [TXN]  /api/transactions\n");
 });
