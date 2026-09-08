@@ -9,6 +9,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
+    "test:leave": "node --import tsx --test src/services/human-resources/leave/leave-integration.test.ts",
+    "test:weekly-off": "node --import tsx --test src/services/human-resources/weekly-off/weekly-off.service.test.ts",
     "seed:ps": "tsx scripts/seed-purchase-stores.ts"
   },
   "keywords": [],

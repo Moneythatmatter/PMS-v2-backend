@@ -177,8 +177,8 @@ create table if not exists hr_employees (
   employment_type_id text references hr_employment_types(id) on delete set null,
   shift_type_id text references hr_shift_types(id) on delete set null,
   leave_policy_id text references hr_leave_policies(id) on delete set null,
+  salary_structure_id text references hr_salary_structures(id) on delete set null,
   join_date date,
-  salary numeric(12,2) default 0,
   status text not null default 'Active',
   gender text,
   dob date,
@@ -224,23 +224,28 @@ create table if not exists hr_attendance_records (
   id text primary key default gen_random_uuid()::text,
   property_id text not null references properties(id) on delete cascade,
   employee_id text not null references hr_employees(id) on delete cascade,
-  shift_code text,
-  shift_name text,
-  record_date date not null,
-  check_in text,
-  check_out text,
-  worked_hours numeric(5,2) default 0,
-  expected_hours numeric(5,2) default 8,
-  status text not null default 'Present',
-  in_location text,
-  out_location text,
-  device_type text,
-  is_manual_entry boolean default false,
-  manual_reason text,
-  edited_by text,
-  edited_on timestamptz,
+  shift_id text references hr_shift_types(id) on delete set null,
+  attendance_date date not null,
+  day_type text not null default 'WORKING_DAY'
+    check (day_type in ('WORKING_DAY', 'HOLIDAY', 'WEEKLY_OFF')),
+  holiday_id text references hr_holidays(id) on delete set null,
+  attendance_status text not null default 'PRESENT'
+    check (attendance_status in ('PRESENT', 'ABSENT', 'LEAVE', 'HOLIDAY', 'WEEKLY_OFF', 'PENDING')),
+  punch_in timestamptz,
+  punch_out timestamptz,
+  scheduled_hours numeric(5,2) not null default 0,
+  worked_hours numeric(5,2) not null default 0,
+  extra_hours numeric(5,2) not null default 0,
+  holiday_worked boolean not null default false,
+  leave_request_id text references hr_leave_applications(id) on delete set null,
+  remarks text,
+  source text not null default 'MANUAL'
+    check (source in ('BIOMETRIC', 'MANUAL', 'IMPORT')),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  created_by text,
+  updated_by text,
+  unique (property_id, employee_id, attendance_date)
 );
 
 create table if not exists hr_shift_assignments (
@@ -293,6 +298,11 @@ create table if not exists hr_leave_applications (
   from_date date not null,
   to_date date not null,
   total_days numeric(5,1) not null,
+  calendar_days numeric(5,1),
+  effective_days numeric(5,1),
+  consumed_dates jsonb default '[]'::jsonb,
+  excluded_dates jsonb default '[]'::jsonb,
+  last_balance_transaction_id text,
   reason text,
   attachment_name text,
   status text not null default 'Pending',
@@ -303,6 +313,24 @@ create table if not exists hr_leave_applications (
   balances jsonb default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+create table if not exists hr_leave_balance_transactions (
+  id text primary key default gen_random_uuid()::text,
+  property_id text not null references properties(id) on delete cascade,
+  employee_id text not null references hr_employees(id) on delete cascade,
+  leave_type_id text references hr_leave_types(id) on delete set null,
+  leave_request_id text references hr_leave_applications(id) on delete set null,
+  transaction_type text not null
+    check (transaction_type in ('CONSUMED', 'RESTORED', 'ADJUSTED', 'OPENING', 'REVERSAL')),
+  days numeric(5,1) not null,
+  balance_before jsonb,
+  balance_after jsonb,
+  effective_dates jsonb default '[]'::jsonb,
+  transaction_date timestamptz not null default now(),
+  remarks text,
+  created_by text,
+  created_at timestamptz not null default now()
 );
 
 create table if not exists hr_overtime_records (
@@ -553,8 +581,18 @@ create table if not exists hr_audit_logs (
 
 create index if not exists idx_hr_employees_property on hr_employees(property_id);
 create index if not exists idx_hr_payroll_records_period on hr_payroll_records(property_id, payroll_year, payroll_month);
-create index if not exists idx_hr_attendance_date on hr_attendance_records(property_id, record_date);
+create index if not exists idx_hr_attendance_date on hr_attendance_records(property_id, attendance_date);
+create index if not exists idx_hr_attendance_employee on hr_attendance_records(property_id, employee_id, attendance_date);
+create index if not exists idx_hr_attendance_holiday on hr_attendance_records(property_id, holiday_id);
+create index if not exists idx_hr_attendance_shift on hr_attendance_records(property_id, shift_id);
 create index if not exists idx_hr_leave_apps_status on hr_leave_applications(property_id, status);
+create index if not exists idx_hr_leave_bal_txn_employee
+  on hr_leave_balance_transactions(property_id, employee_id, leave_type_id);
+create index if not exists idx_hr_leave_bal_txn_leave_req
+  on hr_leave_balance_transactions(leave_request_id);
+create unique index if not exists idx_hr_leave_bal_txn_consume_once
+  on hr_leave_balance_transactions(leave_request_id, transaction_type)
+  where transaction_type = 'CONSUMED';
 
 -- ========== RLS (anon access — same pattern as FO / HK / F&B) ==========
 do $$
@@ -565,7 +603,7 @@ begin
     'hr_departments','hr_designations','hr_employment_types','hr_shift_types','hr_leave_types',
     'hr_leave_policies','hr_holidays','hr_salary_components','hr_document_categories','hr_document_types',
     'hr_employees','hr_employee_documents','hr_attendance_records','hr_shift_assignments','hr_weekly_offs',
-    'hr_leave_applications','hr_overtime_records','hr_holiday_attendance_records','hr_salary_structures',
+    'hr_leave_applications','hr_leave_balance_transactions','hr_overtime_records','hr_holiday_attendance_records','hr_salary_structures',
     'hr_payroll_records','hr_salary_payments','hr_payslips','hr_complaint_categories','hr_complaints',
     'hr_approval_workflows','hr_payroll_settings','hr_tax_rules','hr_audit_logs'
   ]

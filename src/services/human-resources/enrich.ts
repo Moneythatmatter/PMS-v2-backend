@@ -5,6 +5,7 @@ type Dept = { id: string; departmentName: string };
 type Desig = { id: string; designationTitle: string };
 type EmpType = { id: string; typeName: string };
 type Shift = { id: string; shiftName: string };
+type SalaryStructureRef = { id: string; name: string; grossSalary?: number; netSalary?: number };
 type Employee = {
   id: string;
   empCode: string;
@@ -16,8 +17,8 @@ type Employee = {
   designationId?: string;
   employmentTypeId?: string;
   shiftTypeId?: string;
+  salaryStructureId?: string;
   joinDate?: string;
-  salary?: number;
   status: string;
   gender?: string;
   avatar?: string;
@@ -32,6 +33,7 @@ type LookupCaches = {
   designations: Map<string, string>;
   employmentTypes: Map<string, string>;
   shiftTypes: Map<string, string>;
+  salaryStructures: Map<string, SalaryStructureRef>;
 };
 
 const lookupCachesByProperty = new Map<string, LookupCaches>();
@@ -46,11 +48,12 @@ async function loadLookups(force = false): Promise<LookupCaches> {
     return lookupCachesByProperty.get(key)!;
   }
 
-  const [depts, desigs, empTypes, shifts] = await Promise.all([
+  const [depts, desigs, empTypes, shifts, structures] = await Promise.all([
     hrModel.list<Dept>(hrTables.departments),
     hrModel.list<Desig>(hrTables.designations),
     hrModel.list<EmpType>(hrTables.employmentTypes),
     hrModel.list<Shift>(hrTables.shiftTypes),
+    hrModel.list<SalaryStructureRef>(hrTables.salaryStructures),
   ]);
 
   const caches: LookupCaches = {
@@ -58,6 +61,17 @@ async function loadLookups(force = false): Promise<LookupCaches> {
     designations: new Map(desigs.map((d) => [d.id, d.designationTitle])),
     employmentTypes: new Map(empTypes.map((d) => [d.id, d.typeName])),
     shiftTypes: new Map(shifts.map((d) => [d.id, d.shiftName])),
+    salaryStructures: new Map(
+      structures.map((s) => [
+        s.id,
+        {
+          id: s.id,
+          name: s.name,
+          grossSalary: Number(s.grossSalary ?? 0),
+          netSalary: Number(s.netSalary ?? 0),
+        },
+      ]),
+    ),
   };
 
   lookupCachesByProperty.set(key, caches);
@@ -84,6 +98,9 @@ export async function enrichEmployee(emp: Employee) {
   let designation = resolve(emp.designationId, caches.designations);
   let employmentType = resolve(emp.employmentTypeId, caches.employmentTypes);
   let shiftType = resolve(emp.shiftTypeId, caches.shiftTypes);
+  const salaryStructure = emp.salaryStructureId
+    ? caches.salaryStructures.get(emp.salaryStructureId)
+    : undefined;
 
   // Self-heal stale/empty cache (e.g. first load before RLS patch or property switch).
   if (
@@ -99,6 +116,10 @@ export async function enrichEmployee(emp: Employee) {
     shiftType = resolve(emp.shiftTypeId, caches.shiftTypes);
   }
 
+  const structureAfterReload = emp.salaryStructureId
+    ? caches.salaryStructures.get(emp.salaryStructureId)
+    : undefined;
+
   return {
     ...emp,
     name: `${emp.firstName} ${emp.lastName}`.trim(),
@@ -106,6 +127,10 @@ export async function enrichEmployee(emp: Employee) {
     designation,
     employmentType,
     shiftType,
+    salaryStructureId: emp.salaryStructureId ?? "",
+    salaryStructureName: structureAfterReload?.name ?? salaryStructure?.name ?? "",
+    structureGrossSalary: structureAfterReload?.grossSalary ?? salaryStructure?.grossSalary ?? 0,
+    structureNetSalary: structureAfterReload?.netSalary ?? salaryStructure?.netSalary ?? 0,
   };
 }
 
