@@ -160,7 +160,8 @@ mountCrud(
 // Menu
 function mapCategoryIncoming(body: Record<string, unknown>): Record<string, unknown> {
   const b = mapMasterActiveIncoming(body);
-  if (b.parentId === "" || b.parentId === null) delete b.parentId;
+  delete b.parentId;
+  delete b.displayOrder;
   return b;
 }
 
@@ -183,9 +184,11 @@ function mapMenuItemIncoming(body: Record<string, unknown>): Record<string, unkn
     const num = Number(raw);
     if (Number.isFinite(num)) b.price = num;
   }
-  for (const key of ["categoryId", "taxGroupId", "imageUrl"] as const) {
+  for (const key of ["categoryId", "imageUrl"] as const) {
     if (b[key] === "") delete b[key];
   }
+  delete b.taxGroupId;
+  delete b.displayOrder;
   delete b.unitId;
   delete b.stationId;
   delete b.itemType;
@@ -210,7 +213,7 @@ mountCrud(
   createTableCrud({
     table: fbModel.tables.menuCategories,
     idPrefix: "MC",
-    orderBy: "display_order",
+    orderBy: "name",
     mapIncoming: mapCategoryIncoming,
     mapOutgoing: mapCategoryOutgoing,
   }),
@@ -221,7 +224,7 @@ mountCrud(
   createTableCrud({
     table: fbModel.tables.menuItems,
     idPrefix: "MI",
-    orderBy: "display_order",
+    orderBy: "name",
     mapIncoming: mapMenuItemIncoming,
     mapOutgoing: mapMenuItemOutgoing,
   }),

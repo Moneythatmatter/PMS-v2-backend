@@ -152,15 +152,10 @@ create table if not exists fnb_menu_categories (
   name varchar not null,
   code varchar unique,
   description text,
-  parent_id uuid references fnb_menu_categories (id) on delete set null,
-  display_order integer not null default 0,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
-create index if not exists idx_fnb_menu_categories_parent on fnb_menu_categories (parent_id);
-create index if not exists idx_fnb_menu_categories_display_order on fnb_menu_categories (display_order);
 
 do $$
 begin
@@ -176,11 +171,9 @@ create table if not exists fnb_menu_items (
   description text,
   category_id uuid not null references fnb_menu_categories (id) on delete restrict,
   unit_id uuid references fnb_units (id) on delete set null,
-  tax_group_id uuid references fnb_tax_groups (id) on delete set null,
   item_type fnb_item_type not null default 'FOOD',
   is_vegetarian boolean not null default false,
   is_active boolean not null default true,
-  display_order integer not null default 0,
   image_url text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -355,16 +348,16 @@ insert into fb_outlet_types (id, code, name, description, has_tables, has_kds, s
   ('OFT3', 'BAR', 'Bar', 'Bar service', 'Yes', 'No', 'Active')
 on conflict (id) do nothing;
 
-insert into fnb_menu_categories (id, code, name, description, display_order, is_active) values
-  ('a1000001-0000-4000-8000-000000000001', 'STAR', 'Starters', 'Appetizers and small plates', 1, true),
-  ('a1000001-0000-4000-8000-000000000002', 'MAIN', 'Main Course', 'Curries, grills, and mains', 2, true),
-  ('a1000001-0000-4000-8000-000000000003', 'BEV', 'Beverages', 'Hot and cold drinks', 3, true),
-  ('a1000001-0000-4000-8000-000000000004', 'DST', 'Desserts', 'Sweets and desserts', 4, true)
+insert into fnb_menu_categories (id, code, name, description, is_active) values
+  ('a1000001-0000-4000-8000-000000000001', 'STAR', 'Starters', 'Appetizers and small plates', true),
+  ('a1000001-0000-4000-8000-000000000002', 'MAIN', 'Main Course', 'Curries, grills, and mains', true),
+  ('a1000001-0000-4000-8000-000000000003', 'BEV', 'Beverages', 'Hot and cold drinks', true),
+  ('a1000001-0000-4000-8000-000000000004', 'DST', 'Desserts', 'Sweets and desserts', true)
 on conflict (id) do nothing;
 
 insert into fnb_menu_items (
-  id, item_code, name, description, category_id, unit_id, tax_group_id,
-  item_type, is_vegetarian, is_active, display_order
+  id, item_code, name, description, category_id, unit_id,
+  item_type, is_vegetarian, is_active
 ) values
   (
     'e3000001-0000-4000-8000-000000000001',
@@ -373,11 +366,9 @@ insert into fnb_menu_items (
     'Creamy tomato-based curry',
     'a1000001-0000-4000-8000-000000000002',
     'b2000001-0000-4000-8000-000000000003',
-    'c2000001-0000-4000-8000-000000000001',
     'FOOD',
     false,
-    true,
-    1
+    true
   ),
   (
     'e3000001-0000-4000-8000-000000000002',
@@ -386,11 +377,9 @@ insert into fnb_menu_items (
     'Grilled cottage cheese starter',
     'a1000001-0000-4000-8000-000000000001',
     'b2000001-0000-4000-8000-000000000003',
-    'c2000001-0000-4000-8000-000000000001',
     'FOOD',
     true,
-    true,
-    2
+    true
   )
 on conflict (id) do nothing;
 

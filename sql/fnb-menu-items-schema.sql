@@ -42,11 +42,9 @@ create table if not exists public.fnb_menu_items (
   name varchar not null,
   description text,
   category_id uuid not null references public.fnb_menu_categories (id) on delete restrict,
-  tax_group_id uuid references public.fnb_tax_groups (id) on delete set null,
   price numeric not null default 0,
   is_vegetarian boolean not null default false,
   is_active boolean not null default true,
-  display_order integer not null default 0,
   image_url text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -54,7 +52,6 @@ create table if not exists public.fnb_menu_items (
 
 create index if not exists idx_fnb_menu_items_category on public.fnb_menu_items (category_id);
 create index if not exists idx_fnb_menu_items_active on public.fnb_menu_items (is_active);
-create index if not exists idx_fnb_menu_items_display_order on public.fnb_menu_items (display_order);
 
 -- updated_at triggers
 create or replace function public.fnb_set_updated_at()
@@ -114,8 +111,8 @@ on conflict (id) do nothing;
 
 -- Seed menu items (requires fnb_menu_categories seed from fnb-menu-categories-schema.sql)
 insert into public.fnb_menu_items (
-  id, item_code, name, description, category_id, tax_group_id, price,
-  is_vegetarian, is_active, display_order
+  id, item_code, name, description, category_id, price,
+  is_vegetarian, is_active
 ) values
   (
     'e3000001-0000-4000-8000-000000000001',
@@ -123,11 +120,9 @@ insert into public.fnb_menu_items (
     'Butter Chicken',
     'Creamy tomato-based curry',
     'a1000001-0000-4000-8000-000000000002',
-    'c2000001-0000-4000-8000-000000000001',
     420,
     false,
-    true,
-    1
+    true
   ),
   (
     'e3000001-0000-4000-8000-000000000002',
@@ -135,11 +130,9 @@ insert into public.fnb_menu_items (
     'Paneer Tikka',
     'Grilled cottage cheese starter',
     'a1000001-0000-4000-8000-000000000001',
-    'c2000001-0000-4000-8000-000000000001',
     320,
     true,
-    true,
-    2
+    true
   ),
   (
     'e3000001-0000-4000-8000-000000000003',
@@ -147,11 +140,9 @@ insert into public.fnb_menu_items (
     'Fresh Lime Soda',
     'House-made lime soda',
     'a1000001-0000-4000-8000-000000000003',
-    'c2000001-0000-4000-8000-000000000001',
     120,
     true,
-    true,
-    3
+    true
   )
 on conflict (id) do nothing;
 
