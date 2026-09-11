@@ -15,11 +15,11 @@ export function normalizeHkRoomStatus(input) {
         return raw;
     if (/OUT.?OF.?SERVICE|OOO|OOS|BLOCKED/.test(raw))
         return "OUT_OF_SERVICE";
-    if (/INSPECTING|CLEANING|INSPECTION/.test(raw))
+    if (/INSPECTING|CLEANING/.test(raw))
         return "INSPECTING";
-    if (/INSPECTED|READY/.test(raw))
+    if (/INSPECTED|VACANT.?READY|^VACANT$|^READY$/.test(raw))
         return "INSPECTED";
-    if (/^CLEAN$/.test(raw))
+    if (/PENDING.?INSPECT|AWAITING.?INSPECT|^CLEAN$/.test(raw))
         return "CLEAN";
     if (/DIRTY/.test(raw))
         return "DIRTY";

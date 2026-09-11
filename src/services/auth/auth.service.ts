@@ -10,6 +10,7 @@ import {
   ValidationError,
 } from "../../errors/index.js";
 import type { AuthUserPublic, AuthUserRow } from "../../types/auth.js";
+import { buildEmployeePortalContext } from "../employee-portal/employee-context.service.js";
 
 const USERS_TABLE = "users";
 
@@ -20,7 +21,10 @@ type JwtPayload = {
   isSuperAdmin?: boolean;
 };
 
-function toPublic(user: AuthUserRow): AuthUserPublic {
+async function toPublic(user: AuthUserRow): Promise<AuthUserPublic> {
+  const employee = user.employeeId
+    ? await buildEmployeePortalContext(user.employeeId)
+    : null;
   return {
     id: user.id,
     name: user.name,
@@ -28,6 +32,8 @@ function toPublic(user: AuthUserRow): AuthUserPublic {
     role: user.role,
     initials: user.initials,
     isSuperAdmin: Boolean(user.isSuperAdmin),
+    employeeId: user.employeeId ?? null,
+    employee,
   };
 }
 
@@ -100,7 +106,7 @@ export const AuthService = {
       throw new UnauthorizedError("Invalid email or password");
     }
 
-    const publicUser = toPublic(user);
+    const publicUser = await toPublic(user);
     const token = signToken(publicUser);
     return { user: publicUser, token };
   },
@@ -113,7 +119,7 @@ export const AuthService = {
       if (user.status && user.status !== "Active") {
         throw new UnauthorizedError("Account is inactive");
       }
-      return toPublic(user);
+      return await toPublic(user);
     } catch (e) {
       if (e instanceof AppError) throw e;
       throw new UnauthorizedError("Invalid or expired token");

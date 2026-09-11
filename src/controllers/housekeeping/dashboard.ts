@@ -22,20 +22,21 @@ export async function getDashboard(_req: Request, res: Response) {
         }),
       ]);
 
-    const dirtyRooms = rooms.filter((r) =>
-      ["Dirty", "Vacant Dirty", "Occupied Dirty"].includes(
-        String(r.hkStatus ?? r.status),
-      ),
-    );
-    const cleaning = rooms.filter(
-      (r) =>
-        String(r.hkStatus) === "Cleaning" || String(r.status) === "Cleaning",
-    );
-    const inspectionPending = rooms.filter(
-      (r) =>
-        String(r.status) === "Inspection Pending" ||
-        String(r.hkStatus) === "Inspected",
-    );
+    const dirtyRooms = rooms.filter((r) => {
+      const status = String(r.status ?? "").toUpperCase();
+      const hk = String(r.hkStatus ?? "").toUpperCase();
+      return status === "DIRTY" || hk === "DIRTY";
+    });
+    const cleaning = rooms.filter((r) => {
+      const status = String(r.status ?? "").toUpperCase();
+      const hk = String(r.hkStatus ?? "").toUpperCase();
+      return status === "INSPECTING" || status === "CLEANING" || hk === "CLEANING";
+    });
+    const inspectionPending = rooms.filter((r) => {
+      const status = String(r.status ?? "").toUpperCase();
+      const hk = String(r.hkStatus ?? "").toUpperCase();
+      return status === "CLEAN" || hk === "CLEAN";
+    });
     const openLaundry = laundry.filter(
       (j) => !["Delivered"].includes(String(j.status)),
     );

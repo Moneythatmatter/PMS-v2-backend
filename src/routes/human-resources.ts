@@ -83,7 +83,6 @@ const crudRoutes: { path: string; table: string; prefix: string; orderBy?: strin
   { path: "/masters/document-types", table: hrTables.documentTypes, prefix: "HRDT", orderBy: "name" },
   { path: "/shift-assignments", table: hrTables.shiftAssignments, prefix: "HRSA", orderBy: "effective_from" },
   { path: "/overtime", table: hrTables.overtimeRecords, prefix: "HROT", orderBy: "record_date" },
-  { path: "/holiday-attendance", table: hrTables.holidayAttendanceRecords, prefix: "HRHA", orderBy: "holiday_date" },
   { path: "/salary-structures", table: hrTables.salaryStructures, prefix: "HRSS", orderBy: "name" },
   { path: "/salary-payments", table: hrTables.salaryPayments, prefix: "HRSP", orderBy: "payment_date" },
   { path: "/payslips", table: hrTables.payslips, prefix: "HRPS", orderBy: "generated_date" },

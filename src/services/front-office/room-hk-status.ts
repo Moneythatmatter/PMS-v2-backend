@@ -37,10 +37,14 @@ export function foStatusQueryToHkStatuses(status: string): HkRoomStatus[] | null
   if (!value) return null;
   switch (value) {
     case "vacant":
+    case "inspected":
+      return ["INSPECTED"];
     case "clean":
-      return ["CLEAN", "INSPECTED"];
+      return ["CLEAN"];
     case "dirty":
       return ["DIRTY"];
+    case "cleaning":
+      return ["INSPECTING"];
     case "maintenance":
       return ["INSPECTING"];
     case "blocked":
@@ -55,8 +59,13 @@ export function hkStatusToHousekeeping(hkStatus: HkRoomStatus): string {
     case "DIRTY":
       return "Dirty";
     case "INSPECTING":
+      return "Cleaning";
+    case "CLEAN":
+      return "Clean";
+    case "INSPECTED":
+      return "Inspected";
     case "OUT_OF_SERVICE":
-      return "In Progress";
+      return "Out of Service";
     default:
       return "Clean";
   }
@@ -74,13 +83,15 @@ export function hkStatusToBaseFoStatus(hkStatus: HkRoomStatus): string {
     case "OUT_OF_SERVICE":
       return "Blocked";
     case "INSPECTING":
-      return "Maintenance";
+      return "Cleaning";
+    case "CLEAN":
+      return "Clean";
     case "DIRTY":
       return "Dirty";
-    case "CLEAN":
     case "INSPECTED":
-    default:
       return "Vacant";
+    default:
+      return "Dirty";
   }
 }
 
@@ -96,11 +107,10 @@ export function deriveFoRoomStatus(
     if (bookingStatus === "Checked In" || bookingStatus === "In-House") {
       return "Occupied";
     }
-    const base = hkStatusToBaseFoStatus(hkStatus);
-    if (base === "Vacant" || base === "Clean") {
+    if (hkStatus === "INSPECTED") {
       return "Reserved";
     }
-    return base;
+    return hkStatusToBaseFoStatus(hkStatus);
   }
 
   return hkStatusToBaseFoStatus(hkStatus);
@@ -108,7 +118,7 @@ export function deriveFoRoomStatus(
 
 export function isHkRoomSellable(hkStatus: HkRoomStatus, isActive = true): boolean {
   if (!isActive) return false;
-  return hkStatus !== "OUT_OF_SERVICE" && hkStatus !== "INSPECTING";
+  return hkStatus === "INSPECTED";
 }
 
 export async function ensureHkRoomForFoRoom(roomId: string): Promise<void> {
@@ -188,7 +198,9 @@ export function availabilityCalendarDayStatus(params: {
   if (hasBooking) return bookingInHouse ? "occupied" : "reserved";
 
   if (dayIso === todayIso && hkStatus === "OUT_OF_SERVICE") return "blocked";
-  if (dayIso === todayIso && hkStatus === "DIRTY") return "dirty";
+  if (dayIso === todayIso && (hkStatus === "DIRTY" || hkStatus === "INSPECTING" || hkStatus === "CLEAN")) {
+    return "dirty";
+  }
 
   return "available";
 }

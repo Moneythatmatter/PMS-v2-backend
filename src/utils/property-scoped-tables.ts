@@ -57,7 +57,6 @@ export const PROPERTY_SCOPED_TABLES = new Set([
   "hr_leave_applications",
   "hr_leave_balance_transactions",
   "hr_overtime_records",
-  "hr_holiday_attendance_records",
   "hr_salary_structures",
   "hr_payroll_records",
   "hr_salary_payments",

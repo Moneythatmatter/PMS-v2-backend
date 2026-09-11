@@ -4,8 +4,12 @@ import { config } from "../../config/index.js";
 import { supabase } from "../../utils/supabase.js";
 import { toCamel } from "../../utils/mappers.js";
 import { AppError, NotFoundError, UnauthorizedError, ValidationError, } from "../../errors/index.js";
+import { buildEmployeePortalContext } from "../employee-portal/employee-context.service.js";
 const USERS_TABLE = "users";
-function toPublic(user) {
+async function toPublic(user) {
+    const employee = user.employeeId
+        ? await buildEmployeePortalContext(user.employeeId)
+        : null;
     return {
         id: user.id,
         name: user.name,
@@ -13,6 +17,8 @@ function toPublic(user) {
         role: user.role,
         initials: user.initials,
         isSuperAdmin: Boolean(user.isSuperAdmin),
+        employeeId: user.employeeId ?? null,
+        employee,
     };
 }
 function signToken(user) {
@@ -69,7 +75,7 @@ export const AuthService = {
         if (!okHash) {
             throw new UnauthorizedError("Invalid email or password");
         }
-        const publicUser = toPublic(user);
+        const publicUser = await toPublic(user);
         const token = signToken(publicUser);
         return { user: publicUser, token };
     },
@@ -82,7 +88,7 @@ export const AuthService = {
             if (user.status && user.status !== "Active") {
                 throw new UnauthorizedError("Account is inactive");
             }
-            return toPublic(user);
+            return await toPublic(user);
         }
         catch (e) {
             if (e instanceof AppError)

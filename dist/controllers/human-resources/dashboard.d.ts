@@ -1,2 +1,3 @@
-import type { Request, Response } from "express";
-export declare function getDashboard(_req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+import type { Response } from "express";
+import type { ContextRequest } from "../../middleware/request-context.js";
+export declare function getDashboard(_req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;

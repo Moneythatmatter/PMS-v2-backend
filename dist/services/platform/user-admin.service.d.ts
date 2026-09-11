@@ -4,10 +4,18 @@ export type ManagedUser = AuthUserPublic & {
     status: string;
     propertyIds: string[];
     permissions: UserPermissionRow[];
+    employeeLabel?: string;
 };
 export declare const UserAdminService: {
     assertSuperAdmin(isSuperAdmin?: boolean, role?: string): void;
     listUsers(): Promise<ManagedUser[]>;
+    listEmployeeLinkOptions(propertyId: string): Promise<{
+        id: string;
+        propertyId: string;
+        empCode: string;
+        name: string;
+        email: string;
+    }[]>;
     createUser(input: {
         name: string;
         email: string;
@@ -21,6 +29,7 @@ export declare const UserAdminService: {
             moduleKey: string;
             permission: PermissionLevel;
         }>;
+        employeeId?: string | null;
     }): Promise<ManagedUser>;
     setUserAccess(userId: string, input: {
         propertyIds: string[];
@@ -41,6 +50,7 @@ export declare const UserAdminService: {
             moduleKey: string;
             permission: PermissionLevel;
         }>;
+        employeeId?: string | null;
     }): Promise<ManagedUser>;
     getMyPermissions(userId: string, propertyId: string, isSuperAdmin?: boolean): Promise<Record<string, PermissionLevel | "admin">>;
 };

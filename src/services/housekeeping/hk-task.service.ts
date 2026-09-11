@@ -406,7 +406,7 @@ export const HkTaskService = {
     );
 
     await syncHkRoomForTask(existing.roomId, {
-      status: "INSPECTING",
+      status: "CLEAN",
       lastCleanedAt: now,
     });
 
@@ -456,7 +456,7 @@ export const HkTaskService = {
     await syncHkRoomForTask(
       existing.roomId,
       {
-        status: "CLEAN",
+        status: "INSPECTED",
         lastInspectedAt: now,
         inspectedBy: resolvedApprover,
         assignedTo: null,

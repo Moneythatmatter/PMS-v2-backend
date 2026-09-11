@@ -16,8 +16,8 @@ export declare const hrTables: {
     readonly shiftAssignments: "hr_shift_assignments";
     readonly weeklyOffs: "hr_weekly_offs";
     readonly leaveApplications: "hr_leave_applications";
+    readonly leaveBalanceTransactions: "hr_leave_balance_transactions";
     readonly overtimeRecords: "hr_overtime_records";
-    readonly holidayAttendanceRecords: "hr_holiday_attendance_records";
     readonly salaryStructures: "hr_salary_structures";
     readonly payrollRecords: "hr_payroll_records";
     readonly salaryPayments: "hr_salary_payments";
@@ -54,8 +54,8 @@ export declare const hrModel: {
         readonly shiftAssignments: "hr_shift_assignments";
         readonly weeklyOffs: "hr_weekly_offs";
         readonly leaveApplications: "hr_leave_applications";
+        readonly leaveBalanceTransactions: "hr_leave_balance_transactions";
         readonly overtimeRecords: "hr_overtime_records";
-        readonly holidayAttendanceRecords: "hr_holiday_attendance_records";
         readonly salaryStructures: "hr_salary_structures";
         readonly payrollRecords: "hr_payroll_records";
         readonly salaryPayments: "hr_salary_payments";

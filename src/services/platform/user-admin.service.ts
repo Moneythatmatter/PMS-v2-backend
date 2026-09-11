@@ -10,6 +10,7 @@ import type {
 } from "../../types/platform.js";
 import { PLATFORM_MODULES } from "../../types/platform.js";
 import { isPlatformAdmin } from "../../utils/platform-admin.js";
+import { hrModel, hrTables } from "../../models/human-resources/index.js";
 
 const USERS = "users";
 const ACCESS = "user_property_access";
@@ -23,6 +24,7 @@ function toPublic(user: AuthUserRow): AuthUserPublic {
     role: user.role,
     initials: user.initials,
     isSuperAdmin: Boolean(user.isSuperAdmin),
+    employeeId: user.employeeId ?? null,
   };
 }
 
@@ -30,7 +32,40 @@ export type ManagedUser = AuthUserPublic & {
   status: string;
   propertyIds: string[];
   permissions: UserPermissionRow[];
+  employeeLabel?: string;
 };
+
+async function resolveEmployeeLabel(employeeId?: string | null): Promise<string | undefined> {
+  if (!employeeId) return undefined;
+  const emp = await hrModel.get<{
+    empCode?: string;
+    firstName?: string;
+    lastName?: string;
+  }>(hrTables.employees, employeeId);
+  if (!emp) return undefined;
+  return `${emp.empCode ?? employeeId} — ${emp.firstName ?? ""} ${emp.lastName ?? ""}`.trim();
+}
+
+async function assertEmployeeLink(input: {
+  employeeId?: string | null;
+  propertyIds: string[];
+}) {
+  if (!input.employeeId) return;
+  const emp = await hrModel.get<{ propertyId?: string; status?: string }>(
+    hrTables.employees,
+    input.employeeId,
+  );
+  if (!emp) throw new AppError("Selected employee record not found", 400);
+  if (emp.status && emp.status !== "Active") {
+    throw new AppError("Selected employee is not active", 400);
+  }
+  if (emp.propertyId && !input.propertyIds.includes(emp.propertyId)) {
+    throw new AppError(
+      "Employee belongs to a property this user does not have access to",
+      400,
+    );
+  }
+}
 
 export const UserAdminService = {
   assertSuperAdmin(isSuperAdmin?: boolean, role?: string) {
@@ -55,14 +90,38 @@ export const UserAdminService = {
         .select("*")
         .eq("user_id", user.id);
 
+      const employeeLabel = await resolveEmployeeLabel(user.employeeId);
       result.push({
         ...toPublic(user),
         status: user.status ?? "Active",
         propertyIds: (access ?? []).map((a) => String(a.property_id)),
         permissions: toCamel<UserPermissionRow[]>(perms ?? []),
+        employeeLabel,
       });
     }
     return result;
+  },
+
+  async listEmployeeLinkOptions(propertyId: string) {
+    const rows = await hrModel.list<{
+      id: string;
+      propertyId: string;
+      empCode: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      status: string;
+    }>(hrTables.employees, {
+      filters: { property_id: propertyId, status: "Active" },
+      orderBy: "emp_code",
+    });
+    return rows.map((e) => ({
+      id: e.id,
+      propertyId: e.propertyId,
+      empCode: e.empCode,
+      name: `${e.firstName} ${e.lastName}`.trim(),
+      email: e.email,
+    }));
   },
 
   async createUser(input: {
@@ -78,6 +137,7 @@ export const UserAdminService = {
       moduleKey: string;
       permission: PermissionLevel;
     }>;
+    employeeId?: string | null;
   }): Promise<ManagedUser> {
     const email = input.email.trim().toLowerCase();
     const name = input.name.trim();
@@ -96,6 +156,12 @@ export const UserAdminService = {
         .slice(0, 2)
         .toUpperCase();
 
+    const propertyIds = input.propertyIds ?? [];
+    await assertEmployeeLink({
+      employeeId: input.employeeId,
+      propertyIds,
+    });
+
     const { data: user, error } = await supabase
       .from(USERS)
       .insert({
@@ -107,13 +173,14 @@ export const UserAdminService = {
         initials,
         status: "Active",
         is_super_admin: Boolean(input.isSuperAdmin),
+        employee_id: input.employeeId ?? null,
       })
       .select()
       .single();
     if (error) throw new AppError(error.message, 500);
 
     await UserAdminService.setUserAccess(id, {
-      propertyIds: input.propertyIds ?? [],
+      propertyIds,
       permissions: input.permissions ?? [],
     });
 
@@ -178,13 +245,26 @@ export const UserAdminService = {
         moduleKey: string;
         permission: PermissionLevel;
       }>;
+      employeeId?: string | null;
     },
   ): Promise<ManagedUser> {
+    const existing = (await UserAdminService.listUsers()).find((u) => u.id === userId);
+    if (!existing) throw new NotFoundError("User not found");
+
+    const nextPropertyIds = patch.propertyIds ?? existing.propertyIds;
+    if (patch.employeeId !== undefined) {
+      await assertEmployeeLink({
+        employeeId: patch.employeeId,
+        propertyIds: nextPropertyIds,
+      });
+    }
+
     const body: Record<string, unknown> = {};
     if (patch.name != null) body.name = patch.name.trim();
     if (patch.role != null) body.role = patch.role.trim();
     if (patch.status != null) body.status = patch.status;
     if (patch.isSuperAdmin != null) body.is_super_admin = patch.isSuperAdmin;
+    if (patch.employeeId !== undefined) body.employee_id = patch.employeeId;
 
     if (Object.keys(body).length) {
       const { error } = await supabase.from(USERS).update(body).eq("id", userId);
@@ -192,10 +272,8 @@ export const UserAdminService = {
     }
 
     if (patch.propertyIds || patch.permissions) {
-      const existing = (await UserAdminService.listUsers()).find((u) => u.id === userId);
-      if (!existing) throw new NotFoundError("User not found");
       await UserAdminService.setUserAccess(userId, {
-        propertyIds: patch.propertyIds ?? existing.propertyIds,
+        propertyIds: nextPropertyIds,
         permissions: patch.permissions ?? existing.permissions,
       });
     }

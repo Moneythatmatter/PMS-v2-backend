@@ -584,7 +584,8 @@ export const ReservationService = {
           (r) =>
             isArrivingTodayReservation(r) &&
             r.status !== ReservationStatus.CANCELLED &&
-            r.status !== ReservationStatus.CHECKED_OUT,
+            r.status !== ReservationStatus.CHECKED_OUT &&
+            r.status !== ReservationStatus.NO_SHOW,
         ).length,
         icon: "user-check",
         color: "#22c55e",

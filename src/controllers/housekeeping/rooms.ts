@@ -187,7 +187,7 @@ export async function completeClean(req: Request, res: Response) {
 
     const row = await enrichHkRoom(
       await hkModel.update<HkRoom>(hkModel.tables.rooms, id, {
-        status: "INSPECTING",
+        status: "CLEAN",
         lastCleanedAt: now,
         notes: notes || "Cleaning completed — awaiting inspection.",
       }),

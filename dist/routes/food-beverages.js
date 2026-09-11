@@ -116,8 +116,8 @@ mountCrud(router, "/masters/outlet-types", createTableCrud({ table: fbModel.tabl
 // Menu
 function mapCategoryIncoming(body) {
     const b = mapMasterActiveIncoming(body);
-    if (b.parentId === "" || b.parentId === null)
-        delete b.parentId;
+    delete b.parentId;
+    delete b.displayOrder;
     return b;
 }
 function mapCategoryOutgoing(row) {
@@ -141,10 +141,12 @@ function mapMenuItemIncoming(body) {
         if (Number.isFinite(num))
             b.price = num;
     }
-    for (const key of ["categoryId", "taxGroupId", "imageUrl"]) {
+    for (const key of ["categoryId", "imageUrl"]) {
         if (b[key] === "")
             delete b[key];
     }
+    delete b.taxGroupId;
+    delete b.displayOrder;
     delete b.unitId;
     delete b.stationId;
     delete b.itemType;
@@ -165,14 +167,14 @@ function mapMenuItemOutgoing(row) {
 mountCrud(router, "/menu/categories", createTableCrud({
     table: fbModel.tables.menuCategories,
     idPrefix: "MC",
-    orderBy: "display_order",
+    orderBy: "name",
     mapIncoming: mapCategoryIncoming,
     mapOutgoing: mapCategoryOutgoing,
 }));
 mountCrud(router, "/menu/items", createTableCrud({
     table: fbModel.tables.menuItems,
     idPrefix: "MI",
-    orderBy: "display_order",
+    orderBy: "name",
     mapIncoming: mapMenuItemIncoming,
     mapOutgoing: mapMenuItemOutgoing,
 }));

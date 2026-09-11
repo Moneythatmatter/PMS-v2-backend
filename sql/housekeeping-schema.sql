@@ -91,6 +91,7 @@ begin
     'ASSIGNED',
     'IN_PROGRESS',
     'COMPLETED',
+    'PENDING_INSPECTION',
     'APPROVED',
     'CANCELLED'
   );

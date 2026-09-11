@@ -28,7 +28,6 @@ export const hrTables = {
   leaveApplications: "hr_leave_applications",
   leaveBalanceTransactions: "hr_leave_balance_transactions",
   overtimeRecords: "hr_overtime_records",
-  holidayAttendanceRecords: "hr_holiday_attendance_records",
   salaryStructures: "hr_salary_structures",
   payrollRecords: "hr_payroll_records",
   salaryPayments: "hr_salary_payments",

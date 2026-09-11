@@ -9,7 +9,7 @@ begin
     'hr_departments','hr_designations','hr_employment_types','hr_shift_types','hr_leave_types',
     'hr_leave_policies','hr_holidays','hr_salary_components','hr_document_categories','hr_document_types',
     'hr_employees','hr_employee_documents','hr_attendance_records','hr_shift_assignments','hr_weekly_offs',
-    'hr_leave_applications','hr_leave_balance_transactions','hr_overtime_records','hr_holiday_attendance_records','hr_salary_structures',
+    'hr_leave_applications','hr_leave_balance_transactions','hr_overtime_records','hr_salary_structures',
     'hr_payroll_records','hr_salary_payments','hr_payslips','hr_complaint_categories','hr_complaints',
     'hr_approval_workflows','hr_payroll_settings','hr_tax_rules','hr_audit_logs'
   ]

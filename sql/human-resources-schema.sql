@@ -240,7 +240,7 @@ create table if not exists hr_attendance_records (
   leave_request_id text references hr_leave_applications(id) on delete set null,
   remarks text,
   source text not null default 'MANUAL'
-    check (source in ('BIOMETRIC', 'MANUAL', 'IMPORT')),
+    check (source in ('BIOMETRIC', 'MANUAL', 'IMPORT', 'EMPLOYEE_PORTAL')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   created_by text,
@@ -355,27 +355,6 @@ create table if not exists hr_overtime_records (
   approved_by text,
   approved_on timestamptz,
   approval_remarks text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists hr_holiday_attendance_records (
-  id text primary key default gen_random_uuid()::text,
-  property_id text not null references properties(id) on delete cascade,
-  employee_id text not null references hr_employees(id) on delete cascade,
-  holiday_name text not null,
-  holiday_date date not null,
-  attendance_status text not null default 'Present',
-  check_in text,
-  check_out text,
-  worked_hours numeric(5,2) default 0,
-  benefit_type text default 'Additional Pay',
-  holiday_pay_amount numeric(12,2) default 0,
-  payroll_status text default 'Pending Payroll Processing',
-  approval_status text default 'Pending',
-  reviewed_by text,
-  reviewed_date timestamptz,
-  remarks text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -603,7 +582,7 @@ begin
     'hr_departments','hr_designations','hr_employment_types','hr_shift_types','hr_leave_types',
     'hr_leave_policies','hr_holidays','hr_salary_components','hr_document_categories','hr_document_types',
     'hr_employees','hr_employee_documents','hr_attendance_records','hr_shift_assignments','hr_weekly_offs',
-    'hr_leave_applications','hr_leave_balance_transactions','hr_overtime_records','hr_holiday_attendance_records','hr_salary_structures',
+    'hr_leave_applications','hr_leave_balance_transactions','hr_overtime_records','hr_salary_structures',
     'hr_payroll_records','hr_salary_payments','hr_payslips','hr_complaint_categories','hr_complaints',
     'hr_approval_workflows','hr_payroll_settings','hr_tax_rules','hr_audit_logs'
   ]

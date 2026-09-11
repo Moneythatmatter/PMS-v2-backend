@@ -1,0 +1,11 @@
+import type { Request, Response } from "express";
+import type { ContextRequest } from "../../middleware/request-context.js";
+export declare function listLeaveApplications(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getLeaveApplication(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function previewLeaveApplicationDays(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function createLeaveApplication(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function updateLeaveApplication(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function deleteLeaveApplication(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function approveLeaveApplication(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function cancelLeaveApplication(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function modifyLeaveApplication(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;

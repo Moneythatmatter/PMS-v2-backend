@@ -9,8 +9,8 @@ type Employee = {
     designationId?: string;
     employmentTypeId?: string;
     shiftTypeId?: string;
+    salaryStructureId?: string;
     joinDate?: string;
-    salary?: number;
     status: string;
     gender?: string;
     avatar?: string;
@@ -23,13 +23,17 @@ type Employee = {
     };
     [key: string]: unknown;
 };
-export declare function clearHrLookupCache(): void;
+export declare function clearHrLookupCache(propertyId?: string): void;
 export declare function enrichEmployee(emp: Employee): Promise<{
     name: string;
     department: string;
     designation: string;
     employmentType: string;
     shiftType: string;
+    salaryStructureId: string;
+    salaryStructureName: string;
+    structureGrossSalary: number;
+    structureNetSalary: number;
     id: string;
     empCode: string;
     firstName: string;
@@ -41,7 +45,6 @@ export declare function enrichEmployee(emp: Employee): Promise<{
     employmentTypeId?: string;
     shiftTypeId?: string;
     joinDate?: string;
-    salary?: number;
     status: string;
     gender?: string;
     avatar?: string;
@@ -59,6 +62,10 @@ export declare function enrichEmployees(rows: Employee[]): Promise<{
     designation: string;
     employmentType: string;
     shiftType: string;
+    salaryStructureId: string;
+    salaryStructureName: string;
+    structureGrossSalary: number;
+    structureNetSalary: number;
     id: string;
     empCode: string;
     firstName: string;
@@ -70,7 +77,6 @@ export declare function enrichEmployees(rows: Employee[]): Promise<{
     employmentTypeId?: string;
     shiftTypeId?: string;
     joinDate?: string;
-    salary?: number;
     status: string;
     gender?: string;
     avatar?: string;

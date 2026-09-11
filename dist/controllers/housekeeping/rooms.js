@@ -159,7 +159,7 @@ export async function completeClean(req, res) {
         const notes = String(body.notes ?? body.remarks ?? existing.notes ?? "").trim();
         const now = new Date().toISOString();
         const row = await enrichHkRoom(await hkModel.update(hkModel.tables.rooms, id, {
-            status: "INSPECTING",
+            status: "CLEAN",
             lastCleanedAt: now,
             notes: notes || "Cleaning completed — awaiting inspection.",
         }));

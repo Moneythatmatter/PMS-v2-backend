@@ -1,0 +1,29 @@
+import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { requireEmployeePortal } from "../middleware/employee-portal.js";
+import * as portal from "../controllers/employee-portal/index.js";
+
+const router = Router();
+
+router.use(requireAuth);
+router.use(requireEmployeePortal);
+
+router.get("/dashboard", portal.getDashboard);
+router.get("/attendance/today", portal.getTodayAttendance);
+router.get("/attendance", portal.listMyAttendance);
+router.post("/attendance/punch-in", portal.postPunchIn);
+router.post("/attendance/punch-out", portal.postPunchOut);
+router.get("/schedule", portal.getMySchedule);
+router.get("/leave/types", portal.listMyLeaveTypes);
+router.get("/leave/balance", portal.getLeaveBalance);
+router.get("/leave/applications", portal.listMyLeaveApplications);
+router.post("/leave/applications/preview-days", portal.previewMyLeaveDays);
+router.post("/leave/applications", portal.createMyLeaveApplication);
+router.get("/leave/applications/:id", portal.getMyLeaveApplication);
+router.post("/leave/applications/:id/cancel", portal.cancelMyLeaveApplication);
+router.get("/overtime", portal.listMyOvertime);
+router.get("/payslips", portal.listMyPayslips);
+router.get("/payslips/:id", portal.getMyPayslip);
+router.get("/profile", portal.getMyProfile);
+
+export default router;

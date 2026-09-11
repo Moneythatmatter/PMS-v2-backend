@@ -11,6 +11,7 @@ router.put("/properties/:id", platform.updateProperty);
 router.get("/modules", platform.listModules);
 router.get("/permissions/me", platform.myPermissions);
 router.get("/users", platform.listUsers);
+router.get("/users/employee-link-options", platform.listEmployeeLinkOptions);
 router.post("/users", platform.createUser);
 router.put("/users/:id", platform.updateUser);
 export default router;

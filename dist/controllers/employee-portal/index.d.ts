@@ -1,0 +1,18 @@
+import type { Request, Response } from "express";
+export declare function getDashboard(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getTodayAttendance(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listMyAttendance(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function postPunchIn(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function postPunchOut(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getMySchedule(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listMyLeaveTypes(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getLeaveBalance(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listMyLeaveApplications(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function previewMyLeaveDays(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function createMyLeaveApplication(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getMyLeaveApplication(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function cancelMyLeaveApplication(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listMyOvertime(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listMyPayslips(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getMyPayslip(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getMyProfile(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

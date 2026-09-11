@@ -1,0 +1,11 @@
+import type { Response } from "express";
+import type { ContextRequest } from "../../middleware/request-context.js";
+export declare function listAttendance(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getAttendance(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function postPunchIn(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function postPunchOut(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function postCorrect(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function postRecalculate(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function postProcessAbsence(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getDailyAttendance(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getEmployeeAttendance(req: ContextRequest, res: Response): Promise<Response<any, Record<string, any>>>;

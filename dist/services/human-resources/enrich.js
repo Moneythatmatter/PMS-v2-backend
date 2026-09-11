@@ -1,41 +1,85 @@
 import { hrModel, hrTables } from "../../models/human-resources/index.js";
-let deptCache = null;
-let desigCache = null;
-let empTypeCache = null;
-let shiftCache = null;
-async function loadLookups() {
-    if (!deptCache) {
-        const depts = await hrModel.list(hrTables.departments);
-        deptCache = new Map(depts.map((d) => [d.id, d.departmentName]));
-    }
-    if (!desigCache) {
-        const rows = await hrModel.list(hrTables.designations);
-        desigCache = new Map(rows.map((d) => [d.id, d.designationTitle]));
-    }
-    if (!empTypeCache) {
-        const rows = await hrModel.list(hrTables.employmentTypes);
-        empTypeCache = new Map(rows.map((d) => [d.id, d.typeName]));
-    }
-    if (!shiftCache) {
-        const rows = await hrModel.list(hrTables.shiftTypes);
-        shiftCache = new Map(rows.map((d) => [d.id, d.shiftName]));
-    }
+import { getActivePropertyId } from "../../utils/request-context.js";
+const lookupCachesByProperty = new Map();
+function cacheKey() {
+    return getActivePropertyId() ?? "__none__";
 }
-export function clearHrLookupCache() {
-    deptCache = null;
-    desigCache = null;
-    empTypeCache = null;
-    shiftCache = null;
+async function loadLookups(force = false) {
+    const key = cacheKey();
+    if (!force && lookupCachesByProperty.has(key)) {
+        return lookupCachesByProperty.get(key);
+    }
+    const [depts, desigs, empTypes, shifts, structures] = await Promise.all([
+        hrModel.list(hrTables.departments),
+        hrModel.list(hrTables.designations),
+        hrModel.list(hrTables.employmentTypes),
+        hrModel.list(hrTables.shiftTypes),
+        hrModel.list(hrTables.salaryStructures),
+    ]);
+    const caches = {
+        departments: new Map(depts.map((d) => [d.id, d.departmentName])),
+        designations: new Map(desigs.map((d) => [d.id, d.designationTitle])),
+        employmentTypes: new Map(empTypes.map((d) => [d.id, d.typeName])),
+        shiftTypes: new Map(shifts.map((d) => [d.id, d.shiftName])),
+        salaryStructures: new Map(structures.map((s) => [
+            s.id,
+            {
+                id: s.id,
+                name: s.name,
+                grossSalary: Number(s.grossSalary ?? 0),
+                netSalary: Number(s.netSalary ?? 0),
+            },
+        ])),
+    };
+    lookupCachesByProperty.set(key, caches);
+    return caches;
+}
+export function clearHrLookupCache(propertyId) {
+    if (propertyId) {
+        lookupCachesByProperty.delete(propertyId);
+        return;
+    }
+    lookupCachesByProperty.clear();
 }
 export async function enrichEmployee(emp) {
-    await loadLookups();
+    let caches = await loadLookups();
+    const resolve = (id, map) => {
+        if (!id)
+            return "";
+        return map.get(id) ?? "";
+    };
+    let department = resolve(emp.departmentId, caches.departments);
+    let designation = resolve(emp.designationId, caches.designations);
+    let employmentType = resolve(emp.employmentTypeId, caches.employmentTypes);
+    let shiftType = resolve(emp.shiftTypeId, caches.shiftTypes);
+    const salaryStructure = emp.salaryStructureId
+        ? caches.salaryStructures.get(emp.salaryStructureId)
+        : undefined;
+    // Self-heal stale/empty cache (e.g. first load before RLS patch or property switch).
+    if ((emp.departmentId && !department) ||
+        (emp.designationId && !designation) ||
+        (emp.employmentTypeId && !employmentType) ||
+        (emp.shiftTypeId && !shiftType)) {
+        caches = await loadLookups(true);
+        department = resolve(emp.departmentId, caches.departments);
+        designation = resolve(emp.designationId, caches.designations);
+        employmentType = resolve(emp.employmentTypeId, caches.employmentTypes);
+        shiftType = resolve(emp.shiftTypeId, caches.shiftTypes);
+    }
+    const structureAfterReload = emp.salaryStructureId
+        ? caches.salaryStructures.get(emp.salaryStructureId)
+        : undefined;
     return {
         ...emp,
         name: `${emp.firstName} ${emp.lastName}`.trim(),
-        department: emp.departmentId ? deptCache.get(emp.departmentId) ?? "" : "",
-        designation: emp.designationId ? desigCache.get(emp.designationId) ?? "" : "",
-        employmentType: emp.employmentTypeId ? empTypeCache.get(emp.employmentTypeId) ?? "" : "",
-        shiftType: emp.shiftTypeId ? shiftCache.get(emp.shiftTypeId) ?? "" : "",
+        department,
+        designation,
+        employmentType,
+        shiftType,
+        salaryStructureId: emp.salaryStructureId ?? "",
+        salaryStructureName: structureAfterReload?.name ?? salaryStructure?.name ?? "",
+        structureGrossSalary: structureAfterReload?.grossSalary ?? salaryStructure?.grossSalary ?? 0,
+        structureNetSalary: structureAfterReload?.netSalary ?? salaryStructure?.netSalary ?? 0,
     };
 }
 export async function enrichEmployees(rows) {

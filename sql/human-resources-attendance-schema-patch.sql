@@ -85,7 +85,7 @@ alter table hr_attendance_records add constraint hr_attendance_status_check
 
 alter table hr_attendance_records drop constraint if exists hr_attendance_source_check;
 alter table hr_attendance_records add constraint hr_attendance_source_check
-  check (source in ('BIOMETRIC', 'MANUAL', 'IMPORT'));
+  check (source in ('BIOMETRIC', 'MANUAL', 'IMPORT', 'EMPLOYEE_PORTAL'));
 
 do $$
 begin

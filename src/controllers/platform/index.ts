@@ -4,6 +4,7 @@ import { UserAdminService } from "../../services/platform/user-admin.service.js"
 import { PLATFORM_MODULES } from "../../types/platform.js";
 import { fromError, ok } from "../../utils/response.js";
 import type { ContextRequest } from "../../middleware/request-context.js";
+import { AppError } from "../../errors/index.js";
 
 function authCtx(req: ContextRequest) {
   if (!req.auth?.userId) throw new Error("Unauthorized");
@@ -75,6 +76,21 @@ export async function listUsers(req: ContextRequest, res: Response) {
   }
 }
 
+export async function listEmployeeLinkOptions(req: ContextRequest, res: Response) {
+  try {
+    const auth = authCtx(req);
+    UserAdminService.assertSuperAdmin(auth.isSuperAdmin, auth.role);
+    const propertyId = String(req.query.propertyId ?? "").trim();
+    if (!propertyId) {
+      throw new AppError("propertyId query parameter is required", 400);
+    }
+    const rows = await UserAdminService.listEmployeeLinkOptions(propertyId);
+    return ok(res, rows);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
 export async function createUser(req: ContextRequest, res: Response) {
   try {
     const auth = authCtx(req);
@@ -91,6 +107,12 @@ export async function createUser(req: ContextRequest, res: Response) {
         ? body.propertyIds.map(String)
         : [],
       permissions: Array.isArray(body.permissions) ? body.permissions : [],
+      employeeId:
+        body.employeeId === null || body.employeeId === ""
+          ? null
+          : body.employeeId
+            ? String(body.employeeId)
+            : undefined,
     });
     return ok(res, row, 201);
   } catch (e) {
@@ -113,6 +135,12 @@ export async function updateUser(req: ContextRequest, res: Response) {
         ? body.propertyIds.map(String)
         : undefined,
       permissions: Array.isArray(body.permissions) ? body.permissions : undefined,
+      employeeId:
+        body.employeeId === null || body.employeeId === ""
+          ? null
+          : body.employeeId != null
+            ? String(body.employeeId)
+            : undefined,
     });
     return ok(res, row);
   } catch (e) {

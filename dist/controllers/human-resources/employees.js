@@ -33,7 +33,7 @@ export async function createEmployee(req, res) {
             body.lastName = parts.slice(1).join(" ") || parts[0];
             delete body.name;
         }
-        clearHrLookupCache();
+        clearHrLookupCache(req.propertyId);
         const row = await hrModel.create(hrTables.employees, body);
         return ok(res, await enrichEmployee(row), 201);
     }
@@ -51,7 +51,7 @@ export async function updateEmployee(req, res) {
             body.lastName = parts.slice(1).join(" ") || parts[0];
             delete body.name;
         }
-        clearHrLookupCache();
+        clearHrLookupCache(req.propertyId);
         const row = await hrModel.update(hrTables.employees, String(req.params.id), body);
         return ok(res, await enrichEmployee(row));
     }
@@ -62,7 +62,7 @@ export async function updateEmployee(req, res) {
 export async function deleteEmployee(req, res) {
     try {
         await hrModel.remove(hrTables.employees, String(req.params.id));
-        clearHrLookupCache();
+        clearHrLookupCache(req.propertyId);
         return ok(res, { id: req.params.id });
     }
     catch (e) {
