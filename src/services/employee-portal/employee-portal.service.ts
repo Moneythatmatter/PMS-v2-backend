@@ -2,6 +2,10 @@ import { hrModel, hrTables } from "../../models/human-resources/index.js";
 import { findDailyRecord } from "../human-resources/attendance/attendance.service.js";
 import { enrichAttendanceRecords } from "../human-resources/attendance/enrich.js";
 import { enrichEmployee } from "../human-resources/enrich.js";
+import {
+  buildUpcomingBirthdays,
+  buildUpcomingHolidays,
+} from "../human-resources/upcoming-events.service.js";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -50,6 +54,9 @@ export async function getEmployeeDashboard(input: {
     otRows,
     payslipRows,
     shiftRows,
+    colleagueRows,
+    deptRows,
+    holidayRows,
   ] = await Promise.all([
     hrModel.get(hrTables.employees, employeeId),
     findDailyRecord(propertyId, employeeId, date),
@@ -81,6 +88,32 @@ export async function getEmployeeDashboard(input: {
       orderBy: "effective_from",
       ascending: false,
     }),
+    hrModel.list<{
+      id: string;
+      firstName?: string;
+      lastName?: string;
+      dob?: string | null;
+      avatar?: string | null;
+      departmentId?: string | null;
+      status?: string;
+    }>(hrTables.employees, {
+      filters: { property_id: propertyId, status: "Active" },
+    }),
+    hrModel.list<{ id: string; departmentName: string }>(hrTables.departments, {
+      filters: { property_id: propertyId },
+    }),
+    hrModel.list<{
+      id: string;
+      holidayName: string;
+      holidayDate: string;
+      dayOfWeek?: string;
+      category?: string;
+      status?: string;
+    }>(hrTables.holidays, {
+      filters: { property_id: propertyId, status: "Active" },
+      orderBy: "holiday_date",
+      ascending: true,
+    }),
   ]);
 
   const employee = employeeRaw ? await enrichEmployee(employeeRaw as Parameters<typeof enrichEmployee>[0]) : null;
@@ -108,6 +141,18 @@ export async function getEmployeeDashboard(input: {
     const enriched = await enrichAttendanceRecords([todayRecord as Record<string, unknown>]);
     todayAttendance = enriched[0] ?? null;
   }
+
+  const deptLookup = new Map(deptRows.map((d) => [d.id, d.departmentName]));
+  const refDate = new Date(`${date}T12:00:00`);
+  const upcomingBirthdays = buildUpcomingBirthdays(colleagueRows, {
+    fromDate: refDate,
+    daysAhead: 60,
+    departmentLookup: deptLookup,
+  }).slice(0, 8);
+  const upcomingHolidays = buildUpcomingHolidays(holidayRows, {
+    fromDate: refDate,
+    daysAhead: 365,
+  }).slice(0, 5);
 
   return {
     date,
@@ -140,6 +185,8 @@ export async function getEmployeeDashboard(input: {
       pendingCount: otPending.length,
       approvedCount: otApproved.length,
     },
+    upcomingBirthdays,
+    upcomingHolidays,
   };
 }
 

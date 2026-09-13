@@ -333,6 +333,35 @@ export async function getMyPayslip(req: Request, res: Response) {
   }
 }
 
+export async function listMyHolidays(req: Request, res: Response) {
+  try {
+    const { propertyId } = ctx(req);
+    const year = req.query.year ? Number(req.query.year) : null;
+
+    let rows = await hrModel.list<{
+      id: string;
+      holidayName: string;
+      holidayDate: string;
+      dayOfWeek?: string;
+      category?: string;
+      status?: string;
+      year?: number;
+    }>(hrTables.holidays, {
+      filters: { property_id: propertyId, status: "Active" },
+      orderBy: "holiday_date",
+      ascending: true,
+    });
+
+    if (year && !Number.isNaN(year)) {
+      rows = rows.filter((row) => Number(row.year) === year);
+    }
+
+    return ok(res, rows);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
 export async function getMyProfile(req: Request, res: Response) {
   try {
     const { employeeId } = ctx(req);

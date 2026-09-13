@@ -25,5 +25,6 @@ router.get("/overtime", portal.listMyOvertime);
 router.get("/payslips", portal.listMyPayslips);
 router.get("/payslips/:id", portal.getMyPayslip);
 router.get("/profile", portal.getMyProfile);
+router.get("/holidays", portal.listMyHolidays);
 
 export default router;
