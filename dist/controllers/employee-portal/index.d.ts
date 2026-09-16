@@ -15,4 +15,5 @@ export declare function cancelMyLeaveApplication(req: Request, res: Response): P
 export declare function listMyOvertime(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function listMyPayslips(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getMyPayslip(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function listMyHolidays(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function getMyProfile(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

@@ -1,4 +1,5 @@
 import { fbModel } from "../../models/food-beverages/index.js";
+import { isRoomChargePayment, isRoomChargeSettledOrder, settleRoomChargeViaRpc, syncRoomServiceAfterCancellationViaRpc, } from "../shared/fnb-folio-sync.service.js";
 import { TransactionService } from "../shared/transaction.service.js";
 import { AppError } from "../../errors/index.js";
 const ACTIVE_KOT = new Set(["PENDING", "PREPARING", "READY"]);
@@ -62,12 +63,15 @@ function isBillableOrderItem(status) {
     return String(status ?? "ACTIVE").toUpperCase() === "ACTIVE";
 }
 async function assertBillAdjustable(orderId) {
+    const order = await fbModel.get(fbModel.tables.orders, orderId);
     const bills = await fbModel.list(fbModel.tables.bills, {
         filters: { order_id: orderId },
         limit: 1,
     });
     const bill = bills[0];
     if (!bill)
+        return;
+    if (isRoomChargeSettledOrder(order))
         return;
     const paymentStatus = String(bill.paymentStatus ?? "UNPAID").toUpperCase();
     if (paymentStatus === "PAID" || paymentStatus === "PARTIALLY_PAID") {
@@ -97,8 +101,29 @@ async function voidOrderItemQuantity(orderItemId, voidQty) {
     });
 }
 async function syncBillAfterCancellation(orderId) {
-    await assertBillAdjustable(orderId);
+    const order = await fbModel.get(fbModel.tables.orders, orderId);
+    const bills = await fbModel.list(fbModel.tables.bills, {
+        filters: { order_id: orderId },
+        limit: 1,
+    });
+    const bill = bills[0];
     const amount = await recomputeOrderAmount(orderId);
+    if (order && bill && isRoomChargeSettledOrder(order)) {
+        const tax = Number(bill.tax ?? 0);
+        const discount = Number(bill.discount ?? 0);
+        const total = Math.max(0, amount + tax - discount);
+        await syncRoomServiceAfterCancellationViaRpc({
+            billId: String(bill.id),
+            orderId,
+            newSubtotal: amount,
+            newTax: tax,
+            newDiscount: discount,
+            newTotal: total,
+            reversalNotes: null,
+        });
+        return amount;
+    }
+    await assertBillAdjustable(orderId);
     await ensureBillForOrder(orderId, amount);
     return amount;
 }
@@ -420,6 +445,7 @@ export const PosService = {
         });
         const paid = txs
             .filter((t) => String(t.status).toUpperCase() === "COMPLETED")
+            .filter((t) => String(t.transactionType).toUpperCase() === "PAYMENT")
             .reduce((s, t) => s + Number(t.amount ?? 0), 0);
         const total = Number(bill.total ?? 0);
         let paymentStatus = "UNPAID";
@@ -441,21 +467,45 @@ export const PosService = {
         const order = orderId
             ? await fbModel.get(fbModel.tables.orders, orderId)
             : null;
-        if (!(input.amount > 0))
-            throw new AppError("Payment amount must be > 0", 400);
-        await TransactionService.recordViaRpc({
-            amount: input.amount,
-            paymentMethod: TransactionService.normalizePaymentMethod(input.paymentMethod),
-            sourceModule: "FNB",
-            sourceId: input.billId,
-            guestId: order?.guestId ? String(order.guestId) : null,
-            bookingId: order?.reservationId ? String(order.reservationId) : null,
-            externalReference: input.externalReference ?? null,
-            receivedBy: input.receivedBy ?? null,
-            notes: input.notes ?? null,
-        });
-        const updatedBill = (await this.syncBillPaymentStatus(input.billId));
-        if (String(updatedBill.paymentStatus) === "PAID" && orderId) {
+        const roomCharge = isRoomChargePayment(input.paymentMethod);
+        if (roomCharge) {
+            if (String(order?.type ?? "").trim() !== "Room Service") {
+                throw new AppError("Room Charge is only available for Room Service", 400);
+            }
+            if (!order?.reservationId) {
+                throw new AppError("Room Charge requires an in-house guest booking", 400);
+            }
+            const billTotal = Number(bill.total ?? 0);
+            await settleRoomChargeViaRpc({
+                billId: input.billId,
+                orderId,
+                bookingId: String(order.reservationId),
+                guestId: order.guestId ? String(order.guestId) : null,
+                amount: billTotal,
+                notes: `[ROOM_SERVICE] charge — order ${orderId}`,
+            });
+        }
+        else {
+            if (!(input.amount > 0))
+                throw new AppError("Payment amount must be > 0", 400);
+            await TransactionService.recordViaRpc({
+                amount: input.amount,
+                transactionType: "PAYMENT",
+                paymentMethod: TransactionService.normalizePaymentMethod(input.paymentMethod),
+                folioId: null,
+                sourceModule: "FNB",
+                sourceId: input.billId,
+                guestId: order?.guestId ? String(order.guestId) : null,
+                bookingId: order?.reservationId ? String(order.reservationId) : null,
+                externalReference: input.externalReference ?? null,
+                receivedBy: input.receivedBy ?? null,
+                notes: input.notes ?? null,
+            });
+        }
+        const updatedBill = roomCharge
+            ? (await fbModel.get(fbModel.tables.bills, input.billId))
+            : (await this.syncBillPaymentStatus(input.billId));
+        if (String(updatedBill?.paymentStatus) === "PAID" && orderId && !roomCharge) {
             await fbModel.update(fbModel.tables.orders, orderId, {
                 status: "Settled",
                 lifecycleStatus: "CLOSED",
@@ -482,7 +532,10 @@ export const PosService = {
                 }
             }
         }
-        return { bill: updatedBill, order: orderId ? await fbModel.get(fbModel.tables.orders, orderId) : null };
+        return {
+            bill: updatedBill,
+            order: orderId ? await fbModel.get(fbModel.tables.orders, orderId) : null,
+        };
     },
     async payBillFull(input) {
         const bill = await fbModel.get(fbModel.tables.bills, input.billId);
@@ -494,6 +547,7 @@ export const PosService = {
         });
         const paid = txs
             .filter((t) => String(t.status).toUpperCase() === "COMPLETED")
+            .filter((t) => String(t.transactionType).toUpperCase() === "PAYMENT")
             .reduce((s, t) => s + Number(t.amount ?? 0), 0);
         const remaining = Math.max(0, Number(bill.total ?? 0) - paid);
         if (remaining <= 0) {

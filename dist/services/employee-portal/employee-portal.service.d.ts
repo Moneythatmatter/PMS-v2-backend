@@ -46,6 +46,8 @@ export declare function getEmployeeDashboard(input: {
         pendingCount: number;
         approvedCount: number;
     };
+    upcomingBirthdays: import("../human-resources/upcoming-events.service.js").UpcomingBirthdayEvent[];
+    upcomingHolidays: import("../human-resources/upcoming-events.service.js").UpcomingHolidayEvent[];
 }>;
 export declare function toEmployeeProfile(employee: Record<string, unknown>): {
     id: unknown;

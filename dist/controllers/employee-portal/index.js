@@ -301,6 +301,24 @@ export async function getMyPayslip(req, res) {
         return fromError(res, e);
     }
 }
+export async function listMyHolidays(req, res) {
+    try {
+        const { propertyId } = ctx(req);
+        const year = req.query.year ? Number(req.query.year) : null;
+        let rows = await hrModel.list(hrTables.holidays, {
+            filters: { property_id: propertyId, status: "Active" },
+            orderBy: "holiday_date",
+            ascending: true,
+        });
+        if (year && !Number.isNaN(year)) {
+            rows = rows.filter((row) => Number(row.year) === year);
+        }
+        return ok(res, rows);
+    }
+    catch (e) {
+        return fromError(res, e);
+    }
+}
 export async function getMyProfile(req, res) {
     try {
         const { employeeId } = ctx(req);

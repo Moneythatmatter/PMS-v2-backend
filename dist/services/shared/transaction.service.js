@@ -28,6 +28,7 @@ export const TransactionService = {
                 folio_id: filters.folioId,
                 guest_id: filters.guestId,
                 source_module: filters.sourceModule,
+                source_type: filters.sourceType,
                 source_id: filters.sourceId,
                 status: filters.status,
             },
@@ -52,6 +53,7 @@ export const TransactionService = {
             bookingId: input.bookingId ?? null,
             guestId: input.guestId ?? null,
             sourceModule: input.sourceModule ?? null,
+            sourceType: input.sourceType ?? null,
             sourceId: input.sourceId ?? null,
             externalReference: input.externalReference ?? null,
             receivedBy: input.receivedBy ?? null,
@@ -80,6 +82,7 @@ export const TransactionService = {
             p_received_by: input.receivedBy ?? null,
             p_transaction_date: input.transactionDate ?? new Date().toISOString(),
             p_notes: input.notes ?? null,
+            p_source_type: input.sourceType ?? null,
         });
         if (error)
             throw new Error(error.message);

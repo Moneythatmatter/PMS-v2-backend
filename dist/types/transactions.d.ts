@@ -33,6 +33,7 @@ export interface Transaction {
     bookingId?: string | null;
     guestId?: string | null;
     sourceModule?: TransactionSourceModule | null;
+    sourceType?: string | null;
     sourceId?: string | null;
     externalReference?: string | null;
     receivedBy?: string | null;
@@ -51,6 +52,7 @@ export type RecordTransactionInput = {
     bookingId?: string | null;
     guestId?: string | null;
     sourceModule?: TransactionSourceModule | null;
+    sourceType?: string | null;
     sourceId?: string | null;
     externalReference?: string | null;
     receivedBy?: string | null;

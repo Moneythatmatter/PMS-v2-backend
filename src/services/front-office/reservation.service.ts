@@ -26,6 +26,7 @@ import {
 import { IdService } from "../shared/id.service.js";
 import { ActivityService } from "../shared/activity.service.js";
 import { TransactionService } from "../shared/transaction.service.js";
+import { FolioService } from "../shared/folio.service.js";
 import {
   enrichReservation,
   enrichReservations,
@@ -100,7 +101,7 @@ export const ReservationService = {
   async list(status?: string): Promise<Reservation[]> {
     const rows = await foModel.list<Reservation>(foModel.tables.reservations, {
       filters: status ? { status } : undefined,
-      orderBy: "id",
+      orderBy: "created_at",
       ascending: false,
     });
     return enrichReservations(rows);
@@ -449,6 +450,9 @@ export const ReservationService = {
           notes: `Checkout payment — ${String(existing.guestName ?? "Guest")}`,
         });
       }
+      await FolioService.closeOpenFoliosForBooking(reservationId).catch(() => {
+        /* folios table may not exist in older deployments */
+      });
       return enriched;
     }
 
@@ -530,6 +534,10 @@ export const ReservationService = {
       guestId: existing.guestId,
       room: roomRef,
       reservationId,
+    });
+
+    await FolioService.closeOpenFoliosForBooking(reservationId).catch(() => {
+      /* folios table may not exist in older deployments */
     });
 
     return enriched;

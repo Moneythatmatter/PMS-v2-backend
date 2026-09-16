@@ -91,6 +91,18 @@ begin
   where id = p_reservation_id
   returning to_jsonb(reservations.*) into result;
 
+  if exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'folios'
+  ) then
+    update public.folios
+    set
+      status = 'CLOSED'::public.folio_status,
+      closed_at = coalesce(closed_at, now())
+    where booking_id = p_reservation_id
+      and status = 'OPEN'::public.folio_status;
+  end if;
+
   if coalesce(p_amount_received, 0) > 0 then
     insert into payments (
       id, guest_name, room, reservation_id, amount, mode, type,

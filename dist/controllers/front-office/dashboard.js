@@ -2,12 +2,40 @@ import { foModel } from "../../models/front-office/index.js";
 import { reservationDisplayNo } from "../../services/front-office/reservation-lookup.js";
 import { buildActiveBookingByRoomNo, deriveFoRoomStatus, fetchHkStatusByRoomIds, } from "../../services/front-office/room-hk-status.js";
 import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
-import { isArrivingTodayReservation } from "../../utils/date.js";
+import { isArrivingTodayReservation, todayIso } from "../../utils/date.js";
 import { fromError, ok } from "../../utils/response.js";
+function normalizeCreatedTimestamp(value) {
+    return value.replace(/\bSept\b/gi, "Sep").trim();
+}
+function isCreatedTodayReservation(booking, now = new Date()) {
+    const raw = String(booking.createdAt ?? "").trim();
+    if (!raw)
+        return false;
+    const value = normalizeCreatedTimestamp(raw);
+    const today = todayIso(now);
+    if (value.startsWith(today) || value.includes(today))
+        return true;
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+        return todayIso(parsed) === today;
+    }
+    const displayToday = now.toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+    });
+    const displayTodayAlt = displayToday.replace(/\bSept\b/gi, "Sep");
+    return (raw.includes(displayToday) ||
+        value.includes(displayTodayAlt) ||
+        value.includes(displayToday));
+}
 export async function getDashboard(_req, res) {
     try {
         const [reservationsRaw, rooms, activity] = await Promise.all([
-            foModel.list(foModel.tables.reservations),
+            foModel.list(foModel.tables.reservations, {
+                orderBy: "created_at",
+                ascending: false,
+            }),
             foModel.list(foModel.tables.rooms),
             foModel.list(foModel.tables.deskActivity, {
                 orderBy: "id",
@@ -111,10 +139,24 @@ export async function getDashboard(_req, res) {
             checkIn: Math.floor(Math.random() * 5) + inHouse.length,
             checkOut: Math.floor(Math.random() * 4) + 1,
         }));
+        const recentBookings = reservations
+            .filter((r) => isCreatedTodayReservation(r))
+            .map((r) => ({
+            id: r.id,
+            guestName: r.guestName ?? "Guest",
+            bookingId: reservationDisplayNo(r),
+            roomNo: r.roomNo ?? "TBA",
+            roomType: r.roomType ?? "",
+            checkIn: r.checkIn ?? "",
+            checkOut: r.checkOut ?? "",
+            status: r.status ?? "Reserved",
+            createdAt: r.createdAt,
+        }));
         return ok(res, {
             stats,
             todaysArrivals,
             todaysDepartures,
+            recentBookings,
             roomInventory,
             weeklyFlow,
             bookingSources,

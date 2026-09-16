@@ -304,7 +304,7 @@ export const HkTaskService = {
             notes: notes ?? existing.notes,
         }));
         await syncHkRoomForTask(existing.roomId, {
-            status: "INSPECTING",
+            status: "CLEAN",
             lastCleanedAt: now,
         });
         await appendHistory({
@@ -337,7 +337,7 @@ export const HkTaskService = {
             approvedBy: resolvedApprover,
         }, { mode: "update", id: resolved }, { approved: approverLabel || undefined }));
         await syncHkRoomForTask(existing.roomId, {
-            status: "CLEAN",
+            status: "INSPECTED",
             lastInspectedAt: now,
             inspectedBy: resolvedApprover,
             assignedTo: null,

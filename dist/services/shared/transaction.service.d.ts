@@ -9,6 +9,7 @@ export declare const TransactionService: {
         folioId?: string;
         guestId?: string;
         sourceModule?: string;
+        sourceType?: string;
         sourceId?: string;
         status?: string;
     }): Promise<Transaction[]>;

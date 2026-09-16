@@ -7,16 +7,52 @@ import {
   fetchHkStatusByRoomIds,
 } from "../../services/front-office/room-hk-status.js";
 import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
-import { isArrivingTodayReservation } from "../../utils/date.js";
+import { isArrivingTodayReservation, todayIso } from "../../utils/date.js";
 import { fromError, ok } from "../../utils/response.js";
 
 type Reservation = Record<string, unknown>;
 type Room = Record<string, unknown>;
 
+function normalizeCreatedTimestamp(value: string) {
+  return value.replace(/\bSept\b/gi, "Sep").trim();
+}
+
+function isCreatedTodayReservation(
+  booking: { createdAt?: string },
+  now: Date = new Date(),
+): boolean {
+  const raw = String(booking.createdAt ?? "").trim();
+  if (!raw) return false;
+
+  const value = normalizeCreatedTimestamp(raw);
+  const today = todayIso(now);
+  if (value.startsWith(today) || value.includes(today)) return true;
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return todayIso(parsed) === today;
+  }
+
+  const displayToday = now.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+  const displayTodayAlt = displayToday.replace(/\bSept\b/gi, "Sep");
+  return (
+    raw.includes(displayToday) ||
+    value.includes(displayTodayAlt) ||
+    value.includes(displayToday)
+  );
+}
+
 export async function getDashboard(_req: Request, res: Response) {
   try {
     const [reservationsRaw, rooms, activity] = await Promise.all([
-      foModel.list<Reservation>(foModel.tables.reservations),
+      foModel.list<Reservation>(foModel.tables.reservations, {
+        orderBy: "created_at",
+        ascending: false,
+      }),
       foModel.list<Room>(foModel.tables.rooms),
       foModel.list(foModel.tables.deskActivity, {
         orderBy: "id",
@@ -149,10 +185,25 @@ export async function getDashboard(_req: Request, res: Response) {
       }),
     );
 
+    const recentBookings = reservations
+      .filter((r) => isCreatedTodayReservation(r))
+      .map((r) => ({
+      id: r.id,
+      guestName: r.guestName ?? "Guest",
+      bookingId: reservationDisplayNo(r),
+      roomNo: r.roomNo ?? "TBA",
+      roomType: r.roomType ?? "",
+      checkIn: r.checkIn ?? "",
+      checkOut: r.checkOut ?? "",
+      status: r.status ?? "Reserved",
+      createdAt: r.createdAt,
+    }));
+
     return ok(res, {
       stats,
       todaysArrivals,
       todaysDepartures,
+      recentBookings,
       roomInventory,
       weeklyFlow,
       bookingSources,

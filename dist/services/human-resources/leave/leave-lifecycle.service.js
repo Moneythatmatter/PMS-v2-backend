@@ -49,7 +49,7 @@ export async function approveLeave(input) {
         createdBy: input.approvedBy,
         remarks: `Approved leave ${app.id}. Effective days: ${effective.effectiveDays}.`,
     });
-    const synced = await syncLeaveToAttendance(app.propertyId, app.id, effective, input.approvedBy);
+    // Mark approved before attendance sync — syncLeaveToAttendance requires Approved status.
     const row = await hrModel.update(hrTables.leaveApplications, app.id, {
         status: "Approved",
         approvedBy: input.approvedBy ?? "HR",
@@ -57,6 +57,7 @@ export async function approveLeave(input) {
         lastBalanceTransactionId: balanceResult.transactionId,
         updatedAt: new Date().toISOString(),
     });
+    const synced = await syncLeaveToAttendance(app.propertyId, app.id, effective, input.approvedBy);
     await writeLeaveAudit({
         propertyId: app.propertyId,
         leaveRequestId: app.id,

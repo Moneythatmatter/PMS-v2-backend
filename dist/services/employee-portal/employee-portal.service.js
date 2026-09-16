@@ -2,6 +2,7 @@ import { hrModel, hrTables } from "../../models/human-resources/index.js";
 import { findDailyRecord } from "../human-resources/attendance/attendance.service.js";
 import { enrichAttendanceRecords } from "../human-resources/attendance/enrich.js";
 import { enrichEmployee } from "../human-resources/enrich.js";
+import { buildUpcomingBirthdays, buildUpcomingHolidays, } from "../human-resources/upcoming-events.service.js";
 function todayIso() {
     return new Date().toISOString().slice(0, 10);
 }
@@ -35,7 +36,7 @@ export async function getEmployeeDashboard(input) {
     const { propertyId, employeeId } = input;
     const date = todayIso();
     const { fromDate, toDate } = monthRange();
-    const [employeeRaw, todayRecord, monthRows, leaveRows, otRows, payslipRows, shiftRows,] = await Promise.all([
+    const [employeeRaw, todayRecord, monthRows, leaveRows, otRows, payslipRows, shiftRows, colleagueRows, deptRows, holidayRows,] = await Promise.all([
         hrModel.get(hrTables.employees, employeeId),
         findDailyRecord(propertyId, employeeId, date),
         hrModel.list(hrTables.attendanceRecords, {
@@ -66,6 +67,17 @@ export async function getEmployeeDashboard(input) {
             orderBy: "effective_from",
             ascending: false,
         }),
+        hrModel.list(hrTables.employees, {
+            filters: { property_id: propertyId, status: "Active" },
+        }),
+        hrModel.list(hrTables.departments, {
+            filters: { property_id: propertyId },
+        }),
+        hrModel.list(hrTables.holidays, {
+            filters: { property_id: propertyId, status: "Active" },
+            orderBy: "holiday_date",
+            ascending: true,
+        }),
     ]);
     const employee = employeeRaw ? await enrichEmployee(employeeRaw) : null;
     const monthFiltered = monthRows.filter((r) => {
@@ -82,6 +94,17 @@ export async function getEmployeeDashboard(input) {
         const enriched = await enrichAttendanceRecords([todayRecord]);
         todayAttendance = enriched[0] ?? null;
     }
+    const deptLookup = new Map(deptRows.map((d) => [d.id, d.departmentName]));
+    const refDate = new Date(`${date}T12:00:00`);
+    const upcomingBirthdays = buildUpcomingBirthdays(colleagueRows, {
+        fromDate: refDate,
+        daysAhead: 60,
+        departmentLookup: deptLookup,
+    }).slice(0, 8);
+    const upcomingHolidays = buildUpcomingHolidays(holidayRows, {
+        fromDate: refDate,
+        daysAhead: 365,
+    }).slice(0, 5);
     return {
         date,
         employee: employee
@@ -113,6 +136,8 @@ export async function getEmployeeDashboard(input) {
             pendingCount: otPending.length,
             approvedCount: otApproved.length,
         },
+        upcomingBirthdays,
+        upcomingHolidays,
     };
 }
 export function toEmployeeProfile(employee) {

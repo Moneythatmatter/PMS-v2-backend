@@ -445,14 +445,10 @@ security definer
 as $$
 declare
   v_subtotal numeric(14, 2);
-  v_paid numeric(14, 2);
   v_folio_subtotal numeric(14, 2);
-  v_folio_paid numeric(14, 2);
 begin
-  select
-    coalesce(r.total_amount, 0),
-    coalesce(r.advance_paid, 0)
-  into v_subtotal, v_paid
+  select coalesce(r.total_amount, 0)
+  into v_subtotal
   from public.reservations r
   where r.id = p_booking_id;
 
@@ -460,8 +456,8 @@ begin
     return;
   end if;
 
-  select coalesce(f.subtotal, 0), coalesce(f.paid_amount, 0)
-  into v_folio_subtotal, v_folio_paid
+  select coalesce(f.subtotal, 0)
+  into v_folio_subtotal
   from public.folios f
   where f.id = p_folio_id;
 
@@ -469,16 +465,10 @@ begin
     return;
   end if;
 
-  -- Only seed empty folios from reservation (avoid overwriting transaction-synced totals)
+  -- Only seed empty folios from reservation (paid totals come from transactions ledger)
   if v_folio_subtotal = 0 and v_subtotal > 0 then
     update public.folios
     set subtotal = v_subtotal
-    where id = p_folio_id;
-  end if;
-
-  if v_folio_paid = 0 and v_paid > 0 then
-    update public.folios
-    set paid_amount = v_paid
     where id = p_folio_id;
   end if;
 end;
@@ -497,7 +487,6 @@ declare
   v_guest_id text;
   v_status public.folio_status;
   v_subtotal numeric(14, 2) := 0;
-  v_paid numeric(14, 2) := 0;
   v_res_status text;
 begin
   if p_booking_id is null or trim(p_booking_id) = '' then
@@ -519,9 +508,8 @@ begin
   select
     coalesce(nullif(trim(p_guest_id), ''), r.guest_id),
     r.status,
-    coalesce(r.total_amount, 0),
-    coalesce(r.advance_paid, 0)
-  into v_guest_id, v_res_status, v_subtotal, v_paid
+    coalesce(r.total_amount, 0)
+  into v_guest_id, v_res_status, v_subtotal
   from public.reservations r
   where r.id = p_booking_id;
 
@@ -552,8 +540,8 @@ begin
     0,
     0,
     v_subtotal,
-    v_paid,
-    greatest(0, v_subtotal - v_paid)
+    0,
+    v_subtotal
   )
   returning id into v_folio_id;
 

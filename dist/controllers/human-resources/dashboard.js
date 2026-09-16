@@ -1,4 +1,5 @@
 import { hrModel, hrTables } from "../../models/human-resources/index.js";
+import { buildUpcomingAnniversaries, buildUpcomingBirthdays, buildUpcomingHolidays, } from "../../services/human-resources/upcoming-events.service.js";
 import { fromError, ok } from "../../utils/response.js";
 function attendanceDateOf(row) {
     return (row.attendanceDate ?? row.recordDate ?? "").slice(0, 10);
@@ -32,7 +33,7 @@ export async function getDashboard(_req, res) {
         const todayStr = today.toISOString().slice(0, 10);
         const monthFrom = monthStart(today);
         const monthToExclusive = nextMonthStart(today);
-        const [employees, leaveApps, payroll, complaints, depts, designations, attendance] = await Promise.all([
+        const [employees, leaveApps, payroll, complaints, depts, designations, attendance, holidays] = await Promise.all([
             hrModel.list(hrTables.employees),
             hrModel.list(hrTables.leaveApplications),
             hrModel.list(hrTables.payrollRecords),
@@ -40,6 +41,7 @@ export async function getDashboard(_req, res) {
             hrModel.list(hrTables.departments),
             hrModel.list(hrTables.designations),
             hrModel.list(hrTables.attendanceRecords, { orderBy: "attendance_date" }),
+            hrModel.list(hrTables.holidays, { orderBy: "holiday_date", ascending: true }),
         ]);
         const totalEmployees = employees.length;
         const activeEmployees = employees.filter((e) => e.status === "Active").length;
@@ -120,6 +122,20 @@ export async function getDashboard(_req, res) {
         const attendanceRate = activeEmployees > 0
             ? Math.round(((presentCount + lateArrivals) / activeEmployees) * 1000) / 10
             : 0;
+        const upcomingBirthdays = buildUpcomingBirthdays(employees, {
+            fromDate: today,
+            daysAhead: 60,
+            departmentLookup: deptLookup,
+        });
+        const upcomingAnniversaries = buildUpcomingAnniversaries(employees, {
+            fromDate: today,
+            daysAhead: 60,
+            departmentLookup: deptLookup,
+        });
+        const upcomingHolidays = buildUpcomingHolidays(holidays, {
+            fromDate: today,
+            daysAhead: 120,
+        });
         return ok(res, {
             kpi: {
                 totalEmployees,
@@ -164,6 +180,9 @@ export async function getDashboard(_req, res) {
                 totalDeductions,
                 netPayroll: grossPayroll - totalDeductions,
             },
+            upcomingBirthdays,
+            upcomingAnniversaries,
+            upcomingHolidays,
         });
     }
     catch (e) {

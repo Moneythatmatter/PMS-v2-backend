@@ -1,44 +1,4 @@
--- Patch: check-in / check-out RPCs — stop writing rooms.status (column removed; use hk_rooms + reservations)
--- Run once in Supabase SQL Editor after rooms-drop-status.sql
-
-create or replace function public.fo_check_in_reservation(
-  p_reservation_id text,
-  p_activity_id text,
-  p_activity_message text,
-  p_activity_timestamp text
-)
-returns jsonb
-language plpgsql
-security definer
-as $$
-declare
-  r reservations%rowtype;
-  result jsonb;
-begin
-  select * into r from reservations where id = p_reservation_id for update;
-  if not found then
-    raise exception 'Reservation not found' using errcode = 'P0002';
-  end if;
-
-  if r.status in ('Checked Out') then
-    raise exception 'Cannot check in a checked-out reservation' using errcode = 'P0001';
-  end if;
-
-  if r.status in ('Checked In', 'In-House') then
-    raise exception 'Guest is already checked in' using errcode = 'P0001';
-  end if;
-
-  update reservations
-  set status = 'Checked In', arriving_today = false
-  where id = p_reservation_id
-  returning to_jsonb(reservations.*) into result;
-
-  insert into desk_activity (id, message, timestamp)
-  values (p_activity_id, p_activity_message, p_activity_timestamp);
-
-  return result;
-end;
-$$;
+-- Close open folios when a reservation is checked out (fo_check_out_reservation RPC).
 
 create or replace function public.fo_check_out_reservation(
   p_reservation_id text,
@@ -160,7 +120,4 @@ begin
 end;
 $$;
 
-grant execute on function public.fo_check_in_reservation(text, text, text, text) to anon, authenticated;
 grant execute on function public.fo_check_out_reservation(text, text, numeric, text, text, text, text, text, text, text) to anon, authenticated;
-
-notify pgrst, 'schema cache';

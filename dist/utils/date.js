@@ -28,20 +28,19 @@ export function todayIso(date = new Date()) {
     return `${y}-${m}-${day}`;
 }
 export function isArrivingTodayReservation(booking, now = new Date()) {
-    if (booking.arrivingToday)
-        return true;
     const checkIn = String(booking.checkIn ?? "").trim();
-    if (!checkIn)
-        return false;
     const today = todayIso(now);
-    const displayToday = now.toLocaleDateString("en-IN", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-    });
-    return (checkIn === today ||
-        checkIn.startsWith(today) ||
-        checkIn.includes(displayToday));
+    if (checkIn) {
+        const displayToday = now.toLocaleDateString("en-IN", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+        });
+        return (checkIn === today ||
+            checkIn.startsWith(today) ||
+            checkIn.includes(displayToday));
+    }
+    return booking.arrivingToday === true;
 }
 /** @deprecated Prefer formatTime / formatDate / timestamp */
 export const nowTime = formatTime;

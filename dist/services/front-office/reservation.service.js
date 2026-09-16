@@ -7,6 +7,7 @@ import { formatDate, formatTime, isArrivingTodayReservation, timestamp, } from "
 import { IdService } from "../shared/id.service.js";
 import { ActivityService } from "../shared/activity.service.js";
 import { TransactionService } from "../shared/transaction.service.js";
+import { FolioService } from "../shared/folio.service.js";
 import { enrichReservation, enrichReservations, displayRoomNo, isRealRoomRef, normalizeReservationRoomRef, normalizeReservationSourceRef, resolveRoomRef, sanitizeReservationInput, } from "./reservation-enrich.js";
 import { getRoomByRef, resolveRoomId } from "./room-resolver.js";
 import { getReservationByKey, } from "./reservation-lookup.js";
@@ -60,7 +61,7 @@ export const ReservationService = {
     async list(status) {
         const rows = await foModel.list(foModel.tables.reservations, {
             filters: status ? { status } : undefined,
-            orderBy: "id",
+            orderBy: "created_at",
             ascending: false,
         });
         return enrichReservations(rows);
@@ -307,6 +308,9 @@ export const ReservationService = {
                     notes: `Checkout payment — ${String(existing.guestName ?? "Guest")}`,
                 });
             }
+            await FolioService.closeOpenFoliosForBooking(reservationId).catch(() => {
+                /* folios table may not exist in older deployments */
+            });
             return enriched;
         }
         if (error &&
@@ -366,6 +370,9 @@ export const ReservationService = {
             room: roomRef,
             reservationId,
         });
+        await FolioService.closeOpenFoliosForBooking(reservationId).catch(() => {
+            /* folios table may not exist in older deployments */
+        });
         return enriched;
     },
     async extendStay(id, payload) {
@@ -400,7 +407,8 @@ export const ReservationService = {
                 label: "Arriving Today",
                 value: rows.filter((r) => isArrivingTodayReservation(r) &&
                     r.status !== ReservationStatus.CANCELLED &&
-                    r.status !== ReservationStatus.CHECKED_OUT).length,
+                    r.status !== ReservationStatus.CHECKED_OUT &&
+                    r.status !== ReservationStatus.NO_SHOW).length,
                 icon: "user-check",
                 color: "#22c55e",
             },
