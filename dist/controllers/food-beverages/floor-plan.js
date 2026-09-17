@@ -10,6 +10,16 @@ export async function listFloorPlan(req, res) {
         return fromError(res, e);
     }
 }
+export async function listRoomServiceOpenOrders(req, res) {
+    try {
+        const outletId = req.query.outletId;
+        const rows = await FloorPlanService.listRoomServiceOpenOrders(outletId);
+        return ok(res, rows);
+    }
+    catch (e) {
+        return fromError(res, e);
+    }
+}
 export async function getFloorPlanTable(req, res) {
     try {
         const row = await FloorPlanService.getTableFloorPlan(String(req.params.id));

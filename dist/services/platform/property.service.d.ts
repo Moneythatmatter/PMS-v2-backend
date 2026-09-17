@@ -1,4 +1,4 @@
-import type { PropertyRow, UserPermissionRow } from "../../types/platform.js";
+import type { PropertyRow, UserPermissionRow, UserPropertyAccessRow } from "../../types/platform.js";
 declare function initialsFromName(name: string): string;
 export declare const PropertyService: {
     userCanAccessProperty(userId: string, propertyId: string, isSuperAdmin?: boolean, role?: string): Promise<boolean>;

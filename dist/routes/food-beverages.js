@@ -18,6 +18,7 @@ const outletFilter = (req) => ({
 router.get("/dashboard", getDashboard);
 // Live tables (ops)
 router.get("/live-tables", liveTables.listLiveTables);
+router.get("/floor-plan/room-service", floorPlan.listRoomServiceOpenOrders);
 router.get("/floor-plan", floorPlan.listFloorPlan);
 router.get("/floor-plan/:id", floorPlan.getFloorPlanTable);
 router.patch("/live-tables/:id", liveTables.updateLiveTable);

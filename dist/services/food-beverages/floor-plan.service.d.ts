@@ -29,6 +29,24 @@ declare function loadContextForTable(table: Row): Promise<{
 export declare const FloorPlanService: {
     deriveDisplayState: typeof deriveDisplayState;
     DISPLAY_TO_LEGACY: Record<TableDisplayState, LegacyTableStatus>;
+    listRoomServiceOpenOrders(outletId?: string): Promise<{
+        id: string;
+        outletId: string;
+        tableNo: string;
+        section: string;
+        capacity: number;
+        covers: number;
+        guest: string;
+        server: string;
+        durationMin: number;
+        checkAmount: number;
+        status: LegacyTableStatus;
+        displayState: TableDisplayState;
+        openOrderId: string;
+        openBillId: string | null;
+        reservationId: string | null;
+        kotCount: number;
+    }[]>;
     listFloorPlan(outletId?: string): Promise<{
         displayState: TableDisplayState;
         status: string;

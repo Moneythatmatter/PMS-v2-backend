@@ -51,7 +51,7 @@ select gen_random_uuid()::text, 'U-ADMIN', p.id, m.key, 'admin'
 from public.properties p
 cross join (values
   ('dashboard'), ('front_office'), ('food_beverages'), ('housekeeping'),
-  ('purchase_stores'), ('human_resources'), ('accounts'), ('sales_marketing'), ('system_settings')
+  ('purchase_stores'), ('human_resources'), ('accounts'), ('sales_marketing')
 ) as m(key)
 on conflict do nothing;
 

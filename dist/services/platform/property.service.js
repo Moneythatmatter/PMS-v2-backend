@@ -13,7 +13,7 @@ function initialsFromName(name) {
 }
 export const PropertyService = {
     async userCanAccessProperty(userId, propertyId, isSuperAdmin, role) {
-        if (isPlatformAdmin({ isSuperAdmin, role }))
+        if (isPlatformAdmin({ isSuperAdmin, role: role ?? "" }))
             return true;
         const { data, error } = await supabase
             .from(ACCESS)
@@ -26,7 +26,7 @@ export const PropertyService = {
         return Boolean(data);
     },
     async listForUser(userId, isSuperAdmin, role) {
-        if (isPlatformAdmin({ isSuperAdmin, role })) {
+        if (isPlatformAdmin({ isSuperAdmin, role: role ?? "" })) {
             const { data, error } = await supabase
                 .from(PROPERTIES)
                 .select("*")

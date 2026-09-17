@@ -69,7 +69,7 @@ async function assertEmployeeLink(input: {
 
 export const UserAdminService = {
   assertSuperAdmin(isSuperAdmin?: boolean, role?: string) {
-    if (!isPlatformAdmin({ isSuperAdmin, role }))
+    if (!isPlatformAdmin({ isSuperAdmin, role: role ?? "" }))
       throw new PermissionError("Administrator access required");
   },
 

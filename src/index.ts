@@ -13,6 +13,7 @@ import purchaseStoresRoutes from "./routes/purchase-stores.js";
 import platformRoutes from "./routes/platform.js";
 import transactionsRoutes from "./routes/transactions.js";
 import humanResourcesRoutes from "./routes/human-resources.js";
+import salesMarketingRoutes from "./routes/sales-marketing.js";
 import employeePortalRoutes from "./routes/employee-portal.js";
 
 const app = express();
@@ -44,6 +45,7 @@ app.use("/api/food-beverages", foodBeveragesRoutes);
 app.use("/api/housekeeping", housekeepingRoutes);
 app.use("/api/purchase-stores", purchaseStoresRoutes);
 app.use("/api/human-resources", humanResourcesRoutes);
+app.use("/api/sales-marketing", salesMarketingRoutes);
 app.use("/api/employee-portal", employeePortalRoutes);
 app.use("/api", transactionsRoutes);
 
@@ -59,6 +61,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("  [HK]   /api/housekeeping");
   console.log("  [PS]   /api/purchase-stores");
   console.log("  [HR]   /api/human-resources");
+  console.log("  [SM]   /api/sales-marketing");
   console.log("  [EMP]  /api/employee-portal");
   console.log("  [TXN]  /api/transactions\n");
 });

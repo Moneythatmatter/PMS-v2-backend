@@ -7,6 +7,5 @@ export const PLATFORM_MODULES = [
     { key: "human_resources", label: "Human Resources" },
     { key: "accounts", label: "Accounts" },
     { key: "sales_marketing", label: "Sales & Marketing" },
-    { key: "system_settings", label: "System Settings" },
 ];
 //# sourceMappingURL=platform.js.map

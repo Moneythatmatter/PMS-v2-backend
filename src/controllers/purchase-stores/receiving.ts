@@ -226,7 +226,7 @@ export async function createGrn(req: Request, res: Response) {
     const items = (body.items as GrnLine[]) ?? [];
     const totalAmount = items.reduce((s, l) => s + Number(l.receivedValue ?? 0), 0);
 
-    const grnPayload = {
+    const grnPayload: Record<string, unknown> = {
       ...body,
       itemCount: items.length,
       totalAmount,

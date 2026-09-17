@@ -7,15 +7,26 @@ import { getActivePropertyId } from "../../utils/request-context.js";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export function isRoomUuid(value: string): boolean {
-  return UUID_RE.test(value.trim());
+type QueryResult = {
+  data: Record<string, unknown> | Record<string, unknown>[] | null;
+  error: { message: string } | null;
+};
+
+type RoomQueryBuilder = {
+  eq: (column: string, value: string) => RoomQueryBuilder;
+  in: (column: string, values: string[]) => Promise<QueryResult>;
+  maybeSingle: () => Promise<QueryResult>;
+};
+
+function roomsQuery(select: string): RoomQueryBuilder {
+  const propertyId = getActivePropertyId();
+  let builder = supabase.from(foModel.tables.rooms).select(select) as unknown as RoomQueryBuilder;
+  if (propertyId) builder = builder.eq("property_id", propertyId);
+  return builder;
 }
 
-function applyPropertyScope<T extends { eq: (column: string, value: string) => T }>(
-  query: T,
-): T {
-  const propertyId = getActivePropertyId();
-  return propertyId ? query.eq("property_id", propertyId) : query;
+export function isRoomUuid(value: string): boolean {
+  return UUID_RE.test(value.trim());
 }
 
 /** Resolve room id or room number to rooms.id for FK storage. */
@@ -25,24 +36,21 @@ export async function resolveRoomId(
   const trimmed = String(ref ?? "").trim();
   if (!trimmed) return null;
 
-  const byId = applyPropertyScope(
-    supabase.from(foModel.tables.rooms).select("id").eq("id", trimmed),
-  );
-  const { data: idRow, error: idError } = await byId.maybeSingle();
+  const { data: idRow, error: idError } = await roomsQuery("id").eq("id", trimmed).maybeSingle();
   if (idError) throw new Error(idError.message);
-  if (idRow?.id) return String(idRow.id);
+  if (idRow && !Array.isArray(idRow) && idRow.id) return String(idRow.id);
 
   if (isRoomUuid(trimmed)) {
     const byFoModel = await foModel.get<Room>(foModel.tables.rooms, trimmed);
     return byFoModel ? trimmed : null;
   }
 
-  const byRoomNo = applyPropertyScope(
-    supabase.from(foModel.tables.rooms).select("id").eq("room_no", trimmed),
-  );
-  const { data: noRow, error: noError } = await byRoomNo.maybeSingle();
+  const { data: noRow, error: noError } = await roomsQuery("id")
+    .eq("room_no", trimmed)
+    .maybeSingle();
   if (noError) throw new Error(noError.message);
-  return noRow?.id ? String(noRow.id) : null;
+  if (noRow && !Array.isArray(noRow) && noRow.id) return String(noRow.id);
+  return null;
 }
 
 /** Load room by rooms.id or display room number. */
@@ -52,23 +60,19 @@ export async function getRoomByRef(
   const trimmed = String(ref ?? "").trim();
   if (!trimmed) return null;
 
-  const byId = applyPropertyScope(
-    supabase.from(foModel.tables.rooms).select("*").eq("id", trimmed),
-  );
-  const { data: idRow, error: idError } = await byId.maybeSingle();
+  const { data: idRow, error: idError } = await roomsQuery("*").eq("id", trimmed).maybeSingle();
   if (idError) throw new Error(idError.message);
-  if (idRow) return toCamel<Room>(idRow);
+  if (idRow && !Array.isArray(idRow)) return toCamel<Room>(idRow);
 
   if (isRoomUuid(trimmed)) {
     return foModel.get<Room>(foModel.tables.rooms, trimmed);
   }
 
-  const byRoomNo = applyPropertyScope(
-    supabase.from(foModel.tables.rooms).select("*").eq("room_no", trimmed),
-  );
-  const { data: noRow, error: noError } = await byRoomNo.maybeSingle();
+  const { data: noRow, error: noError } = await roomsQuery("*")
+    .eq("room_no", trimmed)
+    .maybeSingle();
   if (noError) throw new Error(noError.message);
-  return noRow ? toCamel<Room>(noRow) : null;
+  return noRow && !Array.isArray(noRow) ? toCamel<Room>(noRow) : null;
 }
 
 /** Batch-fetch rooms by id and/or room_no; map keyed by rooms.id. */
@@ -86,21 +90,21 @@ export async function fetchRoomsByRefs(
     }
   };
 
-  const byIds = applyPropertyScope(
-    supabase.from(foModel.tables.rooms).select("*").in("id", unique),
+  const { data: idRows, error: idError } = await roomsQuery("*").in(
+    "id",
+    unique,
   );
-  const { data: idRows, error: idError } = await byIds;
   if (idError) throw new Error(idError.message);
-  ingest(idRows);
+  ingest(Array.isArray(idRows) ? idRows : idRows ? [idRows] : null);
 
   const unresolved = unique.filter((ref) => !lookupRoomInMap(map, ref));
   if (unresolved.length) {
-    const byRoomNos = applyPropertyScope(
-      supabase.from(foModel.tables.rooms).select("*").in("room_no", unresolved),
+    const { data: noRows, error: noError } = await roomsQuery("*").in(
+      "room_no",
+      unresolved,
     );
-    const { data: noRows, error: noError } = await byRoomNos;
     if (noError) throw new Error(noError.message);
-    ingest(noRows);
+    ingest(Array.isArray(noRows) ? noRows : noRows ? [noRows] : null);
   }
 
   return map;

@@ -1,0 +1,108 @@
+import { deleteRow, getRowById, insertRow, listRows, newCode, newId, updateRow } from "../front-office/base.js";
+export declare const smTables: {
+    readonly venues: "sm_venues";
+    readonly leadSources: "sm_lead_sources";
+    readonly activityTypes: "sm_activity_types";
+    readonly dealStages: "sm_deal_stages";
+    readonly contactTypes: "sm_contact_types";
+    readonly bookingTypes: "sm_booking_types";
+    readonly contacts: "sm_contacts";
+    readonly leads: "sm_leads";
+    readonly deals: "sm_deals";
+    readonly activities: "sm_activities";
+    readonly bookings: "sm_bookings";
+    readonly promotions: "sm_promotions";
+    readonly campaigns: "sm_campaigns";
+    readonly otaChannels: "sm_ota_channels";
+};
+export declare const smModel: {
+    list: typeof listRows;
+    get: typeof getRowById;
+    create: typeof insertRow;
+    update: typeof updateRow;
+    remove: typeof deleteRow;
+    newId: typeof newId;
+    newCode: typeof newCode;
+    tables: {
+        readonly venues: "sm_venues";
+        readonly leadSources: "sm_lead_sources";
+        readonly activityTypes: "sm_activity_types";
+        readonly dealStages: "sm_deal_stages";
+        readonly contactTypes: "sm_contact_types";
+        readonly bookingTypes: "sm_booking_types";
+        readonly contacts: "sm_contacts";
+        readonly leads: "sm_leads";
+        readonly deals: "sm_deals";
+        readonly activities: "sm_activities";
+        readonly bookings: "sm_bookings";
+        readonly promotions: "sm_promotions";
+        readonly campaigns: "sm_campaigns";
+        readonly otaChannels: "sm_ota_channels";
+    };
+};
+export declare const SYSTEM_BOOKING_TYPES: readonly [{
+    readonly code: "BANQUET";
+    readonly centralType: "Banquet / Event Booking";
+    readonly leadType: "Banquet Event";
+    readonly cardLabel: "Banquet / Wedding Event";
+    readonly shortLabel: "Banquet / Event";
+    readonly description: "Weddings, receptions, parties, gala dinners";
+    readonly beoRequired: true;
+    readonly handoverNote: "BEO required";
+    readonly iconKey: "sparkles";
+    readonly sortOrder: 1;
+}, {
+    readonly code: "CONFERENCE";
+    readonly centralType: "Conference Booking";
+    readonly leadType: "Conference";
+    readonly cardLabel: "Conference / Meeting";
+    readonly shortLabel: "Conference";
+    readonly description: "Corporate seminars, boardroom meets, MICE events";
+    readonly beoRequired: true;
+    readonly handoverNote: "BEO required";
+    readonly iconKey: "building2";
+    readonly sortOrder: 2;
+}, {
+    readonly code: "ROOM";
+    readonly centralType: "Room Booking";
+    readonly leadType: "Room Booking";
+    readonly cardLabel: "Room Booking Stay";
+    readonly shortLabel: "Room Booking";
+    readonly description: "Individual or delegation room stays";
+    readonly beoRequired: false;
+    readonly handoverNote: "Front Office handover";
+    readonly iconKey: "bed";
+    readonly sortOrder: 3;
+}, {
+    readonly code: "RESTAURANT";
+    readonly centralType: "Restaurant Booking";
+    readonly leadType: "Restaurant";
+    readonly cardLabel: "Restaurant Booking";
+    readonly shortLabel: "Restaurant";
+    readonly description: "Dining tables & group dinners";
+    readonly beoRequired: false;
+    readonly handoverNote: "F&B handover";
+    readonly iconKey: "utensils";
+    readonly sortOrder: 4;
+}, {
+    readonly code: "POOL";
+    readonly centralType: "Swimming Pool Booking";
+    readonly leadType: "Swimming Pool";
+    readonly cardLabel: "Swimming Pool Booking";
+    readonly shortLabel: "Swimming Pool";
+    readonly description: "Pool deck buyouts & social gatherings";
+    readonly beoRequired: false;
+    readonly handoverNote: "Configurable BEO";
+    readonly iconKey: "waves";
+    readonly sortOrder: 5;
+}, {
+    readonly code: "PRIVATE";
+    readonly centralType: "Private Event / Other";
+    readonly leadType: "Private Event";
+    readonly cardLabel: "Private / Other Event";
+    readonly shortLabel: "Private Event";
+    readonly description: "Custom private gatherings & special occasions";
+    readonly beoRequired: false;
+    readonly iconKey: "calendar";
+    readonly sortOrder: 6;
+}];

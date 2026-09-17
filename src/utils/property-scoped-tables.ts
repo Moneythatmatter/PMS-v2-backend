@@ -67,6 +67,20 @@ export const PROPERTY_SCOPED_TABLES = new Set([
   "hr_payroll_settings",
   "hr_tax_rules",
   "hr_audit_logs",
+  "sm_venues",
+  "sm_lead_sources",
+  "sm_activity_types",
+  "sm_deal_stages",
+  "sm_contact_types",
+  "sm_booking_types",
+  "sm_contacts",
+  "sm_leads",
+  "sm_deals",
+  "sm_activities",
+  "sm_bookings",
+  "sm_promotions",
+  "sm_campaigns",
+  "sm_ota_channels",
 ]);
 
 export function isPropertyScopedTable(table: string): boolean {

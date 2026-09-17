@@ -22,9 +22,6 @@ export declare const PLATFORM_MODULES: readonly [{
 }, {
     readonly key: "sales_marketing";
     readonly label: "Sales & Marketing";
-}, {
-    readonly key: "system_settings";
-    readonly label: "System Settings";
 }];
 export type ModuleKey = (typeof PLATFORM_MODULES)[number]["key"];
 export type PermissionLevel = "read" | "write" | "admin";

@@ -6,6 +6,7 @@ import type {
   PermissionLevel,
   PropertyRow,
   UserPermissionRow,
+  UserPropertyAccessRow,
 } from "../../types/platform.js";
 
 const PROPERTIES = "properties";
@@ -25,7 +26,7 @@ export const PropertyService = {
     isSuperAdmin?: boolean,
     role?: string,
   ): Promise<boolean> {
-    if (isPlatformAdmin({ isSuperAdmin, role })) return true;
+    if (isPlatformAdmin({ isSuperAdmin, role: role ?? "" })) return true;
     const { data, error } = await supabase
       .from(ACCESS)
       .select("property_id")
@@ -41,7 +42,7 @@ export const PropertyService = {
     isSuperAdmin?: boolean,
     role?: string,
   ): Promise<PropertyRow[]> {
-    if (isPlatformAdmin({ isSuperAdmin, role })) {
+    if (isPlatformAdmin({ isSuperAdmin, role: role ?? "" })) {
       const { data, error } = await supabase
         .from(PROPERTIES)
         .select("*")

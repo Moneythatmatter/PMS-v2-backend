@@ -5,6 +5,7 @@ function moduleTag(url: string): string {
   if (url.startsWith("/api/housekeeping")) return "HK";
   if (url.startsWith("/api/purchase-stores")) return "PS";
   if (url.startsWith("/api/human-resources")) return "HR";
+  if (url.startsWith("/api/sales-marketing")) return "SM";
   if (url.startsWith("/api/food-beverages")) return "FB";
   if (url.startsWith("/api/front-office")) return "FO";
   if (url.startsWith("/api/auth")) return "AUTH";

@@ -7,7 +7,6 @@ export const PLATFORM_MODULES = [
   { key: "human_resources", label: "Human Resources" },
   { key: "accounts", label: "Accounts" },
   { key: "sales_marketing", label: "Sales & Marketing" },
-  { key: "system_settings", label: "System Settings" },
 ] as const;
 
 export type ModuleKey = (typeof PLATFORM_MODULES)[number]["key"];

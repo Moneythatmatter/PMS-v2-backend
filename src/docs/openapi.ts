@@ -247,7 +247,6 @@ const apiSchemas = {
           "human_resources",
           "accounts",
           "sales_marketing",
-          "system_settings",
         ],
       },
       label: { type: "string", example: "Front Office" },
