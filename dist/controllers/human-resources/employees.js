@@ -1,7 +1,50 @@
 import { hrModel, hrTables } from "../../models/human-resources/index.js";
-import { newId } from "../../models/front-office/base.js";
+import { newCode, newId } from "../../models/front-office/base.js";
 import { clearHrLookupCache, enrichEmployee, enrichEmployees } from "../../services/human-resources/enrich.js";
 import { fail, fromError, ok } from "../../utils/response.js";
+/** Postgres rejects "" for date/uuid FK columns — coerce blanks to null. */
+const EMPLOYEE_NULLABLE_KEYS = [
+    "departmentId",
+    "designationId",
+    "employmentTypeId",
+    "shiftTypeId",
+    "leavePolicyId",
+    "salaryStructureId",
+    "joinDate",
+    "dob",
+    "phone",
+    "gender",
+    "address",
+    "bloodGroup",
+    "emergencyContact",
+    "reportingManager",
+    "avatar",
+    "photoUrl",
+    "bankAccount",
+    "bankName",
+    "ifscCode",
+    "panNumber",
+    "uanNumber",
+    "esicNumber",
+];
+function sanitizeEmployeePayload(body) {
+    const out = { ...body };
+    for (const key of EMPLOYEE_NULLABLE_KEYS) {
+        if (out[key] === "" || out[key] === undefined)
+            out[key] = null;
+    }
+    return out;
+}
+function applyNameSplit(body, force = false) {
+    if (!body.name)
+        return;
+    if (!force && body.firstName)
+        return;
+    const parts = String(body.name).split(" ").filter(Boolean);
+    body.firstName = parts[0] ?? body.firstName;
+    body.lastName = parts.slice(1).join(" ") || parts[0] || body.lastName;
+    delete body.name;
+}
 export async function listEmployees(_req, res) {
     try {
         const rows = await hrModel.list(hrTables.employees, { orderBy: "emp_code" });
@@ -24,15 +67,13 @@ export async function getEmployee(req, res) {
 }
 export async function createEmployee(req, res) {
     try {
-        const body = { ...req.body };
+        let body = sanitizeEmployeePayload({ ...req.body });
         if (!body.id)
             body.id = newId();
-        if (body.name && !body.firstName) {
-            const parts = String(body.name).split(" ");
-            body.firstName = parts[0];
-            body.lastName = parts.slice(1).join(" ") || parts[0];
-            delete body.name;
+        if (!body.empCode || String(body.empCode).trim() === "") {
+            body.empCode = newCode("EMP");
         }
+        applyNameSplit(body);
         clearHrLookupCache(req.propertyId);
         const row = await hrModel.create(hrTables.employees, body);
         return ok(res, await enrichEmployee(row), 201);
@@ -43,14 +84,9 @@ export async function createEmployee(req, res) {
 }
 export async function updateEmployee(req, res) {
     try {
-        const body = { ...req.body };
+        let body = sanitizeEmployeePayload({ ...req.body });
         delete body.id;
-        if (body.name) {
-            const parts = String(body.name).split(" ");
-            body.firstName = parts[0];
-            body.lastName = parts.slice(1).join(" ") || parts[0];
-            delete body.name;
-        }
+        applyNameSplit(body, true);
         clearHrLookupCache(req.propertyId);
         const row = await hrModel.update(hrTables.employees, String(req.params.id), body);
         return ok(res, await enrichEmployee(row));

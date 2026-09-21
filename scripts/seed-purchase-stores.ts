@@ -50,10 +50,10 @@ async function seed() {
   ]);
 
   await upsert("ps_products", [
-    { id: U.prdSheet, product_code: "PRD-LIN-001", product_name: "Bedsheet (King Size 300TC)", category: "Housekeeping Linen", unit: "Pieces", preferred_supplier: "Apex Linen Supplies Pvt Ltd", purchase_price: 350, gst_percent: 12, tax_type: "Exclusive", minimum_stock: 50, maximum_stock: 500, par_stock: 200, reorder_level: 80, storage_type: "Dry Storage", status: "Active", created_date: "2026-06-01" },
-    { id: U.prdPillow, product_code: "PRD-LIN-002", product_name: "Pillow Cover (Satin Finish 20x30)", category: "Housekeeping Linen", unit: "Pieces", preferred_supplier: "Apex Linen Supplies Pvt Ltd", purchase_price: 90, gst_percent: 12, tax_type: "Exclusive", minimum_stock: 80, maximum_stock: 600, par_stock: 280, reorder_level: 100, storage_type: "Dry Storage", status: "Active", created_date: "2026-06-01" },
-    { id: U.prdSoap, product_code: "PRD-AMN-001", product_name: "Luxury Herbal Soap (20g)", category: "Guest Amenities", unit: "Pieces", preferred_supplier: "Diversey Chemicals India", purchase_price: 12, gst_percent: 18, tax_type: "Exclusive", minimum_stock: 200, maximum_stock: 2000, par_stock: 450, reorder_level: 300, storage_type: "Room Temp", status: "Active", created_date: "2026-06-10" },
-    { id: U.prdFilter, product_code: "PRD-ENG-001", product_name: "HVAC Pleated Air Filter 24x24", category: "Engineering Spares", unit: "Pieces", preferred_supplier: "Bharat Electricals & Hardware", purchase_price: 420, gst_percent: 18, tax_type: "Exclusive", minimum_stock: 10, maximum_stock: 50, par_stock: 24, reorder_level: 12, storage_type: "Dry Storage", status: "Active", created_date: "2026-06-15" },
+    { id: U.prdSheet, product_code: "PRD-LIN-001", product_name: "Bedsheet (King Size 300TC)", category: "Housekeeping Linen", unit: "Pieces", minimum_stock: 50, maximum_stock: 500, par_stock: 200, reorder_level: 80, storage_type: "Dry Storage", status: "Active", created_date: "2026-06-01" },
+    { id: U.prdPillow, product_code: "PRD-LIN-002", product_name: "Pillow Cover (Satin Finish 20x30)", category: "Housekeeping Linen", unit: "Pieces", minimum_stock: 80, maximum_stock: 600, par_stock: 280, reorder_level: 100, storage_type: "Dry Storage", status: "Active", created_date: "2026-06-01" },
+    { id: U.prdSoap, product_code: "PRD-AMN-001", product_name: "Luxury Herbal Soap (20g)", category: "Guest Amenities", unit: "Pieces", minimum_stock: 200, maximum_stock: 2000, par_stock: 450, reorder_level: 300, storage_type: "Room Temp", status: "Active", created_date: "2026-06-10" },
+    { id: U.prdFilter, product_code: "PRD-ENG-001", product_name: "HVAC Pleated Air Filter 24x24", category: "Engineering Spares", unit: "Pieces", minimum_stock: 10, maximum_stock: 50, par_stock: 24, reorder_level: 12, storage_type: "Dry Storage", status: "Active", created_date: "2026-06-15" },
   ]);
 
   await upsert("ps_warehouses", [

@@ -22,11 +22,11 @@ insert into ps_suppliers (id, supplier_code, supplier_name, contact_person, phon
   ('30000000-0000-4000-8000-000000000102', 'SUP-DVR', 'Diversey Chemicals India', 'Meera Nair', '+91 98123 45678', 'sales@diversey.co.in', null, 'Net 30 Days', 5, 'Active', '2026-05-15')
 on conflict (id) do nothing;
 
-insert into ps_products (id, product_code, product_name, category, unit, preferred_supplier, purchase_price, gst_percent, tax_type, minimum_stock, maximum_stock, par_stock, reorder_level, storage_type, status, created_date) values
-  ('40000000-0000-4000-8000-000000000101', 'PRD-LIN-001', 'Bedsheet (King Size 300TC)', 'Housekeeping Linen', 'Pieces', 'Apex Linen Supplies Pvt Ltd', 350, 12, 'Exclusive', 50, 500, 200, 80, 'Dry Storage', 'Active', '2026-06-01'),
-  ('40000000-0000-4000-8000-000000000102', 'PRD-LIN-002', 'Pillow Cover (Satin Finish 20x30)', 'Housekeeping Linen', 'Pieces', 'Apex Linen Supplies Pvt Ltd', 90, 12, 'Exclusive', 80, 600, 280, 100, 'Dry Storage', 'Active', '2026-06-01'),
-  ('40000000-0000-4000-8000-000000000107', 'PRD-AMN-001', 'Luxury Herbal Soap (20g)', 'Guest Amenities', 'Pieces', 'Diversey Chemicals India', 12, 18, 'Exclusive', 200, 2000, 450, 300, 'Room Temp', 'Active', '2026-06-10'),
-  ('40000000-0000-4000-8000-000000000109', 'PRD-ENG-001', 'HVAC Pleated Air Filter 24x24', 'Engineering Spares', 'Pieces', 'Bharat Electricals & Hardware', 420, 18, 'Exclusive', 10, 50, 24, 12, 'Dry Storage', 'Active', '2026-06-15')
+insert into ps_products (id, product_code, product_name, category, unit, minimum_stock, maximum_stock, par_stock, reorder_level, storage_type, status, created_date) values
+  ('40000000-0000-4000-8000-000000000101', 'PRD-LIN-001', 'Bedsheet (King Size 300TC)', 'Housekeeping Linen', 'Pieces', 50, 500, 200, 80, 'Dry Storage', 'Active', '2026-06-01'),
+  ('40000000-0000-4000-8000-000000000102', 'PRD-LIN-002', 'Pillow Cover (Satin Finish 20x30)', 'Housekeeping Linen', 'Pieces', 80, 600, 280, 100, 'Dry Storage', 'Active', '2026-06-01'),
+  ('40000000-0000-4000-8000-000000000107', 'PRD-AMN-001', 'Luxury Herbal Soap (20g)', 'Guest Amenities', 'Pieces', 200, 2000, 450, 300, 'Room Temp', 'Active', '2026-06-10'),
+  ('40000000-0000-4000-8000-000000000109', 'PRD-ENG-001', 'HVAC Pleated Air Filter 24x24', 'Engineering Spares', 'Pieces', 10, 50, 24, 12, 'Dry Storage', 'Active', '2026-06-15')
 on conflict (id) do nothing;
 
 insert into ps_warehouses (id, code, name, type, location, status) values

@@ -1,0 +1,11 @@
+-- Engineering Maintenance module — quick setup
+--
+-- 1. Run `maintenance-schema.sql` in Supabase SQL Editor.
+-- 2. Restart the Node API (`npm run dev` in backend).
+-- 3. Frontend calls `/api/maintenance/*` (see hotel-pms-v2/services/maintenance).
+--
+-- Tables (prefix mnt_):
+--   Masters: asset_categories, problem_categories, root_causes, pm_templates, vendors
+--   Ops:     assets, requests, work_orders, pm_schedules
+--
+-- Note: This is separate from housekeeping `maintenance_requests`.
