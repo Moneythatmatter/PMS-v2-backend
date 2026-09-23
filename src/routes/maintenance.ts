@@ -4,6 +4,8 @@ import { requireProperty } from "../middleware/property.js";
 import { attachRequestContext } from "../middleware/request-context.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import * as dashboard from "../controllers/maintenance/dashboard.js";
+import * as mntRooms from "../controllers/maintenance/rooms.js";
+import * as mntPublicAreas from "../controllers/maintenance/public-areas.js";
 import { mntModel } from "../models/maintenance/index.js";
 import {
   packMntDocument,
@@ -67,6 +69,19 @@ const docCrud = (cfg: DocConfig) =>
 router.get("/dashboard", dashboard.getDashboard);
 router.get("/reports", dashboard.getReports);
 
+// Location ops (synced from FO rooms + HK public_areas)
+router.get("/rooms", mntRooms.listMntRooms);
+router.get("/rooms/:id", mntRooms.getMntRoom);
+router.post("/rooms", mntRooms.createMntRoom);
+router.put("/rooms/:id", mntRooms.updateMntRoom);
+router.delete("/rooms/:id", mntRooms.deleteMntRoom);
+
+router.get("/public-areas", mntPublicAreas.listMntPublicAreas);
+router.get("/public-areas/:id", mntPublicAreas.getMntPublicArea);
+router.post("/public-areas", mntPublicAreas.createMntPublicArea);
+router.put("/public-areas/:id", mntPublicAreas.updateMntPublicArea);
+router.delete("/public-areas/:id", mntPublicAreas.deleteMntPublicArea);
+
 // Masters
 mountCrud(router, "/masters/asset-categories", masterCrud(T.assetCategories, "MAC", "category_code"));
 mountCrud(router, "/masters/problem-categories", masterCrud(T.problemCategories, "MPC", "category_code"));
@@ -74,6 +89,20 @@ mountCrud(router, "/masters/root-causes", masterCrud(T.rootCauses, "MRC", "root_
 mountCrud(router, "/masters/pm-templates", masterCrud(T.pmTemplates, "MPT", "template_code"));
 mountCrud(router, "/masters/vendors", masterCrud(T.vendors, "MNV", "vendor_code"));
 mountCrud(router, "/masters/spare-parts", masterCrud(T.spareParts, "MSP", "part_code"));
+mountCrud(router, "/masters/rooms", {
+  list: mntRooms.listMntRooms,
+  get: mntRooms.getMntRoom,
+  create: mntRooms.createMntRoom,
+  update: mntRooms.updateMntRoom,
+  remove: mntRooms.deleteMntRoom,
+});
+mountCrud(router, "/masters/public-areas", {
+  list: mntPublicAreas.listMntPublicAreas,
+  get: mntPublicAreas.getMntPublicArea,
+  create: mntPublicAreas.createMntPublicArea,
+  update: mntPublicAreas.updateMntPublicArea,
+  remove: mntPublicAreas.deleteMntPublicArea,
+});
 
 // Operations
 mountCrud(

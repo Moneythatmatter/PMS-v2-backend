@@ -18,7 +18,9 @@ declare
     'mnt_assets',
     'mnt_requests',
     'mnt_work_orders',
-    'mnt_pm_schedules'
+    'mnt_pm_schedules',
+    'mnt_rooms',
+    'mnt_public_areas'
   ];
 begin
   foreach t in array tables

@@ -3,6 +3,7 @@ import { supabase } from "../../utils/supabase.js";
 import { hkModel } from "../../models/housekeeping/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import { sanitizePublicAreaInput } from "../../services/housekeeping/public-area-sanitize.js";
+import { ensureMntPublicAreaForMaster } from "../../services/maintenance/location-sync.js";
 import {
   normalizePublicAreaPriority,
   type PublicAreaMaster,
@@ -82,6 +83,7 @@ export async function createPublicAreaMaster(req: Request, res: Response) {
       hkModel.tables.publicAreasMaster,
       body,
     );
+    await ensureMntPublicAreaForMaster(String(row.id));
     return ok(res, row, 201);
   } catch (e) {
     return fromError(res, e);

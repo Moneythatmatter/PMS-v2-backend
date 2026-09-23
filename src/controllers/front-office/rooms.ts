@@ -13,6 +13,7 @@ import {
   hkStatusToHousekeeping,
   hkStatusToMaintenance,
 } from "../../services/front-office/room-hk-status.js";
+import { ensureMntRoomForFoRoom } from "../../services/maintenance/location-sync.js";
 import {
   blockKindForDay,
   fetchRoomAvailabilityBlocks,
@@ -96,6 +97,7 @@ export async function createRoom(req: Request, res: Response) {
     if (body.isActive === undefined) body.isActive = true;
     const row = (await foModel.create(foModel.tables.rooms, body)) as Room;
     await ensureHkRoomForFoRoom(String(row.id));
+    await ensureMntRoomForFoRoom(String(row.id));
     return ok(res, row, 201);
   } catch (e) {
     return fromError(res, e);

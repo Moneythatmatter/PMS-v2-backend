@@ -91,6 +91,8 @@ export const PROPERTY_SCOPED_TABLES = new Set([
   "mnt_requests",
   "mnt_work_orders",
   "mnt_pm_schedules",
+  "mnt_rooms",
+  "mnt_public_areas",
 ]);
 
 export function isPropertyScopedTable(table: string): boolean {

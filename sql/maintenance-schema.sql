@@ -202,6 +202,46 @@ create index if not exists idx_mnt_requests_property_id on mnt_requests (propert
 create index if not exists idx_mnt_work_orders_property_id on mnt_work_orders (property_id);
 create index if not exists idx_mnt_pm_schedules_property_id on mnt_pm_schedules (property_id);
 
+-- ─── Location mirrors (FO rooms + HK public_areas) ─────────────────────────
+
+do $$
+begin
+  create type public.mnt_location_status as enum (
+    'Operational',
+    'Under Maintenance',
+    'Out of Service'
+  );
+exception
+  when duplicate_object then null;
+end $$;
+
+create table if not exists mnt_rooms (
+  id text primary key default gen_random_uuid()::text,
+  property_id text not null references properties(id) on delete cascade,
+  room_id text not null unique references rooms(id) on delete cascade,
+  status public.mnt_location_status not null default 'Operational',
+  notes text,
+  last_serviced_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists mnt_public_areas (
+  id text primary key default gen_random_uuid()::text,
+  property_id text not null references properties(id) on delete cascade,
+  public_area_id text not null unique references public_areas(id) on delete cascade,
+  status public.mnt_location_status not null default 'Operational',
+  notes text,
+  last_serviced_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_mnt_rooms_property_id on mnt_rooms (property_id);
+create index if not exists idx_mnt_rooms_status on mnt_rooms (status);
+create index if not exists idx_mnt_public_areas_property_id on mnt_public_areas (property_id);
+create index if not exists idx_mnt_public_areas_status on mnt_public_areas (status);
+
 -- ========== RLS (anon access — same pattern as PS / SM) ==========
 do $$
 declare
@@ -210,7 +250,7 @@ begin
   foreach t in array array[
     'mnt_asset_categories','mnt_problem_categories','mnt_root_causes',
     'mnt_pm_templates','mnt_vendors','mnt_spare_parts','mnt_assets','mnt_requests',
-    'mnt_work_orders','mnt_pm_schedules'
+    'mnt_work_orders','mnt_pm_schedules','mnt_rooms','mnt_public_areas'
   ]
   loop
     execute format('alter table %I enable row level security', t);
