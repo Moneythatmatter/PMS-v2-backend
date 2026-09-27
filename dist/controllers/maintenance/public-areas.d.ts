@@ -1,0 +1,24 @@
+import type { Request, Response } from "express";
+import type { MntLocationStatus } from "./rooms.js";
+export type MntPublicArea = {
+    id: string;
+    propertyId?: string;
+    publicAreaId: string;
+    status: MntLocationStatus;
+    notes?: string | null;
+    lastServicedAt?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+    areaCode?: string;
+    name?: string;
+    areaType?: string;
+    location?: string | null;
+    floorNumber?: number | null;
+    priority?: string;
+    isActive?: boolean;
+};
+export declare function listMntPublicAreas(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getMntPublicArea(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function createMntPublicArea(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function updateMntPublicArea(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function deleteMntPublicArea(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

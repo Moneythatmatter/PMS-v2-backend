@@ -3,6 +3,7 @@ import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import { enrichReservations } from "../../services/front-office/reservation-enrich.js";
 import { availabilityCalendarDayStatus, buildActiveBookingByRoomNo, deriveFoRoomStatus, ensureHkRoomForFoRoom, fetchHkStatusByRoomIds, foStatusQueryToHkStatuses, hkStatusToHousekeeping, hkStatusToMaintenance, } from "../../services/front-office/room-hk-status.js";
+import { ensureMntRoomForFoRoom } from "../../services/maintenance/location-sync.js";
 import { blockKindForDay, fetchRoomAvailabilityBlocks, listRoomAvailabilityBlocksForRange, } from "../../services/front-office/room-availability-blocks.js";
 import { sanitizeRoomInput } from "../../services/front-office/room-sanitize.js";
 import { fromError, ok } from "../../utils/response.js";
@@ -76,6 +77,7 @@ export async function createRoom(req, res) {
             body.isActive = true;
         const row = (await foModel.create(foModel.tables.rooms, body));
         await ensureHkRoomForFoRoom(String(row.id));
+        await ensureMntRoomForFoRoom(String(row.id));
         return ok(res, row, 201);
     }
     catch (e) {

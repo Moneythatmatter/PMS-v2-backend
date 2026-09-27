@@ -2,6 +2,7 @@ import { supabase } from "../../utils/supabase.js";
 import { hkModel } from "../../models/housekeeping/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import { sanitizePublicAreaInput } from "../../services/housekeeping/public-area-sanitize.js";
+import { ensureMntPublicAreaForMaster } from "../../services/maintenance/location-sync.js";
 import { normalizePublicAreaPriority, } from "../../types/housekeeping.js";
 import { fail, fromError, ok } from "../../utils/response.js";
 async function findByKey(key) {
@@ -74,6 +75,7 @@ export async function createPublicAreaMaster(req, res) {
         if (body.floorNumber === "")
             body.floorNumber = null;
         const row = await hkModel.create(hkModel.tables.publicAreasMaster, body);
+        await ensureMntPublicAreaForMaster(String(row.id));
         return ok(res, row, 201);
     }
     catch (e) {

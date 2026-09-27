@@ -1,0 +1,23 @@
+import type { Request, Response } from "express";
+export type MntLocationStatus = "Operational" | "Under Maintenance" | "Out of Service";
+export type MntRoom = {
+    id: string;
+    propertyId?: string;
+    roomId: string;
+    status: MntLocationStatus;
+    notes?: string | null;
+    lastServicedAt?: string | null;
+    createdAt?: string;
+    updatedAt?: string;
+    roomNo?: string;
+    floor?: string;
+    roomType?: string;
+    bedType?: string;
+    maxOccupancy?: number;
+    isActive?: boolean;
+};
+export declare function listMntRooms(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getMntRoom(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function createMntRoom(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function updateMntRoom(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function deleteMntRoom(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

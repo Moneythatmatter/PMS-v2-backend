@@ -1,3 +1,4 @@
+import { deleteRow, getRowById, insertRow, listRows, newCode, newId, updateRow, type FilterMap } from "../front-office/base.js";
 export declare const mntTables: {
     readonly assetCategories: "mnt_asset_categories";
     readonly problemCategories: "mnt_problem_categories";
@@ -9,8 +10,18 @@ export declare const mntTables: {
     readonly requests: "mnt_requests";
     readonly workOrders: "mnt_work_orders";
     readonly pmSchedules: "mnt_pm_schedules";
+    readonly rooms: "mnt_rooms";
+    readonly publicAreas: "mnt_public_areas";
 };
+export type MntTableName = (typeof mntTables)[keyof typeof mntTables];
 export declare const mntModel: {
+    list: typeof listRows;
+    get: typeof getRowById;
+    create: typeof insertRow;
+    update: typeof updateRow;
+    remove: typeof deleteRow;
+    newId: typeof newId;
+    newCode: typeof newCode;
     tables: {
         readonly assetCategories: "mnt_asset_categories";
         readonly problemCategories: "mnt_problem_categories";
@@ -22,5 +33,8 @@ export declare const mntModel: {
         readonly requests: "mnt_requests";
         readonly workOrders: "mnt_work_orders";
         readonly pmSchedules: "mnt_pm_schedules";
+        readonly rooms: "mnt_rooms";
+        readonly publicAreas: "mnt_public_areas";
     };
 };
+export type { FilterMap };
