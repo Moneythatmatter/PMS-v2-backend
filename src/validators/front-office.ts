@@ -32,10 +32,11 @@ export const guestCreateSchema = z
 /** Update guest — all fields optional, but validated when present. */
 export const guestUpdateSchema = guestCreateSchema.partial().passthrough();
 
-export const reservationCreateSchema = z
+const reservationFieldsSchema = z
   .object({
     id: z.string().optional(),
-    guestId: nonEmptyString("guestId"),
+    guestId: z.string().optional().nullable(),
+    groupId: z.string().optional().nullable(),
     guestName: z.string().optional(),
     phone: z.string().optional(),
     email: optionalEmail,
@@ -67,9 +68,23 @@ export const reservationCreateSchema = z
   })
   .passthrough();
 
-export const reservationUpdateSchema = reservationCreateSchema
-  .partial()
-  .passthrough();
+/** Create — guestId required unless groupId is set (group TBA children). */
+export const reservationCreateSchema = reservationFieldsSchema.superRefine(
+  (data, ctx) => {
+    const groupId = String(data.groupId ?? "").trim();
+    const guestId = String(data.guestId ?? "").trim();
+    if (!groupId && !guestId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["guestId"],
+        message: "guestId is required",
+      });
+    }
+  },
+);
+
+/** Update — partial of fields only (Zod v4 cannot .partial() refined schemas). */
+export const reservationUpdateSchema = reservationFieldsSchema.partial().passthrough();
 
 export const paymentCreateSchema = z
   .object({

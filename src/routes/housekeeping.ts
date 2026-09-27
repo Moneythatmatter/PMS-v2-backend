@@ -11,6 +11,8 @@ import * as maintenanceRequests from "../controllers/housekeeping/maintenance-re
 import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 import * as damageReports from "../controllers/housekeeping/damage-reports.js";
 import * as publicAreasMaster from "../controllers/housekeeping/public-areas-master.js";
+import * as laundryItemsMaster from "../controllers/housekeeping/laundry-items-master.js";
+import * as laundryPricingMaster from "../controllers/housekeeping/laundry-pricing-master.js";
 import * as laundry from "../controllers/housekeeping/laundry.js";
 import * as requisitions from "../controllers/housekeeping/requisitions.js";
 import { getReport } from "../controllers/housekeeping/reports.js";
@@ -80,6 +82,22 @@ router.put("/masters/public-areas/:id", publicAreasMaster.updatePublicAreaMaster
 router.patch("/masters/public-areas/:id", publicAreasMaster.updatePublicAreaMaster);
 router.delete("/masters/public-areas/:id", publicAreasMaster.deletePublicAreaMaster);
 
+// Laundry item master
+router.get("/masters/laundry-items", laundryItemsMaster.listLaundryItems);
+router.get("/masters/laundry-items/:id", laundryItemsMaster.getLaundryItem);
+router.post("/masters/laundry-items", laundryItemsMaster.createLaundryItem);
+router.put("/masters/laundry-items/:id", laundryItemsMaster.updateLaundryItem);
+router.patch("/masters/laundry-items/:id", laundryItemsMaster.updateLaundryItem);
+router.delete("/masters/laundry-items/:id", laundryItemsMaster.deleteLaundryItem);
+
+// Laundry pricing master
+router.get("/masters/laundry-pricing", laundryPricingMaster.listLaundryPricing);
+router.get("/masters/laundry-pricing/:id", laundryPricingMaster.getLaundryPricing);
+router.post("/masters/laundry-pricing", laundryPricingMaster.createLaundryPricing);
+router.put("/masters/laundry-pricing/:id", laundryPricingMaster.updateLaundryPricing);
+router.patch("/masters/laundry-pricing/:id", laundryPricingMaster.updateLaundryPricing);
+router.delete("/masters/laundry-pricing/:id", laundryPricingMaster.deleteLaundryPricing);
+
 // Laundry (ops + CRUD)
 router.get("/laundry", laundry.listLaundry);
 router.get("/laundry/:id", laundry.getLaundry);
@@ -88,6 +106,7 @@ router.put("/laundry/:id", laundry.updateLaundry);
 router.patch("/laundry/:id", laundry.updateLaundry);
 router.delete("/laundry/:id", laundry.deleteLaundry);
 router.post("/laundry/:id/advance", laundry.advanceLaundry);
+router.post("/laundry/:id/settle", laundry.settleLaundry);
 
 // Requisitions (ops + CRUD)
 router.get("/requisitions", requisitions.listRequisitions);

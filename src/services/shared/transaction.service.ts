@@ -117,6 +117,14 @@ export const TransactionService = {
     return String(data);
   },
 
+  async ensureFolioForGroup(groupId: string): Promise<string> {
+    const { data, error } = await supabase.rpc("ensure_folio_for_group", {
+      p_group_id: groupId,
+    });
+    if (error) throw new Error(error.message);
+    return String(data);
+  },
+
   /** Map legacy UI payment mode strings to enum. */
   normalizePaymentMethod,
 
@@ -198,6 +206,36 @@ export const TransactionService = {
       externalReference: input.externalReference ?? null,
       receivedBy: input.receivedBy ?? null,
       notes: input.notes ?? null,
+    });
+  },
+
+  /** Group advance / deposit — posts to the master folio. */
+  async recordGroupAdvance(input: {
+    amount: number;
+    groupId: string;
+    folioId?: string | null;
+    paymentMethod?: string;
+    externalReference?: string | null;
+    receivedBy?: string | null;
+    notes?: string | null;
+  }): Promise<Transaction> {
+    const folioId =
+      String(input.folioId ?? "").trim() ||
+      (await this.ensureFolioForGroup(input.groupId));
+
+    return this.recordViaRpc({
+      amount: input.amount,
+      paymentMethod: normalizePaymentMethod(
+        input.paymentMethod,
+      ) as RecordTransactionInput["paymentMethod"],
+      folioId,
+      bookingId: null,
+      guestId: null,
+      sourceModule: "RESERVATION",
+      sourceId: input.groupId,
+      externalReference: input.externalReference ?? null,
+      receivedBy: input.receivedBy ?? null,
+      notes: input.notes ?? "Group booking advance payment",
     });
   },
 };

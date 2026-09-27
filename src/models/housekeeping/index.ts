@@ -21,6 +21,8 @@ export const hkTables = {
   shifts: "hk_shifts",
   inventory: "hk_inventory",
   laundryJobs: "hk_laundry_jobs",
+  laundryItems: "hk_laundry_items",
+  laundryPricing: "hk_laundry_pricing",
   damageReports: "damage_reports",
   requisitions: "hk_requisitions",
   history: "hk_history",

@@ -32,6 +32,10 @@ create table if not exists hk_rooms (
   updated_at timestamptz default now()
 );
 
+-- Ensure unique(room_id) even when hk_rooms already existed without it
+-- (create table if not exists does not add constraints to existing tables)
+create unique index if not exists hk_rooms_room_id_key on public.hk_rooms (room_id);
+
 do $$
 begin
   if exists (
@@ -471,6 +475,8 @@ create table if not exists public_areas (
   updated_at timestamptz default now()
 );
 
+create unique index if not exists public_areas_area_code_key on public.public_areas (area_code);
+
 create or replace function public.public_areas_set_updated_at()
 returns trigger language plpgsql as $$
 begin
@@ -564,11 +570,27 @@ create table if not exists hk_laundry_jobs (
   quantity numeric not null default 1,
   room text,
   guest_name text,
+  guest_phone text,
+  folio_id text,
+  booking_id text,
+  guest_id text,
   status text not null default 'Collection',
+  urgency text default 'Normal',
+  service_type text,
+  expected_at timestamptz,
   charges numeric not null default 0,
+  subtotal numeric(14, 2) default 0,
+  tax_amount numeric(14, 2) default 0,
+  billing_status text not null default 'Unbilled',
+  payment_mode text,
+  paid_at timestamptz,
+  cancelled boolean not null default false,
+  is_outsourced boolean not null default false,
+  line_items jsonb not null default '[]'::jsonb,
   timeline jsonb not null default '{}'::jsonb,
   notes text,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 -- ========== DAMAGE ==========
@@ -717,13 +739,8 @@ insert into hk_inventory (id, name, category, available, laundry, damaged, lost,
   ('INV-E01', 'Taski Vacuum Cleaners', 'Equipment', 6, 0, 1, 0, 0, 6, 'Pcs')
 on conflict (id) do nothing;
 
--- ========== SEED: LAUNDRY ==========
-insert into hk_laundry_jobs (id, type, item, quantity, room, guest_name, status, charges, timeline, notes) values
-  ('LD-01', 'Guest', 'Silk Shirt & Trousers', 2, '112', 'James Wilson', 'Washing', 350, '{"collectedAt":"23 Jun 08:30 AM"}'::jsonb, 'Soft wash. Ironing required.'),
-  ('LD-02', 'Hotel', 'Bath Towels (Dirty batch)', 45, null, null, 'Ironing', 450, '{"collectedAt":"23 Jun 07:15 AM","washedAt":"23 Jun 09:30 AM"}'::jsonb, null),
-  ('LD-03', 'Hotel', 'King Bed Sheets (Dirty batch)', 30, null, null, 'Ready', 600, '{"collectedAt":"22 Jun 04:00 PM","washedAt":"22 Jun 06:30 PM","readyAt":"23 Jun 10:00 AM"}'::jsonb, null),
-  ('LD-04', 'Guest', 'Cotton Dress', 1, '204', 'Rahul Sharma', 'Delivered', 180, '{"collectedAt":"22 Jun 09:00 AM","washedAt":"22 Jun 11:30 AM","readyAt":"22 Jun 03:00 PM","deliveredAt":"22 Jun 04:30 PM"}'::jsonb, null)
-on conflict (id) do nothing;
+-- ========== LAUNDRY (no seed — data created via Guest Laundry UI) ==========
+-- Seed rows intentionally omitted; jobs come from the API/app.
 
 -- ========== SEED: DAMAGE / REQUISITIONS / HISTORY / LUGGAGE ==========
 insert into hk_damage_reports (id, room, damage_type, description, reported_by, reported_at, estimated_cost, status) values

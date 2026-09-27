@@ -113,7 +113,15 @@ function applyGuestFields(
   row: Reservation,
   guest: Guest | undefined,
 ): Reservation {
-  if (!guest) return row;
+  if (!guest) {
+    if (!row.guestId) {
+      return {
+        ...row,
+        guestName: row.guestName || undefined,
+      };
+    }
+    return row;
+  }
   return {
     ...row,
     guestNo: guest.guestNo,
@@ -133,6 +141,44 @@ function applyGuestFields(
   };
 }
 
+type GroupSummary = {
+  id: string;
+  groupName?: string;
+  groupNo?: string;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  companyName?: string | null;
+};
+
+function applyGroupFields(
+  row: Reservation,
+  group: GroupSummary | undefined,
+): Reservation {
+  if (!group) return row;
+
+  const hasGuest = Boolean(String(row.guestId ?? "").trim());
+  const ownerName =
+    String(group.contactName ?? "").trim() ||
+    String(group.companyName ?? "").trim() ||
+    String(group.groupName ?? "").trim() ||
+    "Group";
+
+  return {
+    ...row,
+    groupId: group.id,
+    groupName: group.groupName ?? null,
+    groupNo: group.groupNo ?? null,
+    guestName: hasGuest
+      ? row.guestName
+      : row.guestName?.trim() && row.guestName !== "Unassigned"
+        ? row.guestName
+        : ownerName,
+    phone: hasGuest
+      ? row.phone
+      : row.phone || group.contactPhone || undefined,
+  };
+}
+
 function applySourceFields(
   row: Reservation,
   source: { name?: string } | undefined,
@@ -148,11 +194,24 @@ function applyRoomFields(
   row: Reservation,
   room: Room | undefined,
 ): Reservation {
+  const ref = String(row.roomRefId ?? "").trim();
+  const storedNo = String(row.roomNo ?? "").trim();
+  // Prefer master room number; fall back to stored / human roomRef (not UUID).
+  const resolvedNo =
+    room?.roomNo ||
+    storedNo ||
+    (ref && isRealRoomRef(ref) && !/^[0-9a-f-]{36}$/i.test(ref) ? ref : "") ||
+    null;
+
   return {
     ...row,
     roomRefId: room?.id ?? row.roomRefId ?? null,
-    roomNo: room?.roomNo ?? row.roomNo ?? null,
-    roomType: room?.roomType ?? row.roomType,
+    roomNo: resolvedNo,
+    roomType:
+      room?.roomType ??
+      row.roomType ??
+      row.requestedRoomType ??
+      undefined,
   };
 }
 
@@ -173,14 +232,35 @@ async function fetchGuestsByIds(ids: string[]): Promise<Map<string, Guest>> {
   return map;
 }
 
+async function fetchGroupsByIds(
+  ids: string[],
+): Promise<Map<string, GroupSummary>> {
+  const map = new Map<string, GroupSummary>();
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return map;
+
+  const { data, error } = await supabase
+    .from(foModel.tables.foGroups)
+    .select("id, group_name, group_no, contact_name, contact_phone, company_name")
+    .in("id", unique);
+
+  if (error) throw new Error(error.message);
+
+  for (const row of data ?? []) {
+    const g = toCamel<GroupSummary>(row);
+    map.set(g.id, g);
+  }
+  return map;
+}
+
 /** Attach guest profile + room master fields for API responses. */
 export async function enrichReservation(row: Reservation): Promise<Reservation> {
   const guestId = row.guestId ? String(row.guestId) : "";
   const roomRef = resolveRoomRef(row);
-
   const sourceId = row.sourceId ? String(row.sourceId) : "";
+  const groupId = row.groupId ? String(row.groupId) : "";
 
-  const [guestMap, roomMap, sourceMap] = await Promise.all([
+  const [guestMap, roomMap, sourceMap, groupMap] = await Promise.all([
     guestId ? fetchGuestsByIds([guestId]) : Promise.resolve(new Map()),
     roomRef && isRealRoomRef(roomRef)
       ? fetchRoomsByRefs([roomRef])
@@ -188,6 +268,7 @@ export async function enrichReservation(row: Reservation): Promise<Reservation> 
     sourceId
       ? fetchBookingSourcesByIds([sourceId])
       : Promise.resolve(new Map()),
+    groupId ? fetchGroupsByIds([groupId]) : Promise.resolve(new Map()),
   ]);
 
   let enriched = applyGuestFields(row, guestMap.get(guestId));
@@ -196,6 +277,7 @@ export async function enrichReservation(row: Reservation): Promise<Reservation> 
     roomRef ? lookupRoomInMap(roomMap, roomRef) : undefined,
   );
   enriched = applySourceFields(enriched, sourceMap.get(sourceId));
+  enriched = applyGroupFields(enriched, groupMap.get(groupId));
   return enriched;
 }
 
@@ -218,23 +300,29 @@ export async function enrichReservations(
   const sourceIds = [
     ...new Set(rows.map((r) => r.sourceId).filter(Boolean) as string[]),
   ];
+  const groupIds = [
+    ...new Set(rows.map((r) => r.groupId).filter(Boolean) as string[]),
+  ];
 
-  const [guestMap, roomMap, sourceMap] = await Promise.all([
+  const [guestMap, roomMap, sourceMap, groupMap] = await Promise.all([
     fetchGuestsByIds(guestIds),
     fetchRoomsByRefs(roomRefs),
     fetchBookingSourcesByIds(sourceIds),
+    fetchGroupsByIds(groupIds),
   ]);
 
   return rows.map((row) => {
     const guestId = row.guestId ? String(row.guestId) : "";
     const roomRef = resolveRoomRef(row);
     const sourceId = row.sourceId ? String(row.sourceId) : "";
+    const groupId = row.groupId ? String(row.groupId) : "";
     let enriched = applyGuestFields(row, guestMap.get(guestId));
     enriched = applyRoomFields(
       enriched,
       roomRef ? lookupRoomInMap(roomMap, roomRef) : undefined,
     );
     enriched = applySourceFields(enriched, sourceMap.get(sourceId));
+    enriched = applyGroupFields(enriched, groupMap.get(groupId));
     return enriched;
   });
 }

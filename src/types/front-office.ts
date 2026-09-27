@@ -31,7 +31,8 @@ export interface Guest {
 export interface Reservation {
   id: string;
   bookingNo?: string;
-  guestId: string;
+  guestId?: string | null;
+  groupId?: string | null;
   roomRefId?: string | null;
   sourceId?: string | null;
   /** Enriched from booking_sources — not stored on reservations */
@@ -48,6 +49,7 @@ export interface Reservation {
   nights?: number;
   tariffPlan?: string;
   mealPlan?: string;
+  requestedRoomType?: string | null;
   roomRate?: number;
   totalAmount?: number;
   advancePaid?: number;
@@ -76,6 +78,41 @@ export interface Reservation {
   /** Enriched from rooms — not stored on reservations */
   roomNo?: string | null;
   roomType?: string;
+  /** Enriched from fo_groups when group_id is set */
+  groupName?: string | null;
+  groupNo?: string | null;
+}
+
+export interface FoGroup {
+  id: string;
+  propertyId?: string;
+  groupNo?: string;
+  groupName: string;
+  groupType?: string;
+  contactGuestId?: string | null;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
+  companyName?: string | null;
+  arrivalDate: string;
+  departureDate: string;
+  status: string;
+  notes?: string | null;
+  idempotencyKey?: string | null;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface FoGroupBillingRule {
+  id: string;
+  propertyId?: string;
+  groupId: string;
+  chargeCategory: string;
+  responsibility: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Payment {
@@ -135,6 +172,20 @@ export interface InHouseGuest {
   email?: string;
   adults: number;
   children: number;
+}
+
+/** Guest linked to a reservation (primary or companion). */
+export interface ReservationGuestLink {
+  id: string;
+  reservationId: string;
+  guestId: string;
+  role: "PRIMARY" | "COMPANION";
+  propertyId?: string | null;
+  createdAt?: string;
+  guestName?: string;
+  guestNo?: string;
+  mobile?: string;
+  email?: string;
 }
 
 export interface SummaryCard {

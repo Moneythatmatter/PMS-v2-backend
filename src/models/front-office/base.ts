@@ -99,7 +99,7 @@ export async function insertRow<T>(
   const withProperty = injectPropertyOnWrite(table, payload);
   const row = toSnake(withProperty) as Record<string, unknown>;
   let lastError = "";
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 24; attempt++) {
     const { data, error } = await supabase
       .from(table)
       .insert(row)
@@ -124,7 +124,7 @@ export async function updateRow<T>(
   idColumn = "id",
 ): Promise<T> {
   const row = toSnake(payload) as Record<string, unknown>;
-  for (let attempt = 0; attempt < 8; attempt++) {
+  for (let attempt = 0; attempt < 24; attempt++) {
     let query = supabase.from(table).update(row).eq(idColumn, id);
     const propertyId = getActivePropertyId();
     if (propertyId && isPropertyScopedTable(table)) {

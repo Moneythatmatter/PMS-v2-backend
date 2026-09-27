@@ -87,6 +87,17 @@ export async function checkIn(req: Request, res: Response) {
   }
 }
 
+export async function listReservationGuests(req: Request, res: Response) {
+  try {
+    return ok(
+      res,
+      await ReservationService.listReservationGuests(String(req.params.id)),
+    );
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
 export async function checkOut(req: Request, res: Response) {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;

@@ -13,6 +13,39 @@ export const ReservationStatus = {
 export type ReservationStatusValue =
   (typeof ReservationStatus)[keyof typeof ReservationStatus];
 
+export const BookingType = {
+  INDIVIDUAL: "Individual",
+  COMPANY: "Company",
+  GROUP: "Group",
+} as const;
+
+export const FoChargeCategory = {
+  ROOM: "ROOM",
+  FOOD_BEVERAGE: "FOOD_BEVERAGE",
+  MINIBAR: "MINIBAR",
+  LAUNDRY: "LAUNDRY",
+  OTHER: "OTHER",
+} as const;
+
+export type FoChargeCategoryValue =
+  (typeof FoChargeCategory)[keyof typeof FoChargeCategory];
+
+export const FoBillingResponsibility = {
+  GROUP_OWNER: "GROUP_OWNER",
+  GUEST: "GUEST",
+} as const;
+
+export type FoBillingResponsibilityValue =
+  (typeof FoBillingResponsibility)[keyof typeof FoBillingResponsibility];
+
+export const FoGroupStatus = {
+  CONFIRMED: "Confirmed",
+  PARTIAL: "Partial",
+  IN_HOUSE: "In-House",
+  CHECKED_OUT: "Checked Out",
+  CANCELLED: "Cancelled",
+} as const;
+
 export const RoomStatus = {
   VACANT: "Vacant",
   RESERVED: "Reserved",
