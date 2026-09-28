@@ -487,7 +487,7 @@ const TAGS = [
     { name: "HK · Staff & Shifts", description: "Housekeeping staff and shift roster" },
     { name: "HK · Inventory", description: "HK store inventory and par levels" },
     { name: "HK · Damage & History", description: "Damage reports and activity history" },
-    { name: "HK · Guest Services", description: "Luggage, guest requests, maintenance, lost & found, settings" },
+    { name: "HK · Guest Services", description: "Guest requests, maintenance, lost & found, settings" },
     { name: "HK · Reports", description: "Housekeeping productivity and status reports" },
 ];
 const systemPaths = {
@@ -1189,12 +1189,6 @@ const hkPaths = mergePaths({
     listQuery: [
         queryParam("category", "Filter by category"),
         queryParam("room", "Filter by room"),
-    ],
-}), crudPaths(`${hkBase}/luggage`, "HK · Guest Services", "luggage jobs", {
-    idPrefix: "LG",
-    listQuery: [
-        queryParam("status", "Filter by status"),
-        queryParam("type", "Filter by type"),
     ],
 }), crudPaths(`${hkBase}/settings`, "HK · Guest Services", "settings", { idPrefix: "SET" }), crudPaths(`${hkBase}/guest-requests`, "HK · Guest Services", "guest requests", {
     idPrefix: "HKR",

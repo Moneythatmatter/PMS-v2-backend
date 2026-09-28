@@ -10,6 +10,7 @@ import { TransactionService } from "../shared/transaction.service.js";
 import { FolioService } from "../shared/folio.service.js";
 import { enrichReservation, enrichReservations, displayRoomNo, isRealRoomRef, normalizeReservationRoomRef, normalizeReservationSourceRef, resolveRoomRef, sanitizeReservationInput, } from "./reservation-enrich.js";
 import { getRoomByRef, resolveRoomId } from "./room-resolver.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
 import { getReservationByKey, } from "./reservation-lookup.js";
 import { HkTaskService } from "../housekeeping/hk-task.service.js";
 async function ensureReservationFolio(reservation) {
@@ -72,7 +73,10 @@ export const ReservationService = {
         return row;
     },
     async create(input) {
-        if (!input.guestId?.trim()) {
+        const groupId = String(input.groupId ?? "").trim();
+        const guestIdRaw = String(input.guestId ?? "").trim();
+        // Individual bookings still require a guest; group children may be TBA (null guest).
+        if (!groupId && !guestIdRaw) {
             throw new AppError("guestId is required — create or select a guest profile first");
         }
         const externalReference = String(input.externalReference ?? input.paymentReference ?? "").trim();
@@ -84,6 +88,13 @@ export const ReservationService = {
         const body = sanitizeReservationInput(input);
         delete body.externalReference;
         delete body.paymentReference;
+        if (groupId) {
+            body.groupId = groupId;
+            if (!guestIdRaw)
+                body.guestId = null;
+            if (!body.bookingType)
+                body.bookingType = "Group";
+        }
         await normalizeReservationRoomRef(body);
         await normalizeReservationSourceRef(body);
         if (!body.id)
@@ -103,14 +114,15 @@ export const ReservationService = {
         }
         await ActivityService.log({
             type: ActivityType.RESERVATION_CREATED,
-            message: `New reservation — ${enriched.guestName ?? "Guest"}, ${roomRef ?? "TBA"}`,
-            guestId: String(body.guestId ?? input.guestId ?? ""),
+            message: `New reservation — ${enriched.guestName ?? (groupId ? "Unassigned" : "Guest")}, ${roomRef ?? "TBA"}`,
+            guestId: guestIdRaw || undefined,
             room: roomRef,
             reservationId: String(body.id ?? ""),
         });
-        const guestId = String(body.guestId ?? input.guestId ?? "");
+        const guestId = guestIdRaw || null;
         const folioId = await TransactionService.ensureFolioForBooking(enriched.id, guestId);
-        if (totalAmount > 0) {
+        // Individual bookings: legacy subtotal seed. Group children: folio_charges own ROOM.
+        if (!groupId && totalAmount > 0) {
             await foModel.update(foModel.tables.folios, folioId, {
                 subtotal: totalAmount,
             });
@@ -177,6 +189,10 @@ export const ReservationService = {
     async checkIn(id, extras = {}) {
         let existing = await getOrThrow(id);
         const reservationId = existing.id;
+        const companionGuestIds = Array.isArray(extras.companionGuestIds)
+            ? extras.companionGuestIds.map(String).filter(Boolean)
+            : [];
+        const { companionGuestIds: _cg, ...checkInExtras } = extras;
         if (existing.status === ReservationStatus.CHECKED_OUT) {
             throw new ConflictError("Cannot check in a checked-out reservation");
         }
@@ -184,12 +200,12 @@ export const ReservationService = {
             existing.status === ReservationStatus.IN_HOUSE) {
             throw new ConflictError("Guest is already checked in");
         }
-        const assignedRoom = resolveRoomRef(extras);
+        const assignedRoom = resolveRoomRef(checkInExtras);
         const existingRoom = resolveRoomRef(existing);
         if (assignedRoom &&
             isRealRoomRef(assignedRoom) &&
             assignedRoom !== existingRoom) {
-            const { status: _s, arrivingToday: _a, ...roomPatch } = sanitizeReservationInput(extras);
+            const { status: _s, arrivingToday: _a, ...roomPatch } = sanitizeReservationInput(checkInExtras);
             await normalizeReservationRoomRef(roomPatch);
             const updated = await foModel.update(foModel.tables.reservations, reservationId, roomPatch);
             existing = await enrichReservation(updated);
@@ -208,8 +224,8 @@ export const ReservationService = {
         });
         if (!error && data) {
             let row = await enrichReservation(mapReservationRow(data));
-            if (Object.keys(extras).length) {
-                const { status: _s, arrivingToday: _a, roomNo: _r, roomRefId: _rr, ...rest } = sanitizeReservationInput(extras);
+            if (Object.keys(checkInExtras).length) {
+                const { status: _s, arrivingToday: _a, roomNo: _r, roomRefId: _rr, ...rest } = sanitizeReservationInput(checkInExtras);
                 if (Object.keys(rest).length) {
                     const updated = await foModel.update(foModel.tables.reservations, reservationId, rest);
                     row = await enrichReservation(updated);
@@ -225,13 +241,22 @@ export const ReservationService = {
                 await occupyRoom(finalRoom);
             }
             await ensureReservationFolio(row);
+            const primaryGuestId = String(row.guestId ?? checkInExtras.guestId ?? "").trim();
+            if (primaryGuestId || companionGuestIds.length) {
+                await this.syncReservationGuests(reservationId, primaryGuestId || null, companionGuestIds);
+            }
             return row;
         }
         if (error &&
             !/fo_check_in_reservation|Could not find the function/i.test(error.message)) {
             throw new DatabaseError(error.message);
         }
-        return this.checkInFallback(reservationId, existing, extras);
+        const fallback = await this.checkInFallback(reservationId, existing, checkInExtras);
+        const primaryGuestId = String(fallback.guestId ?? checkInExtras.guestId ?? "").trim();
+        if (primaryGuestId || companionGuestIds.length) {
+            await this.syncReservationGuests(reservationId, primaryGuestId || null, companionGuestIds);
+        }
+        return fallback;
     },
     async checkInFallback(reservationId, existing, extras) {
         const row = await foModel.update(foModel.tables.reservations, reservationId, {
@@ -490,6 +515,74 @@ export const ReservationService = {
         if (reserved)
             return reserved;
         return rows.find((r) => r.status === ReservationStatus.CHECKED_OUT) ?? null;
+    },
+    /** Replace guest list for a booking (primary + companions). */
+    async syncReservationGuests(reservationId, primaryGuestId, companionGuestIds = []) {
+        const propertyId = getActivePropertyId();
+        const { error: delErr } = await supabase
+            .from(foModel.tables.reservationGuests)
+            .delete()
+            .eq("reservation_id", reservationId);
+        if (delErr)
+            throw new Error(delErr.message);
+        const rows = [];
+        if (primaryGuestId) {
+            rows.push({
+                property_id: propertyId ?? null,
+                reservation_id: reservationId,
+                guest_id: primaryGuestId,
+                role: "PRIMARY",
+            });
+        }
+        for (const guestId of companionGuestIds) {
+            if (!guestId || guestId === primaryGuestId)
+                continue;
+            rows.push({
+                property_id: propertyId ?? null,
+                reservation_id: reservationId,
+                guest_id: guestId,
+                role: "COMPANION",
+            });
+        }
+        if (rows.length) {
+            const { error: insErr } = await supabase
+                .from(foModel.tables.reservationGuests)
+                .insert(rows);
+            if (insErr)
+                throw new Error(insErr.message);
+        }
+        return this.listReservationGuests(reservationId);
+    },
+    async listReservationGuests(reservationId) {
+        const links = await foModel.list(foModel.tables.reservationGuests, {
+            filters: { reservation_id: reservationId },
+            orderBy: "created_at",
+            ascending: true,
+        });
+        if (!links.length)
+            return [];
+        const guestIds = [...new Set(links.map((l) => l.guestId).filter(Boolean))];
+        const { data, error } = await supabase
+            .from(foModel.tables.guests)
+            .select("*")
+            .in("id", guestIds);
+        if (error)
+            throw new Error(error.message);
+        const guestMap = new Map();
+        for (const row of data ?? []) {
+            const g = toCamel(row);
+            guestMap.set(g.id, g);
+        }
+        return links.map((link) => {
+            const g = guestMap.get(link.guestId);
+            return {
+                ...link,
+                guestName: g?.name,
+                guestNo: g?.guestNo,
+                mobile: g?.mobile,
+                email: g?.email,
+            };
+        });
     },
 };
 function existingRoomRef(existing) {

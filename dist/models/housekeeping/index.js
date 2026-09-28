@@ -11,10 +11,11 @@ export const hkTables = {
     shifts: "hk_shifts",
     inventory: "hk_inventory",
     laundryJobs: "hk_laundry_jobs",
+    laundryItems: "hk_laundry_items",
+    laundryPricing: "hk_laundry_pricing",
     damageReports: "damage_reports",
     requisitions: "hk_requisitions",
     history: "hk_history",
-    luggageJobs: "hk_luggage_jobs",
     settings: "hk_settings",
 };
 /**
@@ -24,7 +25,6 @@ export const hkTables = {
 export const hkSharedTables = {
     housekeepingRequests: "housekeeping_requests",
     maintenanceRequests: "maintenance_requests",
-    luggageItems: "luggage_items",
     lostFoundItems: "lost_found_items",
 };
 export const hkModel = {

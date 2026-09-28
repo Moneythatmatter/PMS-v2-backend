@@ -7,6 +7,7 @@ export interface Folio {
     id: string;
     folioNumber?: string | null;
     bookingId?: string | null;
+    groupId?: string | null;
     guestId?: string | null;
     status: FolioStatus;
     currency: string;
@@ -20,6 +21,26 @@ export interface Folio {
     closedAt?: string | null;
     createdAt?: string;
     updatedAt?: string;
+}
+export interface FolioCharge {
+    id: string;
+    propertyId?: string | null;
+    folioId: string;
+    groupId?: string | null;
+    reservationId?: string | null;
+    bookingId?: string | null;
+    guestId?: string | null;
+    chargeCategory: string;
+    description?: string;
+    quantity?: number;
+    unitPrice?: number;
+    amount: number;
+    responsibility?: string | null;
+    sourceModule?: string | null;
+    sourceType?: string | null;
+    sourceId?: string | null;
+    createdBy?: string | null;
+    createdAt?: string;
 }
 export interface Transaction {
     id: string;

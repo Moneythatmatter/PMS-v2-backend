@@ -10,6 +10,11 @@ export type FolioListItem = Folio & {
     checkIn?: string | null;
     checkOut?: string | null;
     reservationStatus?: string | null;
+    groupName?: string | null;
+    groupNo?: string | null;
+    /** Effective group id (folio.groupId or reservation.groupId for child room folios). */
+    resolvedGroupId?: string | null;
+    isGroupMaster?: boolean;
 };
 export declare const FolioService: {
     /** Close all open folios linked to a booking (called on check-out). */
@@ -17,6 +22,7 @@ export declare const FolioService: {
     list(filters?: {
         bookingId?: string;
         guestId?: string;
+        groupId?: string;
         status?: string;
     }): Promise<FolioListItem[]>;
     getById(id: string): Promise<FolioListItem | null>;

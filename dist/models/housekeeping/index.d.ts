@@ -11,10 +11,11 @@ export declare const hkTables: {
     readonly shifts: "hk_shifts";
     readonly inventory: "hk_inventory";
     readonly laundryJobs: "hk_laundry_jobs";
+    readonly laundryItems: "hk_laundry_items";
+    readonly laundryPricing: "hk_laundry_pricing";
     readonly damageReports: "damage_reports";
     readonly requisitions: "hk_requisitions";
     readonly history: "hk_history";
-    readonly luggageJobs: "hk_luggage_jobs";
     readonly settings: "hk_settings";
 };
 /**
@@ -24,7 +25,6 @@ export declare const hkTables: {
 export declare const hkSharedTables: {
     readonly housekeepingRequests: "housekeeping_requests";
     readonly maintenanceRequests: "maintenance_requests";
-    readonly luggageItems: "luggage_items";
     readonly lostFoundItems: "lost_found_items";
 };
 export type HkTableName = (typeof hkTables)[keyof typeof hkTables];
@@ -47,16 +47,16 @@ export declare const hkModel: {
         readonly shifts: "hk_shifts";
         readonly inventory: "hk_inventory";
         readonly laundryJobs: "hk_laundry_jobs";
+        readonly laundryItems: "hk_laundry_items";
+        readonly laundryPricing: "hk_laundry_pricing";
         readonly damageReports: "damage_reports";
         readonly requisitions: "hk_requisitions";
         readonly history: "hk_history";
-        readonly luggageJobs: "hk_luggage_jobs";
         readonly settings: "hk_settings";
     };
     shared: {
         readonly housekeepingRequests: "housekeeping_requests";
         readonly maintenanceRequests: "maintenance_requests";
-        readonly luggageItems: "luggage_items";
         readonly lostFoundItems: "lost_found_items";
     };
 };

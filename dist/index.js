@@ -15,12 +15,13 @@ import platformRoutes from "./routes/platform.js";
 import transactionsRoutes from "./routes/transactions.js";
 import humanResourcesRoutes from "./routes/human-resources.js";
 import salesMarketingRoutes from "./routes/sales-marketing.js";
+import accountsRoutes from "./routes/accounts.js";
 import employeePortalRoutes from "./routes/employee-portal.js";
 const app = express();
 const PORT = config.port;
 app.use(cors());
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 app.use(requestLogger);
 app.get("/", (_req, res) => {
     res.json({
@@ -43,8 +44,16 @@ app.use("/api/purchase-stores", purchaseStoresRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
 app.use("/api/human-resources", humanResourcesRoutes);
 app.use("/api/sales-marketing", salesMarketingRoutes);
+app.use("/api/accounts", accountsRoutes);
 app.use("/api/employee-portal", employeePortalRoutes);
 app.use("/api", transactionsRoutes);
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        error: `API route not found: ${req.method} ${req.originalUrl}`,
+        code: "NOT_FOUND",
+    });
+});
 app.use(errorHandler);
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
@@ -58,6 +67,7 @@ app.listen(PORT, "0.0.0.0", () => {
     console.log("  [MNT]  /api/maintenance");
     console.log("  [HR]   /api/human-resources");
     console.log("  [SM]   /api/sales-marketing");
+    console.log("  [ACC]  /api/accounts");
     console.log("  [EMP]  /api/employee-portal");
     console.log("  [TXN]  /api/transactions\n");
 });

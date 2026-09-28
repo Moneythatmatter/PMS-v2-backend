@@ -9,6 +9,31 @@ export declare const ReservationStatus: {
     readonly NO_SHOW: "No Show";
 };
 export type ReservationStatusValue = (typeof ReservationStatus)[keyof typeof ReservationStatus];
+export declare const BookingType: {
+    readonly INDIVIDUAL: "Individual";
+    readonly COMPANY: "Company";
+    readonly GROUP: "Group";
+};
+export declare const FoChargeCategory: {
+    readonly ROOM: "ROOM";
+    readonly FOOD_BEVERAGE: "FOOD_BEVERAGE";
+    readonly MINIBAR: "MINIBAR";
+    readonly LAUNDRY: "LAUNDRY";
+    readonly OTHER: "OTHER";
+};
+export type FoChargeCategoryValue = (typeof FoChargeCategory)[keyof typeof FoChargeCategory];
+export declare const FoBillingResponsibility: {
+    readonly GROUP_OWNER: "GROUP_OWNER";
+    readonly GUEST: "GUEST";
+};
+export type FoBillingResponsibilityValue = (typeof FoBillingResponsibility)[keyof typeof FoBillingResponsibility];
+export declare const FoGroupStatus: {
+    readonly CONFIRMED: "Confirmed";
+    readonly PARTIAL: "Partial";
+    readonly IN_HOUSE: "In-House";
+    readonly CHECKED_OUT: "Checked Out";
+    readonly CANCELLED: "Cancelled";
+};
 export declare const RoomStatus: {
     readonly VACANT: "Vacant";
     readonly RESERVED: "Reserved";

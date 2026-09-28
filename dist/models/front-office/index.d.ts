@@ -7,6 +7,10 @@ export declare const tables: {
     readonly bookingSources: "booking_sources";
     readonly guests: "guests";
     readonly reservations: "reservations";
+    readonly reservationGuests: "reservation_guests";
+    readonly foGroups: "fo_groups";
+    readonly foGroupBillingRules: "fo_group_billing_rules";
+    readonly folioCharges: "folio_charges";
     readonly guestStayHistory: "guest_stay_history";
     readonly folioEntries: "folio_entries";
     readonly folios: "folios";
@@ -44,6 +48,10 @@ export declare const foModel: {
         readonly bookingSources: "booking_sources";
         readonly guests: "guests";
         readonly reservations: "reservations";
+        readonly reservationGuests: "reservation_guests";
+        readonly foGroups: "fo_groups";
+        readonly foGroupBillingRules: "fo_group_billing_rules";
+        readonly folioCharges: "folio_charges";
         readonly guestStayHistory: "guest_stay_history";
         readonly folioEntries: "folio_entries";
         readonly folios: "folios";

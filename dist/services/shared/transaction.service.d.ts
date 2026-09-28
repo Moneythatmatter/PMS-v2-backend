@@ -18,6 +18,7 @@ export declare const TransactionService: {
     /** Postgres RPC — auto transaction_number + single atomic insert. */
     recordViaRpc(input: RecordTransactionInput): Promise<Transaction>;
     ensureFolioForBooking(bookingId: string, guestId?: string | null): Promise<string>;
+    ensureFolioForGroup(groupId: string): Promise<string>;
     /** Map legacy UI payment mode strings to enum. */
     normalizePaymentMethod: typeof normalizePaymentMethod;
     /** FO checkout — folio + booking linked, optional UPI/card ref in externalReference. */
@@ -45,6 +46,16 @@ export declare const TransactionService: {
         amount: number;
         bookingId: string;
         guestId?: string | null;
+        paymentMethod?: string;
+        externalReference?: string | null;
+        receivedBy?: string | null;
+        notes?: string | null;
+    }): Promise<Transaction>;
+    /** Group advance / deposit — posts to the master folio. */
+    recordGroupAdvance(input: {
+        amount: number;
+        groupId: string;
+        folioId?: string | null;
         paymentMethod?: string;
         externalReference?: string | null;
         receivedBy?: string | null;

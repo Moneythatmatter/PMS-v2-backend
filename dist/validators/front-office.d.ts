@@ -39,9 +39,11 @@ export declare const guestUpdateSchema: z.ZodObject<{
     country: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     pincode: z.ZodOptional<z.ZodOptional<z.ZodString>>;
 }, z.core.$loose>;
+/** Create — guestId required unless groupId is set (group TBA children). */
 export declare const reservationCreateSchema: z.ZodObject<{
     id: z.ZodOptional<z.ZodString>;
-    guestId: z.ZodString;
+    guestId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+    groupId: z.ZodNullable<z.ZodOptional<z.ZodString>>;
     guestName: z.ZodOptional<z.ZodString>;
     phone: z.ZodOptional<z.ZodString>;
     email: z.ZodOptional<z.ZodString>;
@@ -71,9 +73,11 @@ export declare const reservationCreateSchema: z.ZodObject<{
     createdAt: z.ZodOptional<z.ZodString>;
     isVip: z.ZodOptional<z.ZodBoolean>;
 }, z.core.$loose>;
+/** Update — partial of fields only (Zod v4 cannot .partial() refined schemas). */
 export declare const reservationUpdateSchema: z.ZodObject<{
     id: z.ZodOptional<z.ZodOptional<z.ZodString>>;
-    guestId: z.ZodOptional<z.ZodString>;
+    guestId: z.ZodOptional<z.ZodNullable<z.ZodOptional<z.ZodString>>>;
+    groupId: z.ZodOptional<z.ZodNullable<z.ZodOptional<z.ZodString>>>;
     guestName: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     phone: z.ZodOptional<z.ZodOptional<z.ZodString>>;
     email: z.ZodOptional<z.ZodOptional<z.ZodString>>;

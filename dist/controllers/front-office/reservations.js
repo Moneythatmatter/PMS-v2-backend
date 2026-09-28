@@ -69,6 +69,14 @@ export async function checkIn(req, res) {
         return fromError(res, e);
     }
 }
+export async function listReservationGuests(req, res) {
+    try {
+        return ok(res, await ReservationService.listReservationGuests(String(req.params.id)));
+    }
+    catch (e) {
+        return fromError(res, e);
+    }
+}
 export async function checkOut(req, res) {
     try {
         const body = (req.body ?? {});

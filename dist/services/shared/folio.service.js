@@ -2,6 +2,23 @@ import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import { enrichReservations } from "../front-office/reservation-enrich.js";
 import { supabase } from "../../utils/supabase.js";
+async function fetchGroupsByIds(ids) {
+    const map = new Map();
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (!unique.length)
+        return map;
+    const { data, error } = await supabase
+        .from(foModel.tables.foGroups)
+        .select("id, group_name, group_no")
+        .in("id", unique);
+    if (error)
+        throw new Error(error.message);
+    for (const row of data ?? []) {
+        const g = toCamel(row);
+        map.set(g.id, g);
+    }
+    return map;
+}
 async function fetchReservationsByIds(ids) {
     const map = new Map();
     const unique = [...new Set(ids.filter(Boolean))];
@@ -76,21 +93,31 @@ async function fetchGuestsByIds(ids) {
     }
     return map;
 }
-function attachContext(folio, reservation, guest) {
+function attachContext(folio, reservation, guest, group) {
+    const isMaster = Boolean(folio.groupId && !folio.bookingId);
+    const resolvedGroupId = String(folio.groupId ?? reservation?.groupId ?? "").trim() || null;
     return {
         ...folio,
-        guestName: reservation?.guestName ??
-            guest?.name ??
-            "Guest",
+        guestName: isMaster
+            ? group?.groupName ?? guest?.name ?? "Group"
+            : reservation?.guestName ?? guest?.name ?? "Guest",
         guestNo: reservation?.guestNo ?? guest?.guestNo ?? null,
         guestPhone: reservation?.phone ?? guest?.mobile ?? null,
         guestEmail: reservation?.email ?? guest?.email ?? null,
         room: reservation?.roomNo ?? null,
         roomType: reservation?.roomType ?? null,
-        bookingNo: reservation?.bookingNo ?? null,
+        bookingNo: reservation?.bookingNo ?? group?.groupNo ?? null,
         checkIn: reservation?.checkIn ?? null,
         checkOut: reservation?.checkOut ?? null,
         reservationStatus: reservation?.status ?? null,
+        groupName: group?.groupName ??
+            reservation?.groupName ??
+            null,
+        groupNo: group?.groupNo ??
+            reservation?.groupNo ??
+            null,
+        resolvedGroupId,
+        isGroupMaster: isMaster,
     };
 }
 export const FolioService = {
@@ -115,6 +142,7 @@ export const FolioService = {
             filters: {
                 booking_id: filters.bookingId,
                 guest_id: filters.guestId,
+                group_id: filters.groupId,
                 status: filters.status,
             },
             orderBy: "opened_at",
@@ -132,12 +160,21 @@ export const FolioService = {
             fetchGuestsByIds(guestIds),
             fetchPaidByFolioIds(folioIds),
         ]);
+        const groupIds = [
+            ...rows.map((f) => f.groupId),
+            ...[...reservationMap.values()].map((r) => r.groupId),
+        ].filter((id) => Boolean(id?.trim()));
+        const groupMap = await fetchGroupsByIds(groupIds);
         return rows.map((folio) => {
             const reservation = folio.bookingId
                 ? reservationMap.get(folio.bookingId)
                 : undefined;
             const guest = folio.guestId ? guestMap.get(folio.guestId) : undefined;
-            return applyPaidFromLedger(attachContext(folio, reservation, guest), paidByFolio);
+            const resolvedGroupId = String(folio.groupId ?? reservation?.groupId ?? "").trim();
+            const group = resolvedGroupId
+                ? groupMap.get(resolvedGroupId)
+                : undefined;
+            return applyPaidFromLedger(attachContext(folio, reservation, guest, group), paidByFolio);
         });
     },
     async getById(id) {
@@ -150,8 +187,12 @@ export const FolioService = {
         const guest = folio.guestId
             ? (await fetchGuestsByIds([folio.guestId])).get(folio.guestId)
             : undefined;
+        const resolvedGroupId = String(folio.groupId ?? reservation?.groupId ?? "").trim();
+        const group = resolvedGroupId
+            ? (await fetchGroupsByIds([resolvedGroupId])).get(resolvedGroupId)
+            : undefined;
         const paidByFolio = await fetchPaidByFolioIds([folio.id]);
-        return applyPaidFromLedger(attachContext(folio, reservation, guest), paidByFolio);
+        return applyPaidFromLedger(attachContext(folio, reservation, guest, group), paidByFolio);
     },
 };
 //# sourceMappingURL=folio.service.js.map

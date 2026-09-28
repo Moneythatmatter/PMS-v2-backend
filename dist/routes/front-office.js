@@ -7,6 +7,7 @@ import { getDashboard } from "../controllers/front-office/dashboard.js";
 import { getReport } from "../controllers/front-office/reports.js";
 import * as reservations from "../controllers/front-office/reservations.js";
 import * as rooms from "../controllers/front-office/rooms.js";
+import * as groups from "../controllers/front-office/groups.js";
 import { foModel, mapTaxiForUi, normalizeTaxiPayload, } from "../models/front-office/index.js";
 import { guestCreateSchema, guestUpdateSchema, paymentCreateSchema, paymentUpdateSchema, } from "../validators/front-office.js";
 import { assertGuestContactUnique, attachGuestStayCount, attachGuestStayCounts, getGuestByKey, sanitizeGuestInput, } from "../services/front-office/guest-lookup.js";
@@ -28,8 +29,19 @@ router.put("/reservations/:id", reservations.updateReservation);
 router.patch("/reservations/:id", reservations.updateReservation);
 router.delete("/reservations/:id", reservations.deleteReservation);
 router.post("/reservations/:id/check-in", reservations.checkIn);
+router.get("/reservations/:id/guests", reservations.listReservationGuests);
 router.post("/reservations/:id/check-out", reservations.checkOut);
 router.post("/reservations/:id/extend-stay", reservations.extendStay);
+// Groups (P0–P1)
+router.get("/groups", groups.listGroups);
+router.post("/groups", groups.createGroup);
+router.get("/groups/:id", groups.getGroup);
+router.put("/groups/:id", groups.updateGroup);
+router.patch("/groups/:id", groups.updateGroup);
+router.get("/groups/:id/reservations", groups.listGroupReservations);
+router.get("/groups/:id/folio", groups.getGroupFolio);
+router.get("/groups/:id/billing-rules", groups.listGroupBillingRules);
+router.put("/groups/:id/billing-rules", groups.updateGroupBillingRules);
 // Rooms
 router.get("/rooms/availability", rooms.roomAvailability);
 router.get("/rooms/blocks", rooms.listRoomBlocks);

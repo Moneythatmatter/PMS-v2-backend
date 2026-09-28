@@ -1,4 +1,4 @@
-import type { InHouseGuest, Reservation, SummaryCard } from "../../types/front-office.js";
+import type { InHouseGuest, Reservation, ReservationGuestLink, SummaryCard } from "../../types/front-office.js";
 /**
  * ReservationService — business workflows for FO reservations.
  * Check-in / check-out prefer transactional Postgres RPCs when available.
@@ -18,7 +18,9 @@ export declare const ReservationService: {
      * Check-in (transactional via fo_check_in_reservation RPC when applied).
      * Fallback: sequential writes if RPC is not installed yet.
      */
-    checkIn(id: string, extras?: Partial<Reservation>): Promise<Reservation>;
+    checkIn(id: string, extras?: Partial<Reservation> & {
+        companionGuestIds?: string[];
+    }): Promise<Reservation>;
     checkInFallback(reservationId: string, existing: Reservation, extras: Partial<Reservation>): Promise<Reservation>;
     /**
      * Check-out (transactional via fo_check_out_reservation RPC when applied).
@@ -43,4 +45,7 @@ export declare const ReservationService: {
     listInHouse(): Promise<InHouseGuest[]>;
     /** Latest reservation for a room (in-house > reserved > recent checkout). */
     findCurrentForRoom(roomKey: string): Promise<Reservation | null>;
+    /** Replace guest list for a booking (primary + companions). */
+    syncReservationGuests(reservationId: string, primaryGuestId: string | null, companionGuestIds?: string[]): Promise<ReservationGuestLink[]>;
+    listReservationGuests(reservationId: string): Promise<ReservationGuestLink[]>;
 };

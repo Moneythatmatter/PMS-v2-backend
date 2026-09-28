@@ -54,6 +54,14 @@ app.use("/api/accounts", accountsRoutes);
 app.use("/api/employee-portal", employeePortalRoutes);
 app.use("/api", transactionsRoutes);
 
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: `API route not found: ${req.method} ${req.originalUrl}`,
+    code: "NOT_FOUND",
+  });
+});
+
 app.use(errorHandler);
 
 app.listen(PORT, "0.0.0.0", () => {
@@ -68,6 +76,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("  [MNT]  /api/maintenance");
   console.log("  [HR]   /api/human-resources");
   console.log("  [SM]   /api/sales-marketing");
+  console.log("  [ACC]  /api/accounts");
   console.log("  [EMP]  /api/employee-portal");
   console.log("  [TXN]  /api/transactions\n");
 });

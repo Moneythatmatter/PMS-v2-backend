@@ -5,3 +5,9 @@ export declare function createLaundry(req: Request, res: Response): Promise<Resp
 export declare function updateLaundry(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function deleteLaundry(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
 export declare function advanceLaundry(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+/**
+ * Settle delivered guest laundry:
+ * - Cash / Card / UPI → counter payment (billingStatus = Settled)
+ * - Room Charge → post to guest folio + reservations.laundry (billingStatus = Folio)
+ */
+export declare function settleLaundry(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

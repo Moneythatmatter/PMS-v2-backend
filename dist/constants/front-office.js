@@ -8,6 +8,29 @@ export const ReservationStatus = {
     CANCELLED: "Cancelled",
     NO_SHOW: "No Show",
 };
+export const BookingType = {
+    INDIVIDUAL: "Individual",
+    COMPANY: "Company",
+    GROUP: "Group",
+};
+export const FoChargeCategory = {
+    ROOM: "ROOM",
+    FOOD_BEVERAGE: "FOOD_BEVERAGE",
+    MINIBAR: "MINIBAR",
+    LAUNDRY: "LAUNDRY",
+    OTHER: "OTHER",
+};
+export const FoBillingResponsibility = {
+    GROUP_OWNER: "GROUP_OWNER",
+    GUEST: "GUEST",
+};
+export const FoGroupStatus = {
+    CONFIRMED: "Confirmed",
+    PARTIAL: "Partial",
+    IN_HOUSE: "In-House",
+    CHECKED_OUT: "Checked Out",
+    CANCELLED: "Cancelled",
+};
 export const RoomStatus = {
     VACANT: "Vacant",
     RESERVED: "Reserved",

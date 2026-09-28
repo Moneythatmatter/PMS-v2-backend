@@ -8,6 +8,8 @@ function moduleTag(url) {
         return "HR";
     if (url.startsWith("/api/sales-marketing"))
         return "SM";
+    if (url.startsWith("/api/accounts"))
+        return "ACC";
     if (url.startsWith("/api/food-beverages"))
         return "FB";
     if (url.startsWith("/api/front-office"))
