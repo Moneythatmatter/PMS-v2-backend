@@ -241,7 +241,6 @@ select public.remap_pk_ids('hk_laundry_jobs');
 select public.remap_pk_ids('hk_damage_reports');
 select public.remap_pk_ids('hk_requisitions');
 select public.remap_pk_ids('hk_history');
-select public.remap_pk_ids('hk_luggage_jobs');
 select public.remap_pk_ids('hk_settings');
 
 commit;

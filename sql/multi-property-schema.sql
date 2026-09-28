@@ -51,7 +51,7 @@ begin
     'maintenance_requests', 'cashier_shifts', 'room_charge_postings', 'day_closings',
     'desk_activity', 'room_availability_blocks', 'hk_rooms', 'housekeeping_tasks',
     'guest_requests', 'damage_reports', 'hk_inventory', 'hk_laundry_jobs', 'hk_requisitions',
-    'hk_history', 'hk_luggage_jobs', 'hk_settings', 'public_areas', 'hk_public_areas'
+    'hk_history', 'hk_settings', 'public_areas', 'hk_public_areas'
   ] loop
     begin
       execute format(

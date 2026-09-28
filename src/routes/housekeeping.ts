@@ -201,20 +201,6 @@ mountCrud(
   }),
 );
 
-// Luggage jobs (HK-owned; FO luggage_items remains for FO desk)
-mountCrud(
-  router,
-  "/luggage",
-  createTableCrud({
-    table: hkModel.tables.luggageJobs,
-    idPrefix: "LG",
-    listFilters: (req) => ({
-      status: req.query.status as string | undefined,
-      type: req.query.type as string | undefined,
-    }),
-  }),
-);
-
 // Settings (key/value store; id = setting key)
 mountCrud(
   router,

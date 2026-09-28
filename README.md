@@ -64,6 +64,6 @@ Ops:
 - Laundry: `GET|POST /laundry`, `POST /laundry/:id/advance`
 - Requisitions: `GET|POST /requisitions`, `POST /requisitions/:id/approve|issue|reject`
 
-Also CRUD for public-areas, checklists, staff, shifts, inventory, damage-reports, history, luggage, settings.
+Also CRUD for public-areas, checklists, staff, shifts, inventory, damage-reports, history, settings.
 Shared FO tables via `/guest-requests`, `/maintenance`, `/lost-found`.
 Reports: `GET /reports/:type` (`room-status`, `cleaning-productivity`, `inspection`, `laundry`, `inventory`, `damage`, `staff-performance`, `public-area`).

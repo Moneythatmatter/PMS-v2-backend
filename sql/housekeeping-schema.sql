@@ -633,22 +633,6 @@ create table if not exists hk_history (
   created_at timestamptz default now()
 );
 
--- ========== LUGGAGE (HK ops) ==========
-create table if not exists hk_luggage_jobs (
-  id text primary key,
-  guest text not null default '',
-  room text default '',
-  bell_boy text default '',
-  tag_number text default '',
-  bag_count int not null default 1,
-  type text not null default 'Check-in',
-  pickup_time text default '',
-  delivery_time text,
-  status text not null default 'Pending',
-  remarks text,
-  created_at timestamptz default now()
-);
-
 -- ========== SETTINGS ==========
 create table if not exists hk_settings (
   id text primary key,
@@ -742,7 +726,7 @@ on conflict (id) do nothing;
 -- ========== LAUNDRY (no seed — data created via Guest Laundry UI) ==========
 -- Seed rows intentionally omitted; jobs come from the API/app.
 
--- ========== SEED: DAMAGE / REQUISITIONS / HISTORY / LUGGAGE ==========
+-- ========== SEED: DAMAGE / REQUISITIONS / HISTORY ==========
 insert into hk_damage_reports (id, room, damage_type, description, reported_by, reported_at, estimated_cost, status) values
   ('DM-01', '305', 'Furniture', 'Bed side table drawer handle broken.', 'Meena (Housekeeper)', '23 Jun 08:45 AM', 450, 'Reported'),
   ('DM-02', '104', 'AC', 'Compressor failure causing no cooling.', 'Ramesh (Supervisor)', '23 Jun 07:10 AM', 4500, 'Approved')
@@ -760,11 +744,6 @@ insert into hk_history (id, timestamp, "user", category, action, room, details) 
   ('H-04', '23 Jun 08:30 AM', 'Somnath Sen', 'Inventory', 'Linen Restocked', null, 'Issued 50 pillow covers and 30 sheets to 3rd Floor store.')
 on conflict (id) do nothing;
 
-insert into hk_luggage_jobs (id, guest, room, bell_boy, tag_number, bag_count, type, pickup_time, delivery_time, status, remarks) values
-  ('LG-001', 'James Wilson', '112', 'Vikram Singh', 'TAG-9921', 3, 'Check-in', '22 Jun 02:15 PM', '22 Jun 02:30 PM', 'Delivered', 'Delivered to room safely.'),
-  ('LG-002', 'Priya Patel', '501', 'Vikram Singh', 'TAG-9922', 4, 'Storage', '23 Jun 11:00 AM', null, 'Stored', 'Stored in Locker A-15.')
-on conflict (id) do nothing;
-
 insert into hk_settings (id, label, value) values
   ('general', 'General HK Settings', '{"autoMarkDirtyOnCheckout":true,"inspectionRequired":true,"defaultCleanMinutes":30}'::jsonb)
 on conflict (id) do nothing;
@@ -777,7 +756,7 @@ begin
   foreach t in array array[
     'hk_rooms','housekeeping_tasks','guest_requests','maintenance_requests','public_areas','hk_public_areas','hk_checklist_templates','hk_staff','hk_shifts',
     'hk_inventory','hk_laundry_jobs','hk_damage_reports','hk_requisitions',
-    'hk_history','hk_luggage_jobs','hk_settings'
+    'hk_history','hk_settings'
   ]
   loop
     execute format('alter table %I enable row level security', t);

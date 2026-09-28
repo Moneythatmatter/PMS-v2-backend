@@ -15,6 +15,7 @@ import platformRoutes from "./routes/platform.js";
 import transactionsRoutes from "./routes/transactions.js";
 import humanResourcesRoutes from "./routes/human-resources.js";
 import salesMarketingRoutes from "./routes/sales-marketing.js";
+import accountsRoutes from "./routes/accounts.js";
 import employeePortalRoutes from "./routes/employee-portal.js";
 
 const app = express();
@@ -49,6 +50,7 @@ app.use("/api/purchase-stores", purchaseStoresRoutes);
 app.use("/api/maintenance", maintenanceRoutes);
 app.use("/api/human-resources", humanResourcesRoutes);
 app.use("/api/sales-marketing", salesMarketingRoutes);
+app.use("/api/accounts", accountsRoutes);
 app.use("/api/employee-portal", employeePortalRoutes);
 app.use("/api", transactionsRoutes);
 
