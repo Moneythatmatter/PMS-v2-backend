@@ -34,9 +34,9 @@ export type LedgerLine = {
   accountId: string;
   partyId: string | null;
   divisionId: string | null;
+  entryType: "Dr" | "Cr";
   debit: number;
   credit: number;
-  narration: string;
   chequeNo: string;
   chequeDate: string | null;
   reconciled: boolean;
@@ -90,9 +90,9 @@ export async function loadLines(opts: {
       accountId: r.accountId,
       partyId: r.partyId,
       divisionId: r.divisionId,
+      entryType: r.entryType === "Cr" ? "Cr" : "Dr",
       debit: num(r.debit),
       credit: num(r.credit),
-      narration: r.narration ?? "",
       chequeNo: r.chequeNo ?? "",
       chequeDate: r.chequeDate,
       reconciled: Boolean(r.reconciled),

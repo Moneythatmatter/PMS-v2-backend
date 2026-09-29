@@ -31,9 +31,9 @@ export type LedgerLine = {
     accountId: string;
     partyId: string | null;
     divisionId: string | null;
+    entryType: "Dr" | "Cr";
     debit: number;
     credit: number;
-    narration: string;
     chequeNo: string;
     chequeDate: string | null;
     reconciled: boolean;

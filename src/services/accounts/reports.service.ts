@@ -508,7 +508,7 @@ export async function generalLedger(query: Record<string, unknown>) {
       voucherTypeCode: vt?.shortCode ?? null,
       accountName: accName.get(l.accountId) ?? null,
       particulars: [...new Set(contra)].join(", ") || l.voucherNarration,
-      narration: l.narration || l.voucherNarration,
+      narration: l.voucherNarration,
       referenceNo: l.referenceNo,
       chequeNo: l.chequeNo || l.instrumentNo,
       partyName: l.partyId ? partyName.get(l.partyId) ?? null : null,

@@ -1,11 +1,12 @@
 import { type Row } from "../../models/accounts/repo.js";
 export type VoucherLineInput = {
     accountId: string;
-    partyId?: string | null;
-    divisionId?: string | null;
+    entryType?: "Dr" | "Cr";
+    amount?: number | string;
+    /** Older clients may still send debit / credit; converted to entryType + amount. */
     debit?: number | string;
     credit?: number | string;
-    narration?: string;
+    divisionId?: string | null;
     chequeNo?: string;
     chequeDate?: string | null;
     gstRate?: number | string | null;
@@ -91,10 +92,8 @@ export type ReceiptPaymentInput = {
     status?: "Draft" | "Posted";
     lines: {
         accountId: string;
-        partyId?: string | null;
         divisionId?: string | null;
         amount: number | string;
-        narration?: string;
         billId?: string | null;
     }[];
 };

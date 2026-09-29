@@ -103,15 +103,14 @@ begin
     if v_account is null then raise exception 'Unknown account code %', v_line->>'a'; end if;
     insert into public.acc_voucher_lines (
       property_id, voucher_id, line_no, account_id, party_id, division_id,
-      debit, credit, narration, cheque_no, cheque_date
+      entry_type, amount, cheque_no, cheque_date
     ) values (
       p_prop, v_id, v_i,
       v_account,
       case when v_line ? 'p' then pg_temp.acc_party_id(p_prop, v_line->>'p') end,
       case when v_line ? 'd' then pg_temp.acc_division_id(p_prop, v_line->>'d') end,
-      coalesce((v_line->>'dr')::numeric, 0),
-      coalesce((v_line->>'cr')::numeric, 0),
-      coalesce(v_line->>'n', ''),
+      case when v_line ? 'dr' then 'Dr' else 'Cr' end,
+      coalesce((v_line->>'dr')::numeric, (v_line->>'cr')::numeric),
       coalesce(v_line->>'chq', ''),
       case when v_line ? 'chq' then p_date end
     );

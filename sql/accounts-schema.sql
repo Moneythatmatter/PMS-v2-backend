@@ -462,9 +462,10 @@ create table if not exists public.acc_voucher_lines (
   account_id uuid not null references public.acc_accounts(id) on delete restrict,
   party_id uuid references public.acc_parties(id) on delete set null,
   division_id uuid references public.acc_divisions(id) on delete set null,
-  debit numeric(18,2) not null default 0,
-  credit numeric(18,2) not null default 0,
-  narration text not null default '',
+  entry_type text not null,
+  amount numeric(18,2) not null,
+  debit numeric(18,2) generated always as (case when entry_type = 'Dr' then amount else 0 end) stored,
+  credit numeric(18,2) generated always as (case when entry_type = 'Cr' then amount else 0 end) stored,
   cheque_no text not null default '',
   cheque_date date,
   gst_rate numeric(9,4),
@@ -474,8 +475,32 @@ create table if not exists public.acc_voucher_lines (
   reconciled_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint acc_voucher_lines_amount check (debit >= 0 and credit >= 0 and not (debit > 0 and credit > 0))
+  constraint acc_voucher_lines_entry_type check (entry_type in ('Dr', 'Cr')),
+  constraint acc_voucher_lines_amount check (amount > 0)
 );
+
+create or replace function public.acc_voucher_lines_ledger_only()
+returns trigger language plpgsql as $$
+declare
+  v_type text;
+  v_posting boolean;
+  v_name text;
+begin
+  select account_type, allow_posting, name into v_type, v_posting, v_name
+    from public.acc_accounts where id = new.account_id;
+  if v_type is distinct from 'Ledger' or not coalesce(v_posting, false) then
+    raise exception '% is a group / non-posting account — voucher lines must use a ledger',
+      coalesce(v_name, new.account_id::text)
+      using errcode = '23514';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists acc_voucher_lines_ledger_only on public.acc_voucher_lines;
+create trigger acc_voucher_lines_ledger_only
+  before insert or update of account_id on public.acc_voucher_lines
+  for each row execute function public.acc_voucher_lines_ledger_only();
 
 create table if not exists public.acc_party_bills (
   id uuid primary key default gen_random_uuid(),

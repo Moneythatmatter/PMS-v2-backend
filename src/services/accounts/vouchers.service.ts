@@ -26,11 +26,12 @@ import { applyAllocations, createBillForVoucher, releaseVoucherBills } from "./b
 
 export type VoucherLineInput = {
   accountId: string;
-  partyId?: string | null;
-  divisionId?: string | null;
+  entryType?: "Dr" | "Cr";
+  amount?: number | string;
+  /** Older clients may still send debit / credit; converted to entryType + amount. */
   debit?: number | string;
   credit?: number | string;
-  narration?: string;
+  divisionId?: string | null;
   chequeNo?: string;
   chequeDate?: string | null;
   gstRate?: number | string | null;
@@ -139,13 +140,24 @@ type PreparedLine = {
   accountId: string;
   partyId: string | null;
   divisionId: string | null;
-  debit: number;
-  credit: number;
-  narration: string;
+  entryType: "Dr" | "Cr";
+  amount: number;
   chequeNo: string;
   chequeDate: string | null;
   gstRate: number | null;
 };
+
+function normalizeEntry(l: VoucherLineInput): { entryType: "Dr" | "Cr" | null; amount: number } {
+  if (l.entryType === "Dr" || l.entryType === "Cr") {
+    return { entryType: l.entryType, amount: round2(num(l.amount)) };
+  }
+  const debit = round2(num(l.debit));
+  const credit = round2(num(l.credit));
+  if (debit !== 0 && credit !== 0) return { entryType: null, amount: 0 };
+  if (debit !== 0) return { entryType: "Dr", amount: debit };
+  if (credit !== 0) return { entryType: "Cr", amount: credit };
+  return { entryType: null, amount: 0 };
+}
 
 async function prepareLines(voucherType: Row, input: VoucherInput): Promise<{ lines: PreparedLine[]; total: number }> {
   if (!Array.isArray(input.lines) || input.lines.length < 2) {
@@ -155,41 +167,38 @@ async function prepareLines(voucherType: Row, input: VoucherInput): Promise<{ li
     in: { id: [...new Set(input.lines.map((l) => l.accountId).filter(isUuid))] },
   });
   const byId = new Map(accounts.map((a) => [a.id as string, a]));
+  const voucherPartyId = isUuid(input.partyId) ? input.partyId : null;
   const errors: { path: string; message: string }[] = [];
   const lines: PreparedLine[] = input.lines.map((l, i) => {
-    const debit = round2(num(l.debit));
-    const credit = round2(num(l.credit));
+    const { entryType, amount } = normalizeEntry(l);
     const acc = isUuid(l.accountId) ? byId.get(l.accountId) : undefined;
-    if (!acc) errors.push({ path: `lines[${i}].accountId`, message: "Select a valid account" });
+    if (!acc) errors.push({ path: `lines[${i}].accountId`, message: "Select a valid ledger" });
     else if (acc.accountType !== "Ledger" || !acc.allowPosting) {
-      errors.push({ path: `lines[${i}].accountId`, message: `${acc.name} is a group / non-posting account` });
+      errors.push({ path: `lines[${i}].accountId`, message: `${acc.name} is a group / non-posting account — select a ledger` });
     } else if (acc.status !== "Active") {
       errors.push({ path: `lines[${i}].accountId`, message: `${acc.name} is inactive` });
     }
-    if (debit < 0 || credit < 0) errors.push({ path: `lines[${i}]`, message: "Amounts cannot be negative" });
-    if ((debit > 0 && credit > 0) || (debit === 0 && credit === 0)) {
-      errors.push({ path: `lines[${i}]`, message: "Enter either a debit or a credit amount" });
-    }
+    if (!entryType) errors.push({ path: `lines[${i}]`, message: "Select Dr or Cr and enter an amount" });
+    else if (!(amount > 0)) errors.push({ path: `lines[${i}]`, message: "Amount must be greater than zero" });
     return {
       lineNo: i + 1,
       accountId: l.accountId,
-      partyId: isUuid(l.partyId) ? l.partyId : isUuid(input.partyId) && acc && isPartyAccount(acc) ? input.partyId : null,
+      partyId: voucherPartyId && acc && isPartyAccount(acc) ? voucherPartyId : null,
       divisionId: isUuid(l.divisionId) ? l.divisionId : isUuid(input.divisionId) ? input.divisionId : null,
-      debit,
-      credit,
-      narration: String(l.narration ?? "").trim(),
+      entryType: entryType ?? "Dr",
+      amount,
       chequeNo: String(l.chequeNo ?? "").trim(),
       chequeDate: isIsoDate(l.chequeDate) ? l.chequeDate : null,
       gstRate: l.gstRate === null || l.gstRate === undefined || l.gstRate === "" ? null : num(l.gstRate),
     };
   });
   if (errors.length) throw new ValidationError(`Line ${errors[0].path.match(/\d+/)?.[0] ? Number(errors[0].path.match(/\d+/)![0]) + 1 : ""}: ${errors[0].message}`, errors);
-  const dr = round2(lines.reduce((s, l) => s + l.debit, 0));
-  const cr = round2(lines.reduce((s, l) => s + l.credit, 0));
+  const dr = round2(lines.reduce((s, l) => s + (l.entryType === "Dr" ? l.amount : 0), 0));
+  const cr = round2(lines.reduce((s, l) => s + (l.entryType === "Cr" ? l.amount : 0), 0));
   if (dr !== cr) {
     throw new ValidationError(`Debits (${dr.toFixed(2)}) must equal credits (${cr.toFixed(2)})`);
   }
-  if (voucherType.partyRequired && !isUuid(input.partyId) && !lines.some((l) => l.partyId)) {
+  if (voucherType.partyRequired && !voucherPartyId) {
     throw new ValidationError(`${voucherType.voucherTypeName} requires a party`);
   }
   if (voucherType.divisionRequired && !lines.some((l) => l.divisionId)) {
@@ -405,17 +414,15 @@ export async function convertProvisional(id: string, body: { voucherDate?: strin
     voucherDate: isIsoDate(body.voucherDate) ? body.voucherDate : todayIso(),
     referenceNo: v.voucherNo,
     narration: body.narration?.trim() || `${v.narration} (converted from ${v.voucherNo})`,
-    partyId: v.partyId,
+    partyId: v.partyId ?? lines.find((l) => l.partyId)?.partyId ?? null,
     divisionId: v.divisionId,
     status: "Posted",
     sourceModule: "Provisional Conversion",
     lines: lines.map((l) => ({
       accountId: l.accountId,
-      partyId: l.partyId,
       divisionId: l.divisionId,
-      debit: l.debit,
-      credit: l.credit,
-      narration: l.narration,
+      entryType: l.entryType,
+      amount: l.amount,
     })),
   });
   await update(accTables.vouchers, id, { status: "Converted", convertedVoucherId: converted.id });
@@ -462,10 +469,15 @@ type Maps = Awaited<ReturnType<typeof lookupMaps>>;
 
 function decorateLine(l: Row, maps: Maps): Row {
   const acc = maps.accounts.get(l.accountId);
+  const debit = num(l.debit);
+  const credit = num(l.credit);
+  const entryType = l.entryType === "Dr" || l.entryType === "Cr" ? l.entryType : credit > 0 ? "Cr" : "Dr";
   return {
     ...l,
-    debit: num(l.debit),
-    credit: num(l.credit),
+    entryType,
+    amount: num(l.amount) || (entryType === "Dr" ? debit : credit),
+    debit,
+    credit,
     gstRate: l.gstRate === null ? null : num(l.gstRate),
     accountCode: acc?.code ?? null,
     accountName: acc?.name ?? null,
@@ -511,7 +523,10 @@ export async function listVouchers(query: Record<string, unknown>) {
     in: { status: csv(query.status), voucher_category: csv(query.category) },
     gte: { voucher_date: from },
     lte: { voucher_date: to },
-    order: [{ column: "voucher_date", ascending: false }, { column: "voucher_no", ascending: false }],
+    order:
+      query.sort === "recent"
+        ? [{ column: "created_at", ascending: false }]
+        : [{ column: "voucher_date", ascending: false }, { column: "voucher_no", ascending: false }],
     limit: query.limit ? Math.min(num(query.limit), 5000) : undefined,
   });
   if (vouchers.length === 0) return [];
@@ -592,10 +607,8 @@ export type ReceiptPaymentInput = {
   status?: "Draft" | "Posted";
   lines: {
     accountId: string;
-    partyId?: string | null;
     divisionId?: string | null;
     amount: number | string;
-    narration?: string;
     billId?: string | null;
   }[];
 };
@@ -631,24 +644,27 @@ export async function createReceiptPayment(input: ReceiptPaymentInput) {
   const lines: VoucherLineInput[] = [
     {
       accountId: input.bankCashAccountId,
-      debit: isReceipt ? total : 0,
-      credit: isReceipt ? 0 : total,
-      narration: input.narration ?? "",
+      entryType: isReceipt ? "Dr" : "Cr",
+      amount: total,
       chequeNo: input.instrumentNo ?? "",
       chequeDate: input.instrumentDate ?? null,
     },
-    ...input.lines.map((l) => ({
+    ...input.lines.map((l): VoucherLineInput => ({
       accountId: l.accountId,
-      partyId: l.partyId ?? input.partyId ?? null,
       divisionId: l.divisionId ?? null,
-      debit: isReceipt ? 0 : num(l.amount),
-      credit: isReceipt ? num(l.amount) : 0,
-      narration: l.narration ?? "",
+      entryType: isReceipt ? "Cr" : "Dr",
+      amount: num(l.amount),
     })),
   ];
   const billAllocations = input.lines
     .filter((l) => isUuid(l.billId))
     .map((l) => ({ billId: l.billId as string, amount: l.amount }));
+  if (billAllocations.length) {
+    if (!isUuid(input.partyId)) throw new ValidationError("Select the party to settle bills against");
+    const bills = await list(accTables.partyBills, { in: { id: billAllocations.map((a) => a.billId) } });
+    const foreign = bills.find((b) => b.partyId !== input.partyId);
+    if (foreign) throw new ValidationError(`Bill ${foreign.billNo} belongs to a different party`);
+  }
   return createVoucher({
     voucherTypeId,
     voucherDate: input.voucherDate,
@@ -714,7 +730,7 @@ export async function bankReconciliation(query: Record<string, unknown>) {
       voucherNo: v.voucherNo,
       voucherDate: v.voucherDate,
       voucherCategory: v.voucherCategory,
-      narration: l.narration || v.narration,
+      narration: v.narration,
       referenceNo: v.referenceNo,
       instrumentNo: l.chequeNo || v.instrumentNo,
       instrumentDate: l.chequeDate ?? v.instrumentDate,
@@ -820,11 +836,11 @@ export async function postClosingStock(body: { itemIds?: string[]; valuationDate
     if (g.diff === 0) continue;
     const amt = Math.abs(g.diff);
     if (g.diff > 0) {
-      lines.push({ accountId: g.stock, debit: amt, narration: "Closing stock increase" });
-      lines.push({ accountId: g.cons, credit: amt, narration: "Reduction in consumption" });
+      lines.push({ accountId: g.stock, entryType: "Dr", amount: amt });
+      lines.push({ accountId: g.cons, entryType: "Cr", amount: amt });
     } else {
-      lines.push({ accountId: g.cons, debit: amt, narration: "Additional consumption" });
-      lines.push({ accountId: g.stock, credit: amt, narration: "Closing stock decrease" });
+      lines.push({ accountId: g.cons, entryType: "Dr", amount: amt });
+      lines.push({ accountId: g.stock, entryType: "Cr", amount: amt });
     }
   }
   let voucher: Row | null = null;
