@@ -21,7 +21,7 @@ import {
   type Row,
 } from "../../models/accounts/repo.js";
 import { AppError, ConflictError, ValidationError } from "../../errors/index.js";
-import { findFiscalYear, findPeriod, resolvePostingWindow } from "./fiscal.service.js";
+import { findFiscalYear, findPeriod, getSettings, resolvePostingWindow } from "./fiscal.service.js";
 import { applyAllocations, createBillForVoucher, releaseVoucherBills } from "./bills.service.js";
 
 export type VoucherLineInput = {
@@ -303,11 +303,27 @@ export async function createVoucher(input: VoucherInput, opts: { enforceSettings
   return getVoucher(voucher.id);
 }
 
+const MUTABLE_STATUSES = ["Draft", "Provisional", "Posted"];
+
+/** Posted vouchers may only change while their period is open, outside the lock date, and not bank-reconciled. */
+async function assertPostedMutable(v: Row, date: string, action: "edited" | "deleted") {
+  const window = await resolvePostingWindow(date, { enforceSettings: false });
+  const settings = await getSettings();
+  if (settings?.lockDateBefore && date <= settings.lockDateBefore) {
+    throw new ConflictError(`Books are locked up to ${settings.lockDateBefore}`);
+  }
+  const reconciled = await list(accTables.voucherLines, { eq: { voucher_id: v.id, reconciled: true }, select: "id", limit: 1 });
+  if (reconciled.length) {
+    throw new ConflictError(`${v.voucherNo} has bank-reconciled lines — unreconcile them before it can be ${action}`);
+  }
+  return window;
+}
+
 export async function updateVoucher(id: string, input: VoucherInput) {
   requireUuid(id);
   const existing = await mustGet(accTables.vouchers, id, "Voucher");
-  if (!["Draft", "Provisional"].includes(existing.status)) {
-    throw new ConflictError(`${existing.status} vouchers cannot be edited — reverse and re-enter instead`);
+  if (!MUTABLE_STATUSES.includes(existing.status)) {
+    throw new ConflictError(`${existing.status} vouchers cannot be edited`);
   }
   const voucherType = await mustGet(accTables.voucherTypes, existing.voucherTypeId, "Voucher type");
   if (input.voucherTypeId && input.voucherTypeId !== existing.voucherTypeId) {
@@ -322,6 +338,18 @@ export async function updateVoucher(id: string, input: VoucherInput) {
     if (!fy) throw new ValidationError(`No fiscal year covers ${date}`);
     fiscalYear = fy;
     period = await findPeriod(fy.id, date);
+  } else if (existing.status === "Posted") {
+    await assertPostedMutable(existing, existing.voucherDate, "edited");
+    ({ fiscalYear, period } = await assertPostedMutable(existing, date, "edited"));
+    if (total !== round2(num(existing.totalAmount))) {
+      const [settlements, bills] = await Promise.all([
+        list(accTables.billSettlements, { eq: { voucher_id: id }, select: "id", limit: 1 }),
+        list(accTables.partyBills, { eq: { voucher_id: id }, select: "id,status" }),
+      ]);
+      if (settlements.length || bills.some((b) => b.status !== "Cancelled")) {
+        throw new ConflictError("This voucher settles or raises party bills, so its total cannot change — reverse it and re-enter instead");
+      }
+    }
   } else {
     ({ fiscalYear, period } = await resolvePostingWindow(date));
   }
@@ -340,16 +368,24 @@ export async function updateVoucher(id: string, input: VoucherInput) {
   });
   await removeWhere(accTables.voucherLines, { voucher_id: id });
   await insertMany(accTables.voucherLines, lines.map((l) => ({ ...l, voucherId: id })));
-  await audit("voucher", id, "Edited", { details: { total } });
+  await audit("voucher", id, existing.status === "Posted" ? "Edited (Posted)" : "Edited", {
+    details: { total, previousTotal: num(existing.totalAmount), previousDate: existing.voucherDate },
+  });
   return getVoucher(id);
 }
 
 export async function deleteVoucher(id: string) {
   requireUuid(id);
   const v = await mustGet(accTables.vouchers, id, "Voucher");
-  if (v.status !== "Draft") throw new ConflictError("Only draft vouchers can be deleted");
+  if (!MUTABLE_STATUSES.includes(v.status)) throw new ConflictError(`${v.status} vouchers cannot be deleted`);
+  if (v.status === "Posted") {
+    await assertPostedMutable(v, v.voucherDate, "deleted");
+    await releaseVoucherBills(v);
+  }
   await remove(accTables.vouchers, id);
-  await audit("voucher", id, "Deleted", { details: { voucherNo: v.voucherNo } });
+  await audit("voucher", id, "Deleted", {
+    details: { voucherNo: v.voucherNo, status: v.status, total: num(v.totalAmount), voucherDate: v.voucherDate },
+  });
   return { id };
 }
 
