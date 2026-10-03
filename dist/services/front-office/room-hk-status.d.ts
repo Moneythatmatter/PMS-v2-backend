@@ -17,9 +17,15 @@ type ReservationLike = {
     roomNo?: unknown;
     status?: unknown;
     guestName?: unknown;
+    checkIn?: unknown;
     checkOut?: unknown;
 };
-export declare function buildActiveBookingByRoomNo<T extends ReservationLike>(reservations: T[]): Map<string, T>;
+export declare function localTodayIso(now?: Date): string;
+/**
+ * The reservation holding each room today: in-house guests always (including overstays),
+ * otherwise only bookings whose stay covers today — future and missed arrivals do not hold the room.
+ */
+export declare function buildActiveBookingByRoomNo<T extends ReservationLike>(reservations: T[], todayIso?: string): Map<string, T>;
 export declare function availabilityCalendarDayStatus(params: {
     dayIso: string;
     todayIso: string;

@@ -114,7 +114,26 @@ export async function ensureHkRoomForFoRoom(roomId) {
         status: "DIRTY",
     });
 }
-export function buildActiveBookingByRoomNo(reservations) {
+const IN_HOUSE_STATUSES = new Set(["Checked In", "In-House"]);
+export function localTodayIso(now = new Date()) {
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+}
+function stayCoversDay(reservation, dayIso) {
+    const checkIn = String(reservation.checkIn ?? "").slice(0, 10);
+    const checkOut = String(reservation.checkOut ?? "").slice(0, 10);
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
+    if (!iso.test(checkIn) || !iso.test(checkOut))
+        return true;
+    return checkIn <= dayIso && dayIso < checkOut;
+}
+/**
+ * The reservation holding each room today: in-house guests always (including overstays),
+ * otherwise only bookings whose stay covers today — future and missed arrivals do not hold the room.
+ */
+export function buildActiveBookingByRoomNo(reservations, todayIso = localTodayIso()) {
     const bookingByRoom = new Map();
     for (const reservation of reservations) {
         const roomNo = String(reservation.roomNo ?? "").trim();
@@ -124,6 +143,9 @@ export function buildActiveBookingByRoomNo(reservations) {
         if (status === "Cancelled" ||
             status === "Checked Out" ||
             status === "No Show") {
+            continue;
+        }
+        if (!IN_HOUSE_STATUSES.has(status) && !stayCoversDay(reservation, todayIso)) {
             continue;
         }
         const previous = bookingByRoom.get(roomNo);

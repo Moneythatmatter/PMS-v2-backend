@@ -173,12 +173,30 @@ export async function roomAvailability(req: Request, res: Response) {
           r.roomNo,
       )
       .map((r) => ({
+        id: String(r.id),
+        bookingNo: String(r.bookingNo ?? "").trim() || undefined,
+        guestName: String(r.guestName ?? "").trim() || undefined,
+        guestId: r.guestId ? String(r.guestId) : undefined,
+        groupId: r.groupId ? String(r.groupId) : undefined,
+        groupName: String(r.groupName ?? "").trim() || undefined,
+        groupNo: String(r.groupNo ?? "").trim() || undefined,
+        stayCheckIn: String(r.checkIn ?? "").slice(0, 10),
+        stayCheckOut: String(r.checkOut ?? "").slice(0, 10),
         roomNo: String(r.roomNo),
         checkIn: parseStayDate(String(r.checkIn ?? "")),
         checkOut: parseStayDate(String(r.checkOut ?? "")),
         status: String(r.status ?? ""),
       }))
       .filter((r) => r.checkIn && r.checkOut) as {
+      id: string;
+      bookingNo?: string;
+      guestName?: string;
+      guestId?: string;
+      groupId?: string;
+      groupName?: string;
+      groupNo?: string;
+      stayCheckIn: string;
+      stayCheckOut: string;
       roomNo: string;
       checkIn: Date;
       checkOut: Date;
@@ -186,6 +204,12 @@ export async function roomAvailability(req: Request, res: Response) {
     }[];
 
     const inHouseStatuses = new Set(["Checked In", "In-House"]);
+    const tomorrow = addDays(startOfDay(new Date()), 1);
+    for (const r of activeReservations) {
+      if (inHouseStatuses.has(r.status) && r.checkOut.getTime() < tomorrow.getTime()) {
+        r.checkOut = tomorrow;
+      }
+    }
 
     const sortedRooms = [...rooms].sort((a, b) => {
       const floorCompare = compareFloor(String(a.floor ?? ""), String(b.floor ?? ""));
@@ -200,6 +224,21 @@ export async function roomAvailability(req: Request, res: Response) {
         string,
         "available" | "reserved" | "occupied" | "dirty" | "maintenance" | "blocked"
       > = {};
+      const bookingByDay: Record<
+        string,
+        {
+          id: string;
+          bookingNo?: string;
+          guestName?: string;
+          guestId?: string;
+          groupId?: string;
+          groupName?: string;
+          groupNo?: string;
+          status: string;
+          checkIn: string;
+          checkOut: string;
+        }
+      > = {};
       const roomId = String(room.id);
       const hkStatus: HkRoomStatus = hkByRoomId.get(roomId) ?? "DIRTY";
       const isActive = room.isActive !== false;
@@ -208,12 +247,13 @@ export async function roomAvailability(req: Request, res: Response) {
 
       for (const dayIso of days) {
         const day = parseIsoDate(dayIso)!;
-        const booking = activeReservations.find(
+        const onDay = activeReservations.filter(
           (r) =>
             r.roomNo === String(room.roomNo) &&
             startOfDay(day).getTime() >= startOfDay(r.checkIn).getTime() &&
             startOfDay(day).getTime() < startOfDay(r.checkOut).getTime(),
         );
+        const booking = onDay.find((r) => inHouseStatuses.has(r.status)) ?? onDay[0];
 
         dayMap[dayIso] = availabilityCalendarDayStatus({
           dayIso,
@@ -224,6 +264,21 @@ export async function roomAvailability(req: Request, res: Response) {
           datedBlock: blockKindForDay(roomBlocks, dayIso),
           hkStatus,
         });
+
+        if (booking && (dayMap[dayIso] === "occupied" || dayMap[dayIso] === "reserved")) {
+          bookingByDay[dayIso] = {
+            id: booking.id,
+            bookingNo: booking.bookingNo,
+            guestName: booking.guestName,
+            guestId: booking.guestId,
+            groupId: booking.groupId,
+            groupName: booking.groupName,
+            groupNo: booking.groupNo,
+            status: booking.status,
+            checkIn: booking.stayCheckIn,
+            checkOut: booking.stayCheckOut,
+          };
+        }
       }
 
       return {
@@ -236,6 +291,7 @@ export async function roomAvailability(req: Request, res: Response) {
             ? Number(room.maxOccupancy)
             : undefined,
         days: dayMap,
+        bookings: bookingByDay,
       };
     });
 
@@ -314,6 +370,20 @@ export async function roomStatusCards(_req: Request, res: Response) {
         status,
         guestName: booking
           ? String(booking.guestName ?? "").trim() || undefined
+          : undefined,
+        reservationId: booking ? String(booking.id) : undefined,
+        bookingNo: booking
+          ? String(booking.bookingNo ?? "").trim() || undefined
+          : undefined,
+        checkinDate: booking
+          ? String(booking.checkIn ?? "").trim() || undefined
+          : undefined,
+        groupId: booking?.groupId ? String(booking.groupId) : undefined,
+        groupName: booking
+          ? String(booking.groupName ?? "").trim() || undefined
+          : undefined,
+        groupNo: booking
+          ? String(booking.groupNo ?? "").trim() || undefined
           : undefined,
         housekeeping: hkStatusToHousekeeping(hkStatus),
         maintenance: hkStatusToMaintenance(hkStatus),
