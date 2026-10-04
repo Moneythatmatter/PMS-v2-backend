@@ -1359,13 +1359,6 @@ const hkPaths = mergePaths(
       queryParam("room", "Filter by room"),
     ],
   }),
-  crudPaths(`${hkBase}/maintenance`, "HK · Guest Services", "maintenance tickets", {
-    idPrefix: "MNT",
-    listQuery: [
-      queryParam("status", "Filter by status"),
-      queryParam("room", "Filter by room"),
-    ],
-  }),
   crudPaths(`${hkBase}/lost-found`, "HK · Guest Services", "lost & found items", {
     idPrefix: "LF",
     listQuery: [queryParam("status", "Filter by status")],

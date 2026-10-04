@@ -7,7 +7,6 @@ import { getDashboard } from "../controllers/housekeeping/dashboard.js";
 import * as rooms from "../controllers/housekeeping/rooms.js";
 import * as tasks from "../controllers/housekeeping/tasks.js";
 import * as guestRequests from "../controllers/housekeeping/guest-requests.js";
-import * as maintenanceRequests from "../controllers/housekeeping/maintenance-requests.js";
 import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 import * as damageReports from "../controllers/housekeeping/damage-reports.js";
 import * as publicAreasMaster from "../controllers/housekeeping/public-areas-master.js";
@@ -55,17 +54,6 @@ router.post("/guest-requests/:id/assign", guestRequests.assignGuestRequest);
 router.post("/guest-requests/:id/start", guestRequests.startGuestRequest);
 router.post("/guest-requests/:id/complete", guestRequests.completeGuestRequest);
 router.post("/guest-requests/:id/cancel", guestRequests.cancelGuestRequest);
-// Maintenance work orders (slim ops — replaces legacy maintenance_requests shape)
-router.get("/maintenance", maintenanceRequests.listMaintenanceRequests);
-router.get("/maintenance/:id", maintenanceRequests.getMaintenanceRequest);
-router.post("/maintenance", maintenanceRequests.createMaintenanceRequest);
-router.put("/maintenance/:id", maintenanceRequests.updateMaintenanceRequest);
-router.patch("/maintenance/:id", maintenanceRequests.updateMaintenanceRequest);
-router.post("/maintenance/:id/assign", maintenanceRequests.assignMaintenanceRequest);
-router.post("/maintenance/:id/start", maintenanceRequests.startMaintenanceRequest);
-router.post("/maintenance/:id/complete", maintenanceRequests.completeMaintenanceRequest);
-router.post("/maintenance/:id/verify", maintenanceRequests.verifyMaintenanceRequest);
-router.post("/maintenance/:id/cancel", maintenanceRequests.cancelMaintenanceRequest);
 // Public areas master (inventory — separate from hk_public_areas ops)
 router.get("/masters/public-areas", publicAreasMaster.listPublicAreasMaster);
 router.get("/masters/public-areas/:id", publicAreasMaster.getPublicAreaMaster);
