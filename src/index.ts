@@ -17,6 +17,7 @@ import humanResourcesRoutes from "./routes/human-resources.js";
 import salesMarketingRoutes from "./routes/sales-marketing.js";
 import accountsRoutes from "./routes/accounts.js";
 import employeePortalRoutes from "./routes/employee-portal.js";
+import { TableReservationService } from "./services/food-beverages/table-reservations.service.js";
 
 const app = express();
 const PORT = config.port;
@@ -79,4 +80,5 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log("  [ACC]  /api/accounts");
   console.log("  [EMP]  /api/employee-portal");
   console.log("  [TXN]  /api/transactions\n");
+  TableReservationService.startSweeper();
 });

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireProperty } from "../middleware/property.js";
+import { requireModule } from "../middleware/module-access.js";
 import { attachRequestContext } from "../middleware/request-context.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import * as dashboard from "../controllers/maintenance/dashboard.js";
@@ -11,6 +12,7 @@ import { packMntDocument, unpackMntDocument, withMntDocumentDefaults, } from "..
 const router = Router();
 router.use(requireAuth);
 router.use(requireProperty);
+router.use(requireModule("maintenance"));
 router.use(attachRequestContext);
 const T = mntModel.tables;
 const masterCrud = (table, idPrefix, orderBy) => createTableCrud({

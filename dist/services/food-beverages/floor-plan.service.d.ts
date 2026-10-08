@@ -1,3 +1,4 @@
+import { type TableReservationOverlay } from "./table-reservations.service.js";
 type Row = Record<string, unknown>;
 export type TableDisplayState = "BLANK" | "RUNNING" | "RUNNING_KOT" | "PRINTED" | "PAID";
 /** Legacy UI status keys (ops.ts tableStatusStyles). */
@@ -51,7 +52,7 @@ export declare const FloorPlanService: {
         displayState: TableDisplayState;
         status: string;
     }[]>;
-    getTableFloorPlan(tableId: string): Promise<{
+    getTableFloorPlan(tableId: string): Promise<({
         displayState: TableDisplayState;
         status: LegacyTableStatus;
         session: Row;
@@ -66,7 +67,9 @@ export declare const FloorPlanService: {
         openOrderId: string | null;
         openSessionId: string | null;
         openBillId: string | null;
-    } | {
+    } & {
+        reservation: TableReservationOverlay | null;
+    }) | {
         displayState: TableDisplayState;
         status: string;
     } | null>;

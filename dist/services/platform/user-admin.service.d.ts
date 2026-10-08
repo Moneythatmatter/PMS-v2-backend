@@ -51,7 +51,8 @@ export declare const UserAdminService: {
             permission: PermissionLevel;
         }>;
         employeeId?: string | null;
+        password?: string;
     }): Promise<ManagedUser>;
-    getMyPermissions(userId: string, propertyId: string, isSuperAdmin?: boolean): Promise<Record<string, PermissionLevel | "admin">>;
+    getMyPermissions(userId: string, propertyId: string, isSuperAdmin?: boolean, role?: string): Promise<Record<string, PermissionLevel | "admin">>;
 };
 export type { UserPropertyAccessRow };

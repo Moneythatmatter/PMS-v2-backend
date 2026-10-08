@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireProperty } from "../middleware/property.js";
+import { requireModule } from "../middleware/module-access.js";
 import { attachRequestContext } from "../middleware/request-context.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import { getDashboard } from "../controllers/housekeeping/dashboard.js";
@@ -21,6 +22,11 @@ const router = Router();
 
 router.use(requireAuth);
 router.use(requireProperty);
+router.use(
+  requireModule("housekeeping", [
+    { methods: ["GET"], path: /^\/rooms(\/|$)/, modules: ["dashboard"] },
+  ]),
+);
 router.use(attachRequestContext);
 
 // Dashboard

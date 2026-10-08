@@ -1,7 +1,10 @@
 import { fbModel } from "../../models/food-beverages/index.js";
 import { isRoomChargePayment, isRoomChargeSettledOrder, settleRoomChargeViaRpc, syncRoomServiceAfterCancellationViaRpc, } from "../shared/fnb-folio-sync.service.js";
 import { TransactionService } from "../shared/transaction.service.js";
-import { AppError } from "../../errors/index.js";
+import { AppError, ConflictError } from "../../errors/index.js";
+import { groupsForMenuItems, resolveSelections, } from "../../models/food-beverages/modifiers.js";
+import { consumeRecipesForOrder } from "./recipe-consumption.service.js";
+import { TableReservationService } from "./table-reservations.service.js";
 const ACTIVE_KOT = new Set(["PENDING", "PREPARING", "READY"]);
 const CANCELLABLE_KOT = new Set(["PENDING", "PREPARING", "READY"]);
 const KITCHEN_TO_KOT = {
@@ -36,14 +39,46 @@ function isDineInTableRef(ref) {
 function sumLines(lines) {
     return lines.reduce((acc, l) => acc + l.qty * l.unitPrice, 0);
 }
+async function priceLines(lines) {
+    const anyModifiers = lines.some((l) => (l.modifierIds?.length ?? 0) > 0);
+    let groupsByItem = new Map();
+    try {
+        groupsByItem = await groupsForMenuItems(lines.map((l) => l.menuItemId ?? ""));
+    }
+    catch (e) {
+        // Before fb-modifiers.sql is applied the link table doesn't exist; plain items must still go through.
+        if (anyModifiers)
+            throw e;
+    }
+    return lines.map((line) => {
+        const basePrice = Number(line.unitPrice) || 0;
+        const groups = line.menuItemId ? (groupsByItem.get(line.menuItemId) ?? []) : [];
+        if (groups.length === 0) {
+            if (line.modifierIds?.length) {
+                throw new AppError(`${line.name}: modifiers are not available for this item`, 400);
+            }
+            return { ...line, unitPrice: basePrice, basePrice, modifierTotal: 0, modifiers: [] };
+        }
+        const { selected, total } = resolveSelections(line.name, groups, line.modifierIds ?? []);
+        return { ...line, unitPrice: basePrice + total, basePrice, modifierTotal: total, modifiers: selected };
+    });
+}
+export function modifierNames(item) {
+    const list = Array.isArray(item.modifiers) ? item.modifiers : [];
+    return list.map((m) => String(m.name ?? "")).filter(Boolean);
+}
 function syncLegacyOrderLines(items) {
     return items
         .filter((i) => String(i.status ?? "ACTIVE") === "ACTIVE")
-        .map((i) => ({
-        name: String(i.name ?? ""),
-        qty: Number(i.quantity ?? 1),
-        ...(i.note ? { note: String(i.note) } : {}),
-    }));
+        .map((i) => {
+        const modifiers = modifierNames(i);
+        return {
+            name: String(i.name ?? ""),
+            qty: Number(i.quantity ?? 1),
+            ...(modifiers.length ? { modifiers } : {}),
+            ...(i.note ? { note: String(i.note) } : {}),
+        };
+    });
 }
 async function getOrderItems(orderId) {
     return fbModel.list(fbModel.tables.orderItems, {
@@ -220,6 +255,9 @@ async function getOpenOrderForSession(sessionId) {
 }
 async function createSession(input) {
     return fbModel.create(fbModel.tables.tableSessions, {
+        ...(input.overrideReservationId
+            ? { overrideReservationId: input.overrideReservationId, overrideReason: input.overrideReason ?? "" }
+            : {}),
         id: fbModel.newId("TS"),
         liveTableId: input.liveTableId,
         outletId: input.outletId,
@@ -260,6 +298,7 @@ export const PosService = {
         }
         // Each call appends new order_items and creates a new fb_kot_tickets row.
         // When input.orderId is set, items stay on the same open order (add-on KOT).
+        const pricedLines = await priceLines(input.lines);
         const type = input.type || "Dine In";
         const ref = input.ref?.trim() ||
             (type === "Dine In"
@@ -288,6 +327,15 @@ export const PosService = {
             if (liveTable?.id) {
                 session = await getOpenSessionForTable(String(liveTable.id));
                 if (!session) {
+                    const tableNo = String(liveTable.tableNo ?? ref);
+                    const holding = await TableReservationService.activeBlockingReservation(String(liveTable.outletId ?? input.outletId), tableNo).catch((e) => {
+                        console.warn("[pos] reservation check skipped:", e);
+                        return null;
+                    });
+                    const overridden = Boolean(holding && input.overrideReservation?.reservationId === holding.id);
+                    if (holding && !overridden) {
+                        throw new ConflictError(TableReservationService.blockingMessage(holding, tableNo));
+                    }
                     session = await createSession({
                         liveTableId: String(liveTable.id),
                         outletId: input.outletId,
@@ -297,6 +345,12 @@ export const PosService = {
                         reservationId: input.reservationId,
                         pax: input.pax,
                         server: input.server,
+                        ...(overridden && holding
+                            ? {
+                                overrideReservationId: holding.id,
+                                overrideReason: input.overrideReservation?.reason?.trim() || "Staff override",
+                            }
+                            : {}),
                     });
                 }
                 order = await getOpenOrderForSession(String(session.id));
@@ -332,15 +386,18 @@ export const PosService = {
             throw new AppError("Failed to create or load order", 500);
         const orderId = String(order.id);
         const createdItems = [];
-        for (const line of input.lines) {
+        for (const line of pricedLines) {
             const qty = Math.max(1, Number(line.qty) || 1);
-            const unitPrice = Number(line.unitPrice) || 0;
+            const unitPrice = line.unitPrice;
             const item = await fbModel.create(fbModel.tables.orderItems, {
                 id: fbModel.newId("OI"),
                 orderId,
                 menuItemId: line.menuItemId ?? null,
                 name: line.name,
                 quantity: qty,
+                basePrice: line.basePrice,
+                modifierTotal: line.modifierTotal,
+                modifiers: line.modifiers,
                 unitPrice,
                 lineTotal: qty * unitPrice,
                 note: line.note ?? null,
@@ -518,6 +575,7 @@ export const PosService = {
                     status: "CLOSED",
                     closedAt: nowIso(),
                 });
+                await TableReservationService.completeForSession(sessionId).catch((e) => console.warn(`[F&B] reservation completion skipped for session ${sessionId}:`, e));
                 const session = await fbModel.get(fbModel.tables.tableSessions, sessionId);
                 if (session?.liveTableId) {
                     await fbModel.update(fbModel.tables.liveTables, String(session.liveTableId), {
@@ -531,6 +589,9 @@ export const PosService = {
                     });
                 }
             }
+        }
+        if (orderId && (roomCharge || String(updatedBill?.paymentStatus) === "PAID")) {
+            await consumeRecipesForOrder(orderId).catch((e) => console.warn(`[F&B] recipe stock deduction skipped for order ${orderId}:`, e));
         }
         return {
             bill: updatedBill,
@@ -642,6 +703,7 @@ export const PosService = {
             const qty = Number(ki.quantity ?? orderItem?.quantity ?? 1);
             const unitPrice = Number(orderItem?.unitPrice ?? 0);
             const lineStatus = String(ki.status ?? "PENDING").toUpperCase();
+            const modifiers = orderItem ? modifierNames(orderItem) : [];
             return {
                 id: String(ki.id),
                 name: String(orderItem?.name ?? "Item"),
@@ -649,6 +711,7 @@ export const PosService = {
                 unitPrice,
                 lineTotal: lineStatus === "CANCELLED" ? 0 : qty * unitPrice,
                 status: lineStatus,
+                modifiers,
                 ...(orderItem?.note ? { note: String(orderItem.note) } : {}),
             };
         });
@@ -673,11 +736,12 @@ export const PosService = {
             printedAt: kot.printedAt ?? null,
             prepMinutes: order.prepMinutes != null ? Number(order.prepMinutes) : null,
             rejectReason: order.rejectReason ? String(order.rejectReason) : null,
-            lines: lines.map(({ id, name, qty, note, status }) => ({
+            lines: lines.map(({ id, name, qty, note, status, modifiers }) => ({
                 id,
                 name,
                 qty,
                 status,
+                ...(modifiers.length ? { modifiers } : {}),
                 ...(note ? { note } : {}),
             })),
             amount,

@@ -1,6 +1,10 @@
 import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { requireProperty } from "../middleware/property.js";
+import { requireModule } from "../middleware/module-access.js";
 import * as transactions from "../controllers/transactions.js";
 const router = Router();
+router.use(["/transactions", "/folios"], requireAuth, requireProperty, requireModule(["front_office", "food_beverages", "accounts"]));
 router.get("/transactions", transactions.listTransactions);
 router.get("/transactions/:id", transactions.getTransaction);
 router.post("/transactions", transactions.createTransaction);

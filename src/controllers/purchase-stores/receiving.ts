@@ -8,6 +8,7 @@ import {
 } from "../../models/front-office/base.js";
 import { psModel } from "../../models/purchase-stores/index.js";
 import { fail, fromError, ok } from "../../utils/response.js";
+import { syncPrForPo } from "./requisition-lifecycle.js";
 
 const T = psModel.tables;
 
@@ -67,7 +68,7 @@ async function findWarehouseByName(name: string) {
   return rows.find((w) => w.name.toLowerCase() === n || w.code.toLowerCase() === n) ?? rows[0] ?? null;
 }
 
-async function upsertStockBalance(materialId: string, warehouseId: string, qtyIn: number, unitCost: number) {
+export async function upsertStockBalance(materialId: string, warehouseId: string, qtyIn: number, unitCost: number) {
   const existing = await listRows<{
     id: string;
     quantity: number;
@@ -377,6 +378,7 @@ export async function updateQualityInspection(req: Request, res: Response) {
           },
           items: mergedItems,
         });
+        await syncPrForPo(String(grn.poNumber ?? ""));
       }
     }
 

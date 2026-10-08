@@ -1,11 +1,26 @@
 import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { requireProperty } from "../middleware/property.js";
+import { requireModule } from "../middleware/module-access.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import * as dashboard from "../controllers/purchase-stores/dashboard.js";
 import * as receiving from "../controllers/purchase-stores/receiving.js";
+import * as openingStock from "../controllers/purchase-stores/opening-stock.js";
+import * as prLifecycle from "../controllers/purchase-stores/requisition-lifecycle.js";
 import { psModel } from "../models/purchase-stores/index.js";
 import { withPsDocumentDefaults } from "../utils/purchase-stores-docs.js";
 const router = Router();
 const T = psModel.tables;
+router.use(requireAuth);
+router.use(requireProperty);
+router.use(requireModule("purchase_stores", [
+    {
+        methods: ["GET"],
+        path: /^\/(masters\/(categories|products|units)|warehouses|stock-balances)(\/|$)/,
+        modules: "any",
+    },
+    { methods: "*", path: /^\/requisitions(\/|$)/, modules: "any" },
+]));
 const docCrud = (table, idPrefix, docDefaults, statusKey = "status") => createTableCrud({
     table,
     idPrefix,
@@ -23,6 +38,7 @@ const docCrud = (table, idPrefix, docDefaults, statusKey = "status") => createTa
         return filters;
     },
     orderBy: "created_at",
+    ascending: false,
 });
 // Dashboard & special queries
 router.get("/dashboard", dashboard.getDashboard);
@@ -42,18 +58,31 @@ mountCrud(router, "/masters/products", createTableCrud({
     orderBy: "product_code",
 }));
 mountCrud(router, "/warehouses", createTableCrud({ table: T.warehouses, idPrefix: "PSW", orderBy: "code" }));
-// Procurement
-mountCrud(router, "/requisitions", docCrud(T.purchaseRequisitions, "PR", {
-    numberField: "prNumber",
-    prefix: "PR",
-    dateDefaults: { requestDate: "today", requiredDate: "today" },
-}));
-mountCrud(router, "/rfqs", docCrud(T.rfqs, "RFQ", {
-    numberField: "rfqNumber",
-    prefix: "RFQ",
-    dateDefaults: { rfqDate: "today", closingDate: "today" },
-}));
-mountCrud(router, "/purchase-orders", docCrud(T.purchaseOrders, "PO", { numberField: "poNumber", prefix: "PO", dateDefaults: { orderDate: "today" } }));
+// Procurement — one requisition register for every module (header + line items).
+// PR status (In Sourcing / Partially Ordered / Closed) is derived from linked RFQs and POs.
+router.get("/requisitions/fulfillment", prLifecycle.listFulfillment);
+router.post("/requisitions/reconcile", prLifecycle.reconcileStatuses);
+router.get("/requisitions/:id/fulfillment", prLifecycle.getFulfillment);
+router.get("/requisitions", prLifecycle.listRequisitions);
+router.get("/requisitions/:id", prLifecycle.getRequisition);
+router.post("/requisitions", prLifecycle.createRequisition);
+router.put("/requisitions/:id", prLifecycle.updateRequisition);
+router.patch("/requisitions/:id", prLifecycle.updateRequisition);
+router.delete("/requisitions/:id", prLifecycle.deleteRequisition);
+const rfqCrud = docCrud(T.rfqs, "RFQ", prLifecycle.RFQ_DOC);
+router.get("/rfqs", rfqCrud.list);
+router.get("/rfqs/:id", rfqCrud.get);
+router.post("/rfqs", prLifecycle.createRfq);
+router.put("/rfqs/:id", prLifecycle.updateRfq);
+router.patch("/rfqs/:id", prLifecycle.updateRfq);
+router.delete("/rfqs/:id", prLifecycle.deleteRfq);
+const poCrud = docCrud(T.purchaseOrders, "PO", prLifecycle.PO_DOC);
+router.get("/purchase-orders", poCrud.list);
+router.get("/purchase-orders/:id", poCrud.get);
+router.post("/purchase-orders", prLifecycle.createPurchaseOrder);
+router.put("/purchase-orders/:id", prLifecycle.updatePurchaseOrder);
+router.patch("/purchase-orders/:id", prLifecycle.updatePurchaseOrder);
+router.delete("/purchase-orders/:id", prLifecycle.deletePurchaseOrder);
 mountCrud(router, "/direct-purchases", docCrud(T.dsp, "DSP", { numberField: "dspNumber", prefix: "DSP", dateDefaults: { purchaseDate: "today", receivingDate: "today" } }));
 mountCrud(router, "/contracts", docCrud(T.contracts, "RC", { numberField: "contractNumber", prefix: "RC" }));
 mountCrud(router, "/invoices", docCrud(T.invoices, "INV", { numberField: "invoiceNumber", prefix: "INV", dateDefaults: { invoiceDate: "today" } }));
@@ -82,6 +111,7 @@ router.patch("/quality-inspections/:id", receiving.updateQualityInspection);
 router.delete("/quality-inspections/:id", qiCrud.remove);
 mountCrud(router, "/vendor-returns", docCrud(T.vendorReturns, "VR", { numberField: "returnNumber", prefix: "VR", dateDefaults: { returnDate: "today" } }));
 // Inventory
+router.post("/stock-balances/opening", openingStock.postOpeningStock);
 mountCrud(router, "/stock-balances", createTableCrud({
     table: T.stockBalances,
     idPrefix: "SB",

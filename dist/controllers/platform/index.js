@@ -125,6 +125,7 @@ export async function updateUser(req, res) {
                 ? body.propertyIds.map(String)
                 : undefined,
             permissions: Array.isArray(body.permissions) ? body.permissions : undefined,
+            password: body.password ? String(body.password) : undefined,
             employeeId: body.employeeId === null || body.employeeId === ""
                 ? null
                 : body.employeeId != null
@@ -148,7 +149,7 @@ export async function myPermissions(req, res) {
         if (!allowed) {
             return fromError(res, new Error("Forbidden"), 403);
         }
-        const perms = await UserAdminService.getMyPermissions(auth.userId, propertyId, auth.isSuperAdmin);
+        const perms = await UserAdminService.getMyPermissions(auth.userId, propertyId, auth.isSuperAdmin, auth.role);
         return ok(res, perms);
     }
     catch (e) {

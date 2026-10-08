@@ -5,6 +5,7 @@ import { AppError, NotFoundError, PermissionError } from "../../errors/index.js"
 import { PLATFORM_MODULES } from "../../types/platform.js";
 import { isPlatformAdmin } from "../../utils/platform-admin.js";
 import { hrModel, hrTables } from "../../models/human-resources/index.js";
+import { invalidateModuleAccessCache } from "../../middleware/module-access.js";
 const USERS = "users";
 const ACCESS = "user_property_access";
 const PERMS = "user_permissions";
@@ -132,6 +133,7 @@ export const UserAdminService = {
         return created;
     },
     async setUserAccess(userId, input) {
+        invalidateModuleAccessCache(userId);
         await supabase.from(ACCESS).delete().eq("user_id", userId);
         await supabase.from(PERMS).delete().eq("user_id", userId);
         const propertyIds = [...new Set(input.propertyIds.filter(Boolean))];
@@ -183,10 +185,16 @@ export const UserAdminService = {
             body.is_super_admin = patch.isSuperAdmin;
         if (patch.employeeId !== undefined)
             body.employee_id = patch.employeeId;
+        if (patch.password) {
+            if (patch.password.length < 6)
+                throw new AppError("Password must be at least 6 characters", 400);
+            body.password_hash = await bcrypt.hash(patch.password, 10);
+        }
         if (Object.keys(body).length) {
             const { error } = await supabase.from(USERS).update(body).eq("id", userId);
             if (error)
                 throw new AppError(error.message, 500);
+            invalidateModuleAccessCache(userId);
         }
         if (patch.propertyIds || patch.permissions) {
             await UserAdminService.setUserAccess(userId, {
@@ -200,8 +208,8 @@ export const UserAdminService = {
             throw new NotFoundError("User not found");
         return updated;
     },
-    async getMyPermissions(userId, propertyId, isSuperAdmin) {
-        if (isSuperAdmin) {
+    async getMyPermissions(userId, propertyId, isSuperAdmin, role) {
+        if (isPlatformAdmin({ isSuperAdmin, role: role ?? "" })) {
             return Object.fromEntries(PLATFORM_MODULES.map((m) => [m.key, "admin"]));
         }
         const { data, error } = await supabase

@@ -15,6 +15,7 @@ type CrudOptions = {
   idColumn?: string;
   listFilters?: (req: Request) => Record<string, string | undefined>;
   orderBy?: string;
+  ascending?: boolean;
   mapIncoming?: (
     body: Record<string, unknown>,
     ctx?: { isCreate: boolean },
@@ -32,6 +33,7 @@ export function createTableCrud(options: CrudOptions) {
         let rows = await listRows(options.table, {
           filters,
           orderBy: options.orderBy ?? idCol,
+          ascending: options.ascending,
         });
         if (options.mapOutgoing) {
           rows = rows.map((r: unknown) => options.mapOutgoing!(r));

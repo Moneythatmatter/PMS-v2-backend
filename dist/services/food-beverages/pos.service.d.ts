@@ -3,8 +3,10 @@ export type PosLineInput = {
     menuItemId?: string;
     name: string;
     qty: number;
+    /** Base price of the menu item; modifier prices are added server-side. */
     unitPrice: number;
     note?: string;
+    modifierIds?: string[];
 };
 export type SendKotInput = {
     outletId: string;
@@ -21,9 +23,16 @@ export type SendKotInput = {
     print?: boolean;
     /** Reuse existing open order (add-on KOT) */
     orderId?: string;
+    /** Staff chose to seat someone else on a table held for this reservation. */
+    overrideReservation?: {
+        reservationId: string;
+        reason?: string;
+    };
 };
+export declare function modifierNames(item: Row): string[];
 declare function syncLegacyOrderLines(items: Row[]): {
     note?: string | undefined;
+    modifiers?: string[] | undefined;
     name: string;
     qty: number;
 }[];
@@ -104,6 +113,7 @@ export declare const PosService: {
         rejectReason: string | null;
         lines: {
             note?: string | undefined;
+            modifiers?: string[] | undefined;
             id: string;
             name: string;
             qty: number;
@@ -130,6 +140,7 @@ export declare const PosService: {
         rejectReason: string | null;
         lines: {
             note?: string | undefined;
+            modifiers?: string[] | undefined;
             id: string;
             name: string;
             qty: number;
@@ -156,6 +167,7 @@ export declare const PosService: {
         rejectReason: string | null;
         lines: {
             note?: string | undefined;
+            modifiers?: string[] | undefined;
             id: string;
             name: string;
             qty: number;
@@ -182,6 +194,7 @@ export declare const PosService: {
         prepMinutes: number | null;
         lines: {
             note?: string | undefined;
+            modifiers?: string[] | undefined;
             id: string;
             name: string;
             qty: number;
@@ -208,6 +221,7 @@ export declare const PosService: {
         prepMinutes: number | null;
         lines: {
             note?: string | undefined;
+            modifiers?: string[] | undefined;
             id: string;
             name: string;
             qty: number;

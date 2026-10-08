@@ -11,6 +11,7 @@ import type {
 import { PLATFORM_MODULES } from "../../types/platform.js";
 import { isPlatformAdmin } from "../../utils/platform-admin.js";
 import { hrModel, hrTables } from "../../models/human-resources/index.js";
+import { invalidateModuleAccessCache } from "../../middleware/module-access.js";
 
 const USERS = "users";
 const ACCESS = "user_property_access";
@@ -201,6 +202,7 @@ export const UserAdminService = {
       }>;
     },
   ): Promise<void> {
+    invalidateModuleAccessCache(userId);
     await supabase.from(ACCESS).delete().eq("user_id", userId);
     await supabase.from(PERMS).delete().eq("user_id", userId);
 
@@ -246,6 +248,7 @@ export const UserAdminService = {
         permission: PermissionLevel;
       }>;
       employeeId?: string | null;
+      password?: string;
     },
   ): Promise<ManagedUser> {
     const existing = (await UserAdminService.listUsers()).find((u) => u.id === userId);
@@ -265,10 +268,15 @@ export const UserAdminService = {
     if (patch.status != null) body.status = patch.status;
     if (patch.isSuperAdmin != null) body.is_super_admin = patch.isSuperAdmin;
     if (patch.employeeId !== undefined) body.employee_id = patch.employeeId;
+    if (patch.password) {
+      if (patch.password.length < 6) throw new AppError("Password must be at least 6 characters", 400);
+      body.password_hash = await bcrypt.hash(patch.password, 10);
+    }
 
     if (Object.keys(body).length) {
       const { error } = await supabase.from(USERS).update(body).eq("id", userId);
       if (error) throw new AppError(error.message, 500);
+      invalidateModuleAccessCache(userId);
     }
 
     if (patch.propertyIds || patch.permissions) {
@@ -288,8 +296,9 @@ export const UserAdminService = {
     userId: string,
     propertyId: string,
     isSuperAdmin?: boolean,
+    role?: string,
   ): Promise<Record<string, PermissionLevel | "admin">> {
-    if (isSuperAdmin) {
+    if (isPlatformAdmin({ isSuperAdmin, role: role ?? "" })) {
       return Object.fromEntries(
         PLATFORM_MODULES.map((m) => [m.key, "admin" as const]),
       );

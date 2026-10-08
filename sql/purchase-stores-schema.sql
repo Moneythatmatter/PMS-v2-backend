@@ -85,23 +85,56 @@ create table if not exists ps_warehouses (
 
 -- ─── Procurement documents ─────────────────────────────────────────────────
 
-create table if not exists ps_purchase_requisitions (
+-- Requisitions from every module share one header table; source_module says where it came from.
+create table if not exists purchase_requisitions (
   id text primary key default gen_random_uuid()::text,
   pr_number text not null unique,
+  source_module text not null default 'Purchase & Stores'
+    constraint purchase_requisitions_source_module_check check (source_module in (
+      'Front Office', 'Housekeeping', 'Food & Beverage', 'Kitchen', 'Maintenance',
+      'Human Resources', 'Accounts', 'Sales & Marketing', 'Security', 'Purchase & Stores'
+    )),
+  source_reference text not null default '',
   department text not null,
   requested_by text not null,
   request_date text not null,
   required_date text not null,
   priority text not null default 'Medium',
   cost_center text not null default '',
+  delivery_warehouse_id text references ps_warehouses(id) on delete set null,
   estimated_amount numeric(14,2) not null default 0,
   current_approver text not null,
   status text not null default 'Draft',
   justification text not null default '',
-  requested_items jsonb not null default '[]'::jsonb,
+  submitted_at timestamptz,
+  approved_by text,
+  approved_at timestamptz,
+  rejection_reason text not null default '',
   approval_timeline jsonb not null default '[]'::jsonb,
   attachments jsonb not null default '[]'::jsonb,
   comments jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists purchase_requisition_items (
+  id text primary key default gen_random_uuid()::text,
+  requisition_id text not null references purchase_requisitions(id) on delete cascade,
+  line_no integer not null default 1,
+  material_id text references ps_products(id) on delete restrict,
+  product_code text not null default '',
+  item_name text not null,
+  category text not null default '',
+  unit text not null default '',
+  requested_qty numeric(14,3) not null check (requested_qty > 0),
+  approved_qty numeric(14,3) check (approved_qty is null or approved_qty >= 0),
+  ordered_qty numeric(14,3) not null default 0,
+  received_qty numeric(14,3) not null default 0,
+  stock_on_hand numeric(14,3),
+  estimated_rate numeric(14,2) not null default 0,
+  estimated_amount numeric(16,2) generated always as (round(requested_qty * estimated_rate, 2)) stored,
+  required_date text,
+  remarks text not null default '',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -469,6 +502,9 @@ create index if not exists idx_ps_stock_ledger_material on ps_stock_ledger(mater
 create index if not exists idx_ps_stock_ledger_warehouse on ps_stock_ledger(warehouse_id);
 create index if not exists idx_ps_stock_balances_material on ps_stock_balances(material_id);
 create index if not exists idx_ps_grns_po on ps_grns(po_number);
+create index if not exists idx_pr_items_requisition on purchase_requisition_items(requisition_id, line_no);
+create index if not exists idx_pr_items_material on purchase_requisition_items(material_id);
+create index if not exists idx_purchase_requisitions_source on purchase_requisitions(source_module, status);
 
 -- ========== RLS (anon access — same pattern as FO / HK / F&B) ==========
 do $$
@@ -477,7 +513,7 @@ declare
 begin
   foreach t in array array[
     'ps_units','ps_categories','ps_suppliers','ps_products','ps_warehouses',
-    'ps_purchase_requisitions','ps_rfqs','ps_purchase_orders','ps_direct_store_purchases',
+    'purchase_requisitions','purchase_requisition_items','ps_rfqs','ps_purchase_orders','ps_direct_store_purchases',
     'ps_rate_contracts','ps_invoices','ps_grns','ps_quality_inspections','ps_vendor_returns',
     'ps_stock_balances','ps_stock_ledger','ps_stock_issues','ps_stock_transfers',
     'ps_stock_adjustments','ps_par_stock','ps_batches'

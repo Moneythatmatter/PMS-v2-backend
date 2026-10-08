@@ -5,6 +5,7 @@ type CrudOptions = {
     idColumn?: string;
     listFilters?: (req: Request) => Record<string, string | undefined>;
     orderBy?: string;
+    ascending?: boolean;
     mapIncoming?: (body: Record<string, unknown>, ctx?: {
         isCreate: boolean;
     }) => Record<string, unknown>;

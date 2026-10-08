@@ -2,6 +2,13 @@ import type { Request, Response } from "express";
 import { PosService } from "../../services/food-beverages/pos.service.js";
 import { fail, fromError, ok } from "../../utils/response.js";
 
+function overrideFrom(value: unknown) {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = value as Record<string, unknown>;
+  const reservationId = String(raw.reservationId ?? "").trim();
+  return reservationId ? { reservationId, reason: raw.reason ? String(raw.reason) : undefined } : undefined;
+}
+
 export async function sendKot(req: Request, res: Response) {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -21,6 +28,7 @@ export async function sendKot(req: Request, res: Response) {
       qty: Number(raw.qty ?? raw.quantity ?? 1),
       unitPrice: Number(raw.unitPrice ?? raw.price ?? raw.unit_price ?? 0),
       note: raw.note ? String(raw.note) : undefined,
+      modifierIds: Array.isArray(raw.modifierIds) ? raw.modifierIds.map(String).filter(Boolean) : undefined,
     }));
 
     const result = await PosService.sendKot({
@@ -32,6 +40,7 @@ export async function sendKot(req: Request, res: Response) {
       guestId: body.guestId ? String(body.guestId) : undefined,
       guestNo: body.guestNo ? String(body.guestNo) : undefined,
       reservationId: body.reservationId ? String(body.reservationId) : undefined,
+      overrideReservation: overrideFrom(body.overrideReservation),
       pax: body.pax != null ? Number(body.pax) : undefined,
       server: body.server ? String(body.server) : undefined,
       lines,

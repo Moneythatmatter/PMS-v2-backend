@@ -4,7 +4,8 @@ export declare const psTables: {
     readonly suppliers: "ps_suppliers";
     readonly products: "ps_products";
     readonly warehouses: "ps_warehouses";
-    readonly purchaseRequisitions: "ps_purchase_requisitions";
+    readonly purchaseRequisitions: "purchase_requisitions";
+    readonly purchaseRequisitionItems: "purchase_requisition_items";
     readonly rfqs: "ps_rfqs";
     readonly purchaseOrders: "ps_purchase_orders";
     readonly dsp: "ps_direct_store_purchases";
@@ -28,7 +29,8 @@ export declare const psModel: {
         readonly suppliers: "ps_suppliers";
         readonly products: "ps_products";
         readonly warehouses: "ps_warehouses";
-        readonly purchaseRequisitions: "ps_purchase_requisitions";
+        readonly purchaseRequisitions: "purchase_requisitions";
+        readonly purchaseRequisitionItems: "purchase_requisition_items";
         readonly rfqs: "ps_rfqs";
         readonly purchaseOrders: "ps_purchase_orders";
         readonly dsp: "ps_direct_store_purchases";

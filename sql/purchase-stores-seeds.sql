@@ -44,19 +44,28 @@ on conflict (id) do nothing;
 
 -- ─── Procurement documents ─────────────────────────────────────────────────
 
-insert into ps_purchase_requisitions (
-  id, pr_number, department, requested_by, request_date, required_date, priority,
+insert into purchase_requisitions (
+  id, pr_number, source_module, department, requested_by, request_date, required_date, priority,
   cost_center, estimated_amount, current_approver, status, justification,
-  requested_items, approval_timeline, attachments, comments
+  approval_timeline, attachments, comments
 ) values (
   '70000000-0000-4000-8000-000000000001',
-  'PR-2026-001', 'Housekeeping', 'Amit Sharma', '18 Jul 2026', '25 Jul 2026', 'High',
+  'PR-2026-001', 'Housekeeping', 'Housekeeping', 'Amit Sharma', '18 Jul 2026', '25 Jul 2026', 'High',
   'CC-HK-LINEN', 48500, 'Purchase Manager', 'Pending Approval',
   'Linen inventory below minimum before holiday season.',
-  '[{"id":"item-1","materialId":"40000000-0000-4000-8000-000000000101","productCode":"PRD-LIN-001","item":"Bedsheet (King Size 300TC)","category":"Housekeeping Linen","quantity":100,"unit":"Pieces","estimatedPrice":350,"total":35000},{"id":"item-2","materialId":"40000000-0000-4000-8000-000000000102","productCode":"PRD-LIN-002","item":"Pillow Cover (Satin Finish 20x30)","category":"Housekeeping Linen","quantity":150,"unit":"Pieces","estimatedPrice":90,"total":13500}]'::jsonb,
   '[{"stage":"Created","approverName":"Amit Sharma","status":"Completed","timestamp":"18 Jul 2026 09:30 AM"},{"stage":"Purchase Manager","approverName":"Sunil Mehta","status":"Current"}]'::jsonb,
   '[]'::jsonb, '[]'::jsonb
 ) on conflict (id) do nothing;
+
+insert into purchase_requisition_items (
+  id, requisition_id, line_no, material_id, product_code, item_name, category, unit,
+  requested_qty, estimated_rate
+) values
+  ('item-1', '70000000-0000-4000-8000-000000000001', 1, '40000000-0000-4000-8000-000000000101',
+   'PRD-LIN-001', 'Bedsheet (King Size 300TC)', 'Housekeeping Linen', 'Pieces', 100, 350),
+  ('item-2', '70000000-0000-4000-8000-000000000001', 2, '40000000-0000-4000-8000-000000000102',
+   'PRD-LIN-002', 'Pillow Cover (Satin Finish 20x30)', 'Housekeeping Linen', 'Pieces', 150, 90)
+on conflict (id) do nothing;
 
 insert into ps_purchase_orders (
   id, po_number, order_date, linked_pr, linked_rfq, department, buyer_name,

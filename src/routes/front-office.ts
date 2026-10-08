@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireProperty } from "../middleware/property.js";
+import { requireModule } from "../middleware/module-access.js";
 import { attachRequestContext } from "../middleware/request-context.js";
 import {
   createCrudController,
@@ -36,6 +37,17 @@ const router = Router();
 
 router.use(requireAuth);
 router.use(requireProperty);
+router.use(
+  requireModule("front_office", [
+    {
+      methods: ["GET"],
+      path: /^\/(rooms|reservations)(\/|$)/,
+      modules: ["dashboard", "housekeeping", "maintenance", "food_beverages"],
+    },
+    { methods: ["GET"], path: /^\/wake-up-calls(\/|$)/, modules: ["dashboard"] },
+    { methods: ["GET", "POST"], path: /^\/guests(\/|$)/, modules: ["food_beverages"] },
+  ]),
+);
 router.use(attachRequestContext);
 
 // Dashboard

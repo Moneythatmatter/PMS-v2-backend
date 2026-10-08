@@ -9,6 +9,7 @@ export function createTableCrud(options) {
                 let rows = await listRows(options.table, {
                     filters,
                     orderBy: options.orderBy ?? idCol,
+                    ascending: options.ascending,
                 });
                 if (options.mapOutgoing) {
                     rows = rows.map((r) => options.mapOutgoing(r));

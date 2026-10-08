@@ -23,6 +23,7 @@ type GrnLine = {
     receivedValue: number;
     batchAllocations?: BatchAlloc[];
 };
+export declare function upsertStockBalance(materialId: string, warehouseId: string, qtyIn: number, unitCost: number): Promise<number>;
 /** Post accepted GRN batches to stock ledger + batches after QC pass. */
 export declare function postGrnStock(params: {
     grnNumber: string;

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireProperty } from "../middleware/property.js";
+import { requireModule } from "../middleware/module-access.js";
 import { attachRequestContext } from "../middleware/request-context.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import { smTables } from "../models/sales-marketing/index.js";
@@ -15,6 +16,7 @@ const router = Router();
 
 router.use(requireAuth);
 router.use(requireProperty);
+router.use(requireModule("sales_marketing"));
 router.use(attachRequestContext);
 
 router.get("/dashboard", getDashboard);

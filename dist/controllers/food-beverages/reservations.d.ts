@@ -1,0 +1,13 @@
+import type { Request, Response } from "express";
+export declare function list(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function get(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function create(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function update(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function remove(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function seat(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function markNoShow(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function cancel(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function complete(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function getSettings(_req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function saveSettings(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;
+export declare function deleteSettings(req: Request, res: Response): Promise<Response<any, Record<string, any>>>;

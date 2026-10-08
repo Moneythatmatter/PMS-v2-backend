@@ -1,5 +1,9 @@
 import { fbModel } from "../../models/food-beverages/index.js";
 import { PosService } from "./pos.service.js";
+import {
+  TableReservationService,
+  type TableReservationOverlay,
+} from "./table-reservations.service.js";
 
 type Row = Record<string, unknown>;
 
@@ -238,11 +242,15 @@ export const FloorPlanService = {
 
   async listFloorPlan(outletId?: string) {
     try {
-      const tables = await fbModel.list<Row>(fbModel.tables.liveTables, {
-        filters: outletId ? { outlet_id: outletId } : undefined,
-        orderBy: "table_no",
-      });
-      return Promise.all(tables.map((t) => loadContextForTable(t)));
+      const [tables, overlay] = await Promise.all([
+        fbModel.list<Row>(fbModel.tables.liveTables, {
+          filters: outletId ? { outlet_id: outletId } : undefined,
+          orderBy: "table_no",
+        }),
+        reservationOverlay(outletId),
+      ]);
+      const rows = await Promise.all(tables.map((t) => loadContextForTable(t)));
+      return rows.map((row) => withReservation(row, overlay));
     } catch {
       const tables = await fbModel.list<Row>(fbModel.tables.liveTables, {
         filters: outletId ? { outlet_id: outletId } : undefined,
@@ -260,7 +268,11 @@ export const FloorPlanService = {
     try {
       const table = await fbModel.get<Row>(fbModel.tables.liveTables, tableId);
       if (!table) return null;
-      return loadContextForTable(table);
+      const [row, overlay] = await Promise.all([
+        loadContextForTable(table),
+        reservationOverlay(String(table.outletId ?? "") || undefined),
+      ]);
+      return withReservation(row, overlay);
     } catch {
       const table = await fbModel.get<Row>(fbModel.tables.liveTables, tableId);
       if (!table) return null;
@@ -272,6 +284,22 @@ export const FloorPlanService = {
     }
   },
 };
+
+type ReservationOverlay = (table: Row) => TableReservationOverlay | null;
+
+async function reservationOverlay(outletId?: string): Promise<ReservationOverlay> {
+  try {
+    return await TableReservationService.floorOverlay(outletId);
+  } catch (e) {
+    console.warn("[floor-plan] reservation overlay unavailable:", e);
+    return () => null;
+  }
+}
+
+/** Reservation state rides alongside the physical status; it never replaces it. */
+function withReservation<T extends Row>(row: T, overlay: ReservationOverlay) {
+  return { ...row, reservation: overlay(row) };
+}
 
 function mapLegacyStatusToDisplay(status: string): TableDisplayState {
   const s = status.toLowerCase();

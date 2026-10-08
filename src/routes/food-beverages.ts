@@ -1,4 +1,7 @@
 import { Router } from "express";
+import { requireAuth } from "../middleware/auth.js";
+import { requireProperty } from "../middleware/property.js";
+import { requireModule } from "../middleware/module-access.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import { getDashboard } from "../controllers/food-beverages/dashboard.js";
 import * as liveTables from "../controllers/food-beverages/live-tables.js";
@@ -8,7 +11,9 @@ import * as orders from "../controllers/food-beverages/orders.js";
 import * as kds from "../controllers/food-beverages/kds.js";
 import * as cashier from "../controllers/food-beverages/cashier.js";
 import { getReport } from "../controllers/food-beverages/reports.js";
-import { mountModuleRecords } from "../controllers/food-beverages/module-records.js";
+import * as recipes from "../controllers/food-beverages/recipes.js";
+import * as modifiers from "../controllers/food-beverages/modifiers.js";
+import * as reservations from "../controllers/food-beverages/reservations.js";
 import {
   fbModel,
   mapKdsIncoming,
@@ -16,6 +21,11 @@ import {
 } from "../models/food-beverages/index.js";
 
 const router = Router();
+
+router.use(requireAuth);
+router.use(requireProperty);
+router.use(requireModule("food_beverages"));
+
 const outletFilter = (req: { query: Record<string, unknown> }) => ({
   outlet_id: req.query.outletId as string | undefined,
 });
@@ -94,15 +104,20 @@ mountCrud(
 );
 
 // Reservations
-mountCrud(
-  router,
-  "/reservations",
-  createTableCrud({
-    table: fbModel.tables.reservations,
-    idPrefix: "RES",
-    listFilters: outletFilter,
-  }),
-);
+router.get("/reservation-settings", reservations.getSettings);
+router.put("/reservation-settings", reservations.saveSettings);
+router.put("/reservation-settings/:scopeKey", reservations.saveSettings);
+router.delete("/reservation-settings/:scopeKey", reservations.deleteSettings);
+router.get("/reservations", reservations.list);
+router.post("/reservations", reservations.create);
+router.get("/reservations/:id", reservations.get);
+router.put("/reservations/:id", reservations.update);
+router.patch("/reservations/:id", reservations.update);
+router.delete("/reservations/:id", reservations.remove);
+router.post("/reservations/:id/seat", reservations.seat);
+router.post("/reservations/:id/no-show", reservations.markNoShow);
+router.post("/reservations/:id/cancel", reservations.cancel);
+router.post("/reservations/:id/complete", reservations.complete);
 
 function parseBool(value: unknown): boolean | undefined {
   if (value === true || value === "true" || value === "Active" || value === "Yes") return true;
@@ -146,11 +161,6 @@ mountCrud(
     mapIncoming: mapMasterActiveIncoming,
     mapOutgoing: mapMasterActiveOutgoing,
   }),
-);
-mountCrud(
-  router,
-  "/masters/modifier-groups",
-  createTableCrud({ table: fbModel.tables.modifierGroups, idPrefix: "MGR" }),
 );
 mountCrud(
   router,
@@ -230,11 +240,14 @@ mountCrud(
     mapOutgoing: mapMenuItemOutgoing,
   }),
 );
-mountCrud(
-  router,
-  "/menu/modifiers",
-  createTableCrud({ table: fbModel.tables.modifiers, idPrefix: "MOD" }),
-);
+for (const base of ["/menu/modifier-groups", "/masters/modifier-groups"]) {
+  router.get(base, modifiers.listGroups);
+  router.get(`${base}/:id`, modifiers.getGroup);
+  router.post(base, modifiers.createGroup);
+  router.put(`${base}/:id`, modifiers.updateGroup);
+  router.patch(`${base}/:id`, modifiers.updateGroup);
+  router.delete(`${base}/:id`, modifiers.deleteGroup);
+}
 
 // Inventory
 mountCrud(
@@ -277,11 +290,20 @@ mountCrud(
   }),
 );
 
+// Recipes — header + ingredient lines from the Purchase & Stores material master.
+// Saving never moves stock; only /consume and settled POS orders deduct ingredients.
+router.get("/menu/recipes", recipes.listRecipes);
+router.get("/menu/recipes/consumptions", recipes.listConsumptions);
+router.get("/menu/recipes/:id", recipes.getRecipe);
+router.get("/menu/recipes/:id/consumptions", recipes.listConsumptions);
+router.post("/menu/recipes", recipes.createRecipe);
+router.post("/menu/recipes/:id/consume", recipes.consumeRecipe);
+router.put("/menu/recipes/:id", recipes.updateRecipe);
+router.patch("/menu/recipes/:id", recipes.updateRecipe);
+router.delete("/menu/recipes/:id", recipes.deleteRecipe);
+
 // Reports
 router.get("/reports/:type", getReport);
-
-// Flexible module records (pages without dedicated tables)
-mountModuleRecords(router, "/menu/recipes", "menu/recipes", "RC");
 
 export default router;
 

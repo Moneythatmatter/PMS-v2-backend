@@ -1,6 +1,7 @@
 import { getRowById, insertRow, listRows, newId, updateRow, } from "../../models/front-office/base.js";
 import { psModel } from "../../models/purchase-stores/index.js";
 import { fail, fromError, ok } from "../../utils/response.js";
+import { syncPrForPo } from "./requisition-lifecycle.js";
 const T = psModel.tables;
 async function findProductById(id) {
     if (!id?.trim())
@@ -25,7 +26,7 @@ async function findWarehouseByName(name) {
     const n = name.toLowerCase();
     return rows.find((w) => w.name.toLowerCase() === n || w.code.toLowerCase() === n) ?? rows[0] ?? null;
 }
-async function upsertStockBalance(materialId, warehouseId, qtyIn, unitCost) {
+export async function upsertStockBalance(materialId, warehouseId, qtyIn, unitCost) {
     const existing = await listRows(T.stockBalances, {
         filters: { material_id: materialId, warehouse_id: warehouseId },
         limit: 1,
@@ -282,6 +283,7 @@ export async function updateQualityInspection(req, res) {
                     },
                     items: mergedItems,
                 });
+                await syncPrForPo(String(grn.poNumber ?? ""));
             }
         }
         return ok(res, row);

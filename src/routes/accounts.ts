@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireProperty } from "../middleware/property.js";
+import { requireModule } from "../middleware/module-access.js";
 import { attachRequestContext } from "../middleware/request-context.js";
 import {
   accountTree,
@@ -24,6 +25,7 @@ const router = Router();
 
 router.use(requireAuth);
 router.use(requireProperty);
+router.use(requireModule("accounts"));
 router.use(attachRequestContext);
 
 router.get("/dashboard", reportHandlers.dashboard);

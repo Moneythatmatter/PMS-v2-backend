@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireProperty } from "../middleware/property.js";
+import { requireModule } from "../middleware/module-access.js";
 import { attachRequestContext } from "../middleware/request-context.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import { hrTables } from "../models/human-resources/index.js";
@@ -13,6 +14,7 @@ import * as weeklyOffs from "../controllers/human-resources/weekly-offs.js";
 const router = Router();
 router.use(requireAuth);
 router.use(requireProperty);
+router.use(requireModule("human_resources"));
 router.use(attachRequestContext);
 router.get("/dashboard", getDashboard);
 // Employees (enriched)

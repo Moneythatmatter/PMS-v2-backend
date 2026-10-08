@@ -135,6 +135,7 @@ export async function updateUser(req: ContextRequest, res: Response) {
         ? body.propertyIds.map(String)
         : undefined,
       permissions: Array.isArray(body.permissions) ? body.permissions : undefined,
+      password: body.password ? String(body.password) : undefined,
       employeeId:
         body.employeeId === null || body.employeeId === ""
           ? null
@@ -168,6 +169,7 @@ export async function myPermissions(req: ContextRequest, res: Response) {
       auth.userId,
       propertyId,
       auth.isSuperAdmin,
+      auth.role,
     );
     return ok(res, perms);
   } catch (e) {
