@@ -92,6 +92,17 @@ function mapDbError(error: PgError, table: string): never {
   }
   if (error.code === "23514") throw new ValidationError(`Invalid value (${error.message})`);
   if (error.code === "22P02") throw new ValidationError("Invalid identifier or value format");
+  const missingColumn =
+    error.code === "42703"
+      ? msg.match(/column (?:\S+\.)?"?(\w+)"? does not exist/i)?.[1]
+      : msg.match(/Could not find the '(\w+)' column/i)?.[1];
+  if (missingColumn) {
+    throw new AppError(
+      `Accounts table "${table}" is missing column "${missingColumn}". Run the latest backend/sql/accounts-*.sql patches in Supabase.`,
+      500,
+      "SCHEMA_MISSING",
+    );
+  }
   if (error.code === "42P01" || /schema cache/i.test(msg)) {
     throw new AppError(
       `Accounts table "${table}" is missing. Run backend/sql/accounts-schema.sql in Supabase.`,

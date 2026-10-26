@@ -27,6 +27,7 @@ export const PROPERTY_SCOPED_TABLES = new Set([
   "housekeeping_requests",
   "maintenance_requests",
   "cashier_shifts",
+  "fo_cashier_sessions",
   "room_charge_postings",
   "day_closings",
   "desk_activity",

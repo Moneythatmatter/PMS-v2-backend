@@ -304,4 +304,93 @@ export const GuestRequestService = {
       }),
     );
   },
+
+  /** Staff converts a reviewed laundry guest request into a laundry job (collection stage). */
+  async createLaundryJob(
+    id: string,
+    input: { serviceType?: string; urgency?: string; notes?: string; actor?: string },
+  ): Promise<{ request: GuestRequest; jobId: string }> {
+    const resolved = await resolveGuestRequestId(id);
+    if (!resolved) throw new NotFoundError("Guest request not found");
+    const existing = await getRequestOrThrow(resolved);
+    if (normalizeGuestRequestType(existing.requestType) !== "LAUNDRY") {
+      throw new AppError("Only laundry requests can be converted to a laundry job", 400);
+    }
+    if (!ACTIVE_STATUSES.includes(existing.status)) {
+      throw new ConflictError(`Request is already ${existing.status.toLowerCase()}`);
+    }
+
+    const enriched = await enrichGuestRequest(existing);
+    const stay = existing.bookingId
+      ? await ReservationService.getById(String(existing.bookingId)).catch(() => null)
+      : null;
+    const serviceType = ["Wash & Iron", "Dry Clean", "Iron Only"].includes(String(input.serviceType))
+      ? String(input.serviceType)
+      : "Wash & Iron";
+    const urgency = String(input.urgency) === "Express" ? "Express" : "Normal";
+    const notes = String(input.notes ?? "").trim().slice(0, 500);
+    const now = new Date().toISOString();
+    const ext = {
+      bookingId: existing.bookingId ?? null,
+      guestId: stay?.guestId ?? null,
+      urgency,
+      serviceType,
+      billingStatus: "Unbilled",
+      cancelled: false,
+      lineItems: [],
+    };
+    const job = await hkModel.create<Record<string, unknown>>(hkModel.tables.laundryJobs, {
+      id: hkModel.newId("LND"),
+      type: "Guest",
+      item: "Guest pickup request (items counted at collection)",
+      quantity: 1,
+      room: enriched.roomNo ?? existing.roomId,
+      guestName: stay?.guestName ?? enriched.guestName ?? "In-house Guest",
+      guestPhone: stay?.phone ?? null,
+      status: "Collection",
+      charges: 0,
+      notes: `From guest request ${enriched.requestNumber ?? resolved}${notes ? ` · ${notes}` : ""}`,
+      timeline: { requestedAt: existing.requestedAt ?? now, approvedAt: now, source: "Guest Request", ext },
+      createdAt: now,
+      ...ext,
+    });
+    const jobId = String(job.id ?? "");
+
+    const request = await enrichGuestRequest(
+      await hkModel.update<GuestRequest>(hkModel.tables.guestRequests, resolved, {
+        status: "COMPLETED",
+        completedAt: now,
+        notes: [existing.notes, `Laundry job created (${jobId.slice(0, 8)})`].filter(Boolean).join(" · "),
+      }),
+    );
+
+    await appendHistory({
+      user: String(input.actor ?? "Housekeeping"),
+      category: "Guest Services",
+      action: "Laundry job created",
+      room: request.roomNo ?? existing.roomId,
+      details: `${request.requestNumber ?? resolved} → laundry job ${jobId.slice(0, 8)}`,
+    });
+
+    return { request, jobId };
+  },
+
+  /** Keep a guest request in step with the cleaning task created from it (best effort). */
+  async syncFromTask(requestId: string, taskStatus: "CREATED" | "COMPLETED" | "CANCELLED") {
+    try {
+      const existing = await hkModel.get<GuestRequest>(hkModel.tables.guestRequests, requestId);
+      if (!existing || !ACTIVE_STATUSES.includes(existing.status)) return;
+      const now = new Date().toISOString();
+      const patch =
+        taskStatus === "COMPLETED"
+          ? { status: "COMPLETED", completedAt: now }
+          : taskStatus === "CREATED"
+            ? { status: "IN_PROGRESS" }
+            : { status: "PENDING" };
+      if (patch.status === existing.status) return;
+      await hkModel.update(hkModel.tables.guestRequests, requestId, patch);
+    } catch (e) {
+      console.warn("[hk] guest request sync skipped:", e);
+    }
+  },
 };

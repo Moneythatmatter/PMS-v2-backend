@@ -278,7 +278,7 @@ export async function listMyPayslips(req, res) {
     try {
         const { propertyId, employeeId } = ctx(req);
         const rows = await hrModel.list(hrTables.payslips, {
-            filters: { property_id: propertyId, employee_id: employeeId },
+            filters: { property_id: propertyId, employee_id: employeeId, status: "Sent" },
             orderBy: "generated_date",
             ascending: false,
         });
@@ -292,7 +292,7 @@ export async function getMyPayslip(req, res) {
     try {
         const c = ctx(req);
         const row = await hrModel.get(hrTables.payslips, String(req.params.id));
-        if (!row)
+        if (!row || row.status !== "Sent")
             return fail(res, "Payslip not found", 404);
         assertOwnEmployeeRecord(row, c);
         return ok(res, row);

@@ -192,6 +192,17 @@ const accounts: MasterConfig = {
     const parentId = p.parentId !== undefined ? p.parentId : existing?.parentId;
     if (parentId) {
       if (existing && parentId === existing.id) throw new ValidationError("An account cannot be its own parent");
+      if (existing && p.parentId !== undefined && p.parentId !== existing.parentId) {
+        const all = await list(accTables.accounts, { select: "id,parent_id" });
+        const parentOf = new Map(all.map((a) => [a.id as string, a.parentId as string | null]));
+        let cur: string | null = parentId;
+        for (let i = 0; cur && i < 50; i++) {
+          if (cur === existing.id) {
+            throw new ValidationError("An account cannot be moved under one of its own sub-accounts");
+          }
+          cur = parentOf.get(cur) ?? null;
+        }
+      }
       const parent = await getById(accTables.accounts, parentId);
       if (!parent) throw new ValidationError("Parent account not found");
       if (parent.accountType !== "Group") throw new ValidationError("Parent must be a Group account");
@@ -212,14 +223,45 @@ const accounts: MasterConfig = {
         throw new ConflictError("Group has child accounts and cannot be converted to a Ledger");
       }
     }
-    if (existing?.isSystemAccount && p.code && p.code !== existing.code) {
-      throw new ConflictError("System account codes cannot be changed");
+  },
+  afterSave: async (row) => {
+    const all = await list(accTables.accounts, { select: "id,parent_id,nature" });
+    const childrenOf = new Map<string, Row[]>();
+    for (const a of all) {
+      if (!a.parentId) continue;
+      childrenOf.set(a.parentId, [...(childrenOf.get(a.parentId) ?? []), a]);
+    }
+    const stack = [...(childrenOf.get(row.id) ?? [])];
+    while (stack.length) {
+      const child = stack.pop()!;
+      if (child.nature !== row.nature) await update(accTables.accounts, child.id, { nature: row.nature });
+      stack.push(...(childrenOf.get(child.id) ?? []));
     }
   },
   beforeDelete: async (row) => {
-    if (row.isSystemAccount) throw new ConflictError("System accounts cannot be deleted");
-    await blockIfUsed(accTables.accounts, "parent_id", row.id, "Account has child accounts");
-    await blockIfUsed(accTables.voucherLines, "account_id", row.id, "Account has posted transactions");
+    const all = await list(accTables.accounts, { select: "id,parent_id,name,code" });
+    const childrenOf = new Map<string, Row[]>();
+    for (const a of all) {
+      if (!a.parentId) continue;
+      childrenOf.set(a.parentId, [...(childrenOf.get(a.parentId) ?? []), a]);
+    }
+    const descendants: Row[] = [];
+    const stack = [...(childrenOf.get(row.id) ?? [])];
+    while (stack.length) {
+      const child = stack.pop()!;
+      descendants.push(child);
+      stack.push(...(childrenOf.get(child.id) ?? []));
+    }
+    for (const acc of [row, ...descendants]) {
+      if ((await count(accTables.voucherLines, { account_id: acc.id })) > 0) {
+        throw new ConflictError(
+          acc.id === row.id
+            ? "Account has posted transactions — deactivate it instead"
+            : `Sub-account ${acc.code} - ${acc.name} has posted transactions — deactivate instead of deleting`,
+        );
+      }
+    }
+    for (const acc of descendants.reverse()) await remove(accTables.accounts, acc.id);
   },
   enrich: async (rows) => {
     const [txn, all] = await Promise.all([

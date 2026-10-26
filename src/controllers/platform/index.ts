@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { PortfolioService } from "../../services/platform/portfolio.service.js";
 import { PropertyService } from "../../services/platform/property.service.js";
 import { UserAdminService } from "../../services/platform/user-admin.service.js";
 import { PLATFORM_MODULES } from "../../types/platform.js";
@@ -56,6 +57,22 @@ export async function updateProperty(req: ContextRequest, res: Response) {
       status: body.status != null ? String(body.status) : undefined,
     });
     return ok(res, row);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function getPortfolio(req: ContextRequest, res: Response) {
+  try {
+    const auth = authCtx(req);
+    const snapshot = await PortfolioService.snapshot({
+      userId: auth.userId,
+      isSuperAdmin: auth.isSuperAdmin,
+      role: auth.role,
+      from: req.query.from ? String(req.query.from) : undefined,
+      to: req.query.to ? String(req.query.to) : undefined,
+    });
+    return ok(res, snapshot);
   } catch (e) {
     return fromError(res, e);
   }

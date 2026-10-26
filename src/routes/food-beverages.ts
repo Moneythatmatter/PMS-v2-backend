@@ -14,6 +14,7 @@ import { getReport } from "../controllers/food-beverages/reports.js";
 import * as recipes from "../controllers/food-beverages/recipes.js";
 import * as modifiers from "../controllers/food-beverages/modifiers.js";
 import * as reservations from "../controllers/food-beverages/reservations.js";
+import * as guestRequests from "../controllers/food-beverages/guest-order-requests.js";
 import {
   fbModel,
   mapKdsIncoming,
@@ -57,6 +58,13 @@ router.post("/pos/orders/:orderId/print-bill", pos.printBillForOrder);
 router.get("/pos/bills", pos.listBills);
 router.post("/pos/bills/:billId/print", pos.printBill);
 router.post("/pos/bills/:billId/pay", pos.payBill);
+
+// Guest QR order requests — reviewed by staff before becoming orders
+router.get("/tables/guest-qr", guestRequests.listTableQrTokens);
+router.get("/guest-order-requests", guestRequests.listRequests);
+router.get("/guest-order-requests/pending-count", guestRequests.pendingCount);
+router.post("/guest-order-requests/:id/approve", guestRequests.approveRequest);
+router.post("/guest-order-requests/:id/reject", guestRequests.rejectRequest);
 
 // Tables master CRUD (same table as live floor map)
 mountCrud(

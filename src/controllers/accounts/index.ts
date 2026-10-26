@@ -61,7 +61,7 @@ export function masterHandlers(key: keyof typeof masters) {
 
 const SETTINGS_COLUMNS = [
   "currentFiscalYearId", "accountingMethod", "decimalPlaces", "allowFutureTransactions", "allowBackDatedPosting",
-  "backDatedLimitDays", "lockDateBefore", "requireVoucherApproval", "autoVoucherNumbering", "voucherResetFrequency",
+  "backDatedLimitDays", "backDatedLimitMode", "backDatedFromDate", "lockDateBefore", "requireVoucherApproval", "autoVoucherNumbering", "voucherResetFrequency",
   "allowManualVoucherNo", "preventDuplicateVouchers", "requirePostingApproval", "allowNegativeCash",
   "enforceCreditLimit", "defaultReceivableAccountId", "defaultPayableAccountId", "defaultRoundOffAccountId",
   "defaultGuestDepositAccountId", "enableGst", "enableEinvoice", "defaultTaxRegion", "enableTdsDeductions",
@@ -90,6 +90,18 @@ export const updateCompanySettings = handle(async (req) => {
   }
   if (payload.lockDateBefore !== undefined && payload.lockDateBefore !== null && !isIsoDate(payload.lockDateBefore)) {
     throw new ValidationError("Lock date must be YYYY-MM-DD");
+  }
+  if (payload.backDatedLimitMode !== undefined && !["Days", "Date"].includes(String(payload.backDatedLimitMode))) {
+    throw new ValidationError("Back-dated limit must be by Days or Date");
+  }
+  if (payload.backDatedFromDate !== undefined && payload.backDatedFromDate !== null) {
+    if (!isIsoDate(payload.backDatedFromDate)) throw new ValidationError("Back-dated from date must be YYYY-MM-DD");
+    if (String(payload.backDatedFromDate) > new Date().toISOString().slice(0, 10)) {
+      throw new ValidationError("Back-dated from date cannot be in the future");
+    }
+  }
+  if (payload.backDatedLimitMode === "Date" && payload.allowBackDatedPosting !== false && !payload.backDatedFromDate) {
+    throw new ValidationError("Select the earliest date allowed for back-dated vouchers");
   }
   const row = await update(accTables.companySettings, id(req), {
     ...payload,

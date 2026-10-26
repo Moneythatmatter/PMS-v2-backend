@@ -140,6 +140,8 @@ create table if not exists public.acc_company_settings (
   allow_future_transactions boolean not null default false,
   allow_back_dated_posting boolean not null default true,
   back_dated_limit_days int not null default 30,
+  back_dated_limit_mode text not null default 'Days' check (back_dated_limit_mode in ('Days','Date')),
+  back_dated_from_date date,
   lock_date_before date,
   require_voucher_approval boolean not null default false,
   auto_voucher_numbering boolean not null default true,

@@ -105,14 +105,21 @@ export async function resolvePostingWindow(
       if (!s.allowBackDatedPosting && date < today) {
         throw new ConflictError("Back-dated posting is disabled (Company Settings)");
       }
-      if (s.allowBackDatedPosting && num(s.backDatedLimitDays) > 0) {
-        const limit = new Date(`${today}T00:00:00Z`);
-        limit.setUTCDate(limit.getUTCDate() - num(s.backDatedLimitDays));
-        const limitIso = limit.toISOString().slice(0, 10);
-        if (date < limitIso) {
-          throw new ConflictError(
-            `Back-dated posting is limited to ${s.backDatedLimitDays} days (on or after ${limitIso})`,
-          );
+      if (s.allowBackDatedPosting && date < today) {
+        if (s.backDatedLimitMode === "Date" && s.backDatedFromDate) {
+          const fromIso = String(s.backDatedFromDate).slice(0, 10);
+          if (date < fromIso) {
+            throw new ConflictError(`Back-dated posting is allowed only on or after ${fromIso} (Company Settings)`);
+          }
+        } else if (s.backDatedLimitMode !== "Date" && num(s.backDatedLimitDays) > 0) {
+          const limit = new Date(`${today}T00:00:00Z`);
+          limit.setUTCDate(limit.getUTCDate() - num(s.backDatedLimitDays));
+          const limitIso = limit.toISOString().slice(0, 10);
+          if (date < limitIso) {
+            throw new ConflictError(
+              `Back-dated posting is limited to ${s.backDatedLimitDays} days (on or after ${limitIso})`,
+            );
+          }
         }
       }
     }

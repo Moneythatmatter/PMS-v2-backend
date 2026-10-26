@@ -6,6 +6,8 @@ import type {
   Transaction,
 } from "../../types/transactions.js";
 import { AppError } from "../../errors/index.js";
+import { getRequestStore } from "../../utils/request-context.js";
+import { CashierSessionService } from "../front-office/cashier-session.service.js";
 
 function normalizePaymentMethod(mode?: string): string {
   const m = String(mode ?? "CASH").trim().toUpperCase();
@@ -56,6 +58,7 @@ export const TransactionService = {
       throw new AppError("Transaction amount must be >= 0");
     }
 
+    const actorId = input.receivedBy ?? getRequestStore()?.userId ?? null;
     const row = await foModel.create<Transaction>(foModel.tables.transactions, {
       transactionType: input.transactionType ?? "PAYMENT",
       paymentMethod: input.paymentMethod ?? "CASH",
@@ -69,12 +72,12 @@ export const TransactionService = {
       sourceType: input.sourceType ?? null,
       sourceId: input.sourceId ?? null,
       externalReference: input.externalReference ?? null,
-      receivedBy: input.receivedBy ?? null,
+      receivedBy: actorId,
       transactionDate: input.transactionDate ?? new Date().toISOString(),
       notes: input.notes ?? null,
     });
 
-    return row;
+    return CashierSessionService.attachTransaction(row);
   },
 
   /** Postgres RPC — auto transaction_number + single atomic insert. */
@@ -95,14 +98,15 @@ export const TransactionService = {
       p_source_module: input.sourceModule ?? null,
       p_source_id: input.sourceId ?? null,
       p_external_reference: input.externalReference ?? null,
-      p_received_by: input.receivedBy ?? null,
+      p_received_by: input.receivedBy ?? getRequestStore()?.userId ?? null,
       p_transaction_date: input.transactionDate ?? new Date().toISOString(),
       p_notes: input.notes ?? null,
       p_source_type: input.sourceType ?? null,
     });
 
     if (error) throw new Error(error.message);
-    return toCamel<Transaction>(data as Record<string, unknown>);
+    const row = toCamel<Transaction>(data as Record<string, unknown>);
+    return CashierSessionService.attachTransaction(row);
   },
 
   async ensureFolioForBooking(

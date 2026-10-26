@@ -8,6 +8,7 @@ const router = Router();
 router.use(requireAuth);
 router.use(attachRequestContext);
 
+router.get("/portfolio", platform.getPortfolio);
 router.get("/properties", platform.listProperties);
 router.post("/properties", platform.createProperty);
 router.put("/properties/:id", platform.updateProperty);

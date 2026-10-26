@@ -32,12 +32,20 @@ router.delete("/employees/:id", employees.deleteEmployee);
 // Payroll ops
 router.get("/payroll/audit-logs", payroll.listAuditLogs);
 router.get("/payroll/records", payroll.listPayrollRecords);
+router.post("/payroll/records/calculate", payroll.calculatePayrollRecords);
+router.post("/payroll/records/verify-batch", payroll.verifyPayrollBatch);
+router.post("/payroll/records/approve-batch", payroll.approvePayrollBatch);
 router.get("/payroll/records/:id", payroll.getPayrollRecord);
 router.post("/payroll/records", payroll.createPayrollRecord);
 router.put("/payroll/records/:id", payroll.updatePayrollRecord);
 router.patch("/payroll/records/:id", payroll.updatePayrollRecord);
+router.post("/payroll/records/:id/verify", payroll.verifyPayrollRecord);
 router.post("/payroll/records/:id/approve", payroll.approvePayrollRecord);
+router.post("/payroll/records/:id/unlock", payroll.unlockPayrollRecord);
+router.get("/payroll/records/:id/payments", payroll.listSalaryPayments);
 router.post("/payroll/records/:id/payments", payroll.recordSalaryPayment);
+router.post("/payslips/send-batch", payroll.sendPayslipBatch);
+router.post("/payslips/:id/send", payroll.sendPayslipById);
 
 // Attendance (server-side business logic)
 router.get("/attendance/daily", attendance.getDailyAttendance);
@@ -86,8 +94,6 @@ const crudRoutes: { path: string; table: string; prefix: string; orderBy?: strin
   { path: "/shift-assignments", table: hrTables.shiftAssignments, prefix: "HRSA", orderBy: "effective_from" },
   { path: "/overtime", table: hrTables.overtimeRecords, prefix: "HROT", orderBy: "record_date" },
   { path: "/salary-structures", table: hrTables.salaryStructures, prefix: "HRSS", orderBy: "name" },
-  { path: "/salary-payments", table: hrTables.salaryPayments, prefix: "HRSP", orderBy: "payment_date" },
-  { path: "/payslips", table: hrTables.payslips, prefix: "HRPS", orderBy: "generated_date" },
   { path: "/complaint-categories", table: hrTables.complaintCategories, prefix: "HRCC", orderBy: "category_name" },
   { path: "/complaints", table: hrTables.complaints, prefix: "HRC", orderBy: "submitted_date" },
   { path: "/approval-workflows", table: hrTables.approvalWorkflows, prefix: "HRAW", orderBy: "code" },
@@ -104,6 +110,16 @@ for (const cfg of crudRoutes) {
       orderBy: cfg.orderBy,
     }),
   );
+}
+
+// Payslips & salary payments are read-only here; they change only through the payroll workflow above.
+for (const cfg of [
+  { path: "/salary-payments", table: hrTables.salaryPayments, prefix: "HRSP", orderBy: "payment_date" },
+  { path: "/payslips", table: hrTables.payslips, prefix: "HRPS", orderBy: "generated_date" },
+]) {
+  const readOnly = createTableCrud({ table: cfg.table, idPrefix: cfg.prefix, orderBy: cfg.orderBy });
+  router.get(cfg.path, readOnly.list);
+  router.get(`${cfg.path}/:id`, readOnly.get);
 }
 
 // Payroll settings (singleton per property)

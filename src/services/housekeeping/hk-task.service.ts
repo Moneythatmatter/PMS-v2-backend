@@ -1,4 +1,5 @@
 import { supabase } from "../../utils/supabase.js";
+import { GuestRequestService } from "./guest-request.service.js";
 import { hkModel } from "../../models/housekeeping/index.js";
 import { AppError, ConflictError, NotFoundError } from "../../errors/index.js";
 import {
@@ -211,6 +212,7 @@ export const HkTaskService = {
       if (body.status === "PENDING" && body.taskType !== "INSPECTION") {
         await syncHkRoomForTask(roomId, { status: "DIRTY" });
       }
+      if (body.requestId) await GuestRequestService.syncFromTask(String(body.requestId), "CREATED");
       return enrichHkTask(created);
     }
 
@@ -240,6 +242,7 @@ export const HkTaskService = {
       if (body.status === "PENDING" && body.taskType !== "INSPECTION") {
         await syncHkRoomForTask(roomId, { status: "DIRTY" });
       }
+      if (body.requestId) await GuestRequestService.syncFromTask(String(body.requestId), "CREATED");
       return row;
     } else if (rpcError) {
       throwIfRlsError(rpcError.message);
@@ -249,6 +252,7 @@ export const HkTaskService = {
       );
     }
 
+    if (body.requestId) await GuestRequestService.syncFromTask(String(body.requestId), "CREATED");
     return row;
   },
 
@@ -410,6 +414,8 @@ export const HkTaskService = {
       lastCleanedAt: now,
     });
 
+    if (existing.requestId) await GuestRequestService.syncFromTask(String(existing.requestId), "COMPLETED");
+
     await appendHistory({
       user: String(existing.assignedTo ?? "Housekeeper"),
       category: "Cleaning",
@@ -484,11 +490,13 @@ export const HkTaskService = {
       throw new ConflictError("Cannot cancel an approved task");
     }
 
-    return enrichHkTask(
+    const cancelled = await enrichHkTask(
       await hkModel.update<HkTask>(hkModel.tables.tasks, resolved, {
         status: "CANCELLED",
         notes: notes ?? existing.notes,
       }),
     );
+    if (existing.requestId) await GuestRequestService.syncFromTask(String(existing.requestId), "CANCELLED");
+    return cancelled;
   },
 };

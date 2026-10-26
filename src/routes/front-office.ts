@@ -32,6 +32,8 @@ import {
   sanitizeGuestInput,
 } from "../services/front-office/guest-lookup.js";
 import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
+import * as cashierSessions from "../controllers/front-office/cashier-sessions.js";
+import * as guestPortal from "../controllers/front-office/guest-portal.js";
 
 const router = Router();
 
@@ -83,6 +85,7 @@ router.put("/groups/:id/billing-rules", groups.updateGroupBillingRules);
 router.get("/rooms/availability", rooms.roomAvailability);
 router.get("/rooms/blocks", rooms.listRoomBlocks);
 router.get("/rooms/status", rooms.roomStatusCards);
+router.get("/rooms/guest-qr", guestPortal.listQrTokens);
 router.get("/rooms", rooms.listRooms);
 router.get("/rooms/:id", rooms.getRoom);
 router.post("/rooms", rooms.createRoom);
@@ -260,6 +263,17 @@ mountCrud(
     idPrefix: "MT",
   }),
 );
+
+// Cashier shift start, closing, and reconciliation
+router.get("/cashier-sessions", cashierSessions.listSessions);
+router.get("/cashier-sessions/active", cashierSessions.activeSession);
+router.get("/cashier-sessions/:id", cashierSessions.getSession);
+router.post("/cashier-sessions", cashierSessions.startSession);
+router.put("/cashier-sessions/:id/closing", cashierSessions.saveClosing);
+router.post("/cashier-sessions/:id/submit", cashierSessions.submitClosing);
+router.post("/cashier-sessions/:id/approve", cashierSessions.approveClosing);
+router.post("/cashier-sessions/:id/reject", cashierSessions.rejectClosing);
+router.post("/cashier-sessions/:id/resubmit", cashierSessions.resubmitClosing);
 
 // Closing
 mountCrud(

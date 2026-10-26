@@ -17,6 +17,7 @@ import humanResourcesRoutes from "./routes/human-resources.js";
 import salesMarketingRoutes from "./routes/sales-marketing.js";
 import accountsRoutes from "./routes/accounts.js";
 import employeePortalRoutes from "./routes/employee-portal.js";
+import guestPortalRoutes from "./routes/guest-portal.js";
 import { TableReservationService } from "./services/food-beverages/table-reservations.service.js";
 
 const app = express();
@@ -53,6 +54,7 @@ app.use("/api/human-resources", humanResourcesRoutes);
 app.use("/api/sales-marketing", salesMarketingRoutes);
 app.use("/api/accounts", accountsRoutes);
 app.use("/api/employee-portal", employeePortalRoutes);
+app.use("/api/guest-portal", guestPortalRoutes);
 app.use("/api", transactionsRoutes);
 
 app.use((req, res) => {

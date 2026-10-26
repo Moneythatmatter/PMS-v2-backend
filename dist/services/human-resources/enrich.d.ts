@@ -105,11 +105,18 @@ type PayrollRow = {
     deductionsBreakdown?: Record<string, number>;
     validationFlags?: Record<string, boolean>;
     payslipGenerated?: boolean;
+    isLocked?: boolean;
+    verifiedAt?: string | null;
     createdAt: string;
     updatedAt: string;
 };
 export declare function enrichPayrollRecord(row: PayrollRow): Promise<{
     payrollId: string;
+    isLocked: boolean;
+    empCode: string;
+    bankName: string;
+    bankAccount: string;
+    ifscCode: string;
     employeeName: string;
     department: string;
     designation: string;
@@ -151,11 +158,17 @@ export declare function enrichPayrollRecord(row: PayrollRow): Promise<{
     deductionsBreakdown?: Record<string, number>;
     validationFlags?: Record<string, boolean>;
     payslipGenerated?: boolean;
+    verifiedAt?: string | null;
     createdAt: string;
     updatedAt: string;
 }>;
 export declare function enrichPayrollRecords(rows: PayrollRow[]): Promise<{
     payrollId: string;
+    isLocked: boolean;
+    empCode: string;
+    bankName: string;
+    bankAccount: string;
+    ifscCode: string;
     employeeName: string;
     department: string;
     designation: string;
@@ -197,6 +210,7 @@ export declare function enrichPayrollRecords(rows: PayrollRow[]): Promise<{
     deductionsBreakdown?: Record<string, number>;
     validationFlags?: Record<string, boolean>;
     payslipGenerated?: boolean;
+    verifiedAt?: string | null;
     createdAt: string;
     updatedAt: string;
 }[]>;

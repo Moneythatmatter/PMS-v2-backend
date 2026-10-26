@@ -66,6 +66,7 @@ router.post("/guest-requests/:id/assign", guestRequests.assignGuestRequest);
 router.post("/guest-requests/:id/start", guestRequests.startGuestRequest);
 router.post("/guest-requests/:id/complete", guestRequests.completeGuestRequest);
 router.post("/guest-requests/:id/cancel", guestRequests.cancelGuestRequest);
+router.post("/guest-requests/:id/laundry-job", guestRequests.createLaundryJobFromRequest);
 
 // Public areas master (inventory — separate from hk_public_areas ops)
 router.get("/masters/public-areas", publicAreasMaster.listPublicAreasMaster);

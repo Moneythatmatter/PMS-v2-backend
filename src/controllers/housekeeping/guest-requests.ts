@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import type { AuthedRequest } from "../../middleware/auth.js";
 import { GuestRequestService } from "../../services/housekeeping/guest-request.service.js";
 import { fail, fromError, ok } from "../../utils/response.js";
 
@@ -79,6 +80,19 @@ export async function completeGuestRequest(req: Request, res: Response) {
       body.notes ?? body.remarks,
     );
     return ok(res, row);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function createLaundryJobFromRequest(req: Request, res: Response) {
+  try {
+    const body = (req.body ?? {}) as { serviceType?: string; urgency?: string; notes?: string };
+    const result = await GuestRequestService.createLaundryJob(String(req.params.id), {
+      ...body,
+      actor: (req as AuthedRequest).auth?.email,
+    });
+    return ok(res, result);
   } catch (e) {
     return fromError(res, e);
   }

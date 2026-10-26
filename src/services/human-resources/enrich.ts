@@ -156,6 +156,8 @@ type PayrollRow = {
   deductionsBreakdown?: Record<string, number>;
   validationFlags?: Record<string, boolean>;
   payslipGenerated?: boolean;
+  isLocked?: boolean;
+  verifiedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -168,6 +170,11 @@ export async function enrichPayrollRecord(row: PayrollRow) {
   return {
     ...row,
     payrollId: row.payrollBatchId ?? `PAY-${row.payrollYear}-${String(row.payrollMonth).padStart(2, "0")}`,
+    isLocked: Boolean(row.isLocked),
+    empCode: enriched?.empCode ?? "",
+    bankName: String(emp?.bankName ?? ""),
+    bankAccount: String(emp?.bankAccount ?? ""),
+    ifscCode: String(emp?.ifscCode ?? ""),
     employeeName: enriched?.name ?? "",
     department: enriched?.department ?? "",
     designation: enriched?.designation ?? "",

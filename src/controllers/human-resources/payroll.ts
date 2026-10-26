@@ -6,7 +6,66 @@ import {
   enrichPayrollRecords,
   mapPayrollIncoming,
 } from "../../services/human-resources/enrich.js";
-import { fail, fromError, ok } from "../../utils/response.js";
+import {
+  approveBatch,
+  approveRecord,
+  assertEditable,
+  calculatePayroll,
+  getRecordOrThrow,
+  listPayments,
+  payrollExtras,
+  recordPayment,
+  sendPayslip,
+  sendPayslipsBatch,
+  unlockRecord,
+  updatePayrollAmounts,
+  verifyBatch,
+  verifyRecord,
+  type PayrollRecordRow,
+} from "../../services/human-resources/payroll.service.js";
+import type { AuthedRequest } from "../../middleware/auth.js";
+import { supabase } from "../../utils/supabase.js";
+import { fromError, ok } from "../../utils/response.js";
+
+const actorNames = new Map<string, string>();
+
+/** Name of the signed-in user, for audit trails and "recorded by". */
+async function actorOf(req: Request): Promise<string> {
+  const auth = (req as AuthedRequest).auth;
+  if (!auth?.userId) return "System";
+  const cached = actorNames.get(auth.userId);
+  if (cached) return cached;
+  const { data } = await supabase.from("users").select("name").eq("id", auth.userId).maybeSingle();
+  const name = String(data?.name ?? auth.email ?? "User");
+  actorNames.set(auth.userId, name);
+  return name;
+}
+
+async function withExtras(rows: PayrollRecordRow[]) {
+  const [enriched, extras] = await Promise.all([
+    enrichPayrollRecords(rows as Parameters<typeof enrichPayrollRecords>[0]),
+    payrollExtras(rows.map((r) => r.id)),
+  ]);
+  return enriched.map((row) => {
+    const extra = extras.get(row.id);
+    const paidAmount = extra?.paidAmount ?? 0;
+    return {
+      ...row,
+      ...extra,
+      paidAmount,
+      balanceAmount: Math.max(0, Math.round((Number(row.netSalary) - paidAmount) * 100) / 100),
+    };
+  });
+}
+
+async function respondWithRecord(res: Response, id: string, status = 200) {
+  const row = await getRecordOrThrow(id);
+  const [record] = await withExtras([row]);
+  return ok(res, record, status);
+}
+
+const ids = (value: unknown) => (Array.isArray(value) ? value.map(String).filter(Boolean) : undefined);
+const num = (value: unknown) => (value === undefined || value === null || value === "" ? undefined : Number(value));
 
 export async function listPayrollRecords(req: Request, res: Response) {
   try {
@@ -15,12 +74,12 @@ export async function listPayrollRecords(req: Request, res: Response) {
     const filters: Record<string, string | number> = {};
     if (month) filters.payroll_month = month;
     if (year) filters.payroll_year = year;
-    const rows = await hrModel.list(hrTables.payrollRecords, {
+    const rows = await hrModel.list<PayrollRecordRow>(hrTables.payrollRecords, {
       filters,
       orderBy: "created_at",
       ascending: false,
     });
-    return ok(res, await enrichPayrollRecords(rows as Parameters<typeof enrichPayrollRecords>[0]));
+    return ok(res, await withExtras(rows));
   } catch (e) {
     return fromError(res, e);
   }
@@ -28,9 +87,7 @@ export async function listPayrollRecords(req: Request, res: Response) {
 
 export async function getPayrollRecord(req: Request, res: Response) {
   try {
-    const row = await hrModel.get(hrTables.payrollRecords, String(req.params.id));
-    if (!row) return fail(res, "Payroll record not found", 404);
-    return ok(res, await enrichPayrollRecord(row as Parameters<typeof enrichPayrollRecord>[0]));
+    return await respondWithRecord(res, String(req.params.id));
   } catch (e) {
     return fromError(res, e);
   }
@@ -38,7 +95,9 @@ export async function getPayrollRecord(req: Request, res: Response) {
 
 export async function createPayrollRecord(req: Request, res: Response) {
   try {
-    let body = mapPayrollIncoming({ ...(req.body as Record<string, unknown>) }, true);
+    const body = mapPayrollIncoming({ ...(req.body as Record<string, unknown>) }, true);
+    for (const key of ["status", "isLocked", "approvedAt", "verifiedAt", "payslipGenerated"]) delete body[key];
+    body.status = "Draft";
     if (!body.id) body.id = newId();
     const row = await hrModel.create(hrTables.payrollRecords, body);
     return ok(res, await enrichPayrollRecord(row as Parameters<typeof enrichPayrollRecord>[0]), 201);
@@ -47,12 +106,58 @@ export async function createPayrollRecord(req: Request, res: Response) {
   }
 }
 
+/** Edit earnings / deductions. Blocked once approved (locked). Status changes go through the workflow endpoints. */
 export async function updatePayrollRecord(req: Request, res: Response) {
   try {
-    let body = mapPayrollIncoming({ ...(req.body as Record<string, unknown>) }, false);
-    delete body.id;
-    const row = await hrModel.update(hrTables.payrollRecords, String(req.params.id), body);
-    return ok(res, await enrichPayrollRecord(row as Parameters<typeof enrichPayrollRecord>[0]));
+    const id = String(req.params.id);
+    assertEditable(await getRecordOrThrow(id));
+    const body = req.body as Record<string, unknown>;
+    const pick = (keys: string[]) =>
+      Object.fromEntries(keys.filter((k) => body[k] !== undefined).map((k) => [k, Number(body[k])]));
+    await updatePayrollAmounts(
+      id,
+      {
+        earnings: pick(["basicSalary", "hra", "allowances", "overtimePay", "holidayPay", "incentives", "bonus", "otherEarnings"]),
+        deductions: pick(["leaveDeduction", "pfDeduction", "esiDeduction", "ptDeduction", "tdsDeduction", "otherDeductions"]),
+        reason: body.overrideReason ? String(body.overrideReason) : undefined,
+      },
+      await actorOf(req),
+    );
+    return await respondWithRecord(res, id);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function calculatePayrollRecords(req: Request, res: Response) {
+  try {
+    const body = req.body as Record<string, unknown>;
+    const result = await calculatePayroll({
+      month: Number(body.month),
+      year: Number(body.year),
+      employeeIds: ids(body.employeeIds),
+      actor: await actorOf(req),
+    });
+    return ok(res, result);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function verifyPayrollRecord(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id);
+    await verifyRecord(id, await actorOf(req));
+    return await respondWithRecord(res, id);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function verifyPayrollBatch(req: Request, res: Response) {
+  try {
+    const body = req.body as Record<string, unknown>;
+    return ok(res, await verifyBatch({ ids: ids(body.ids), month: num(body.month), year: num(body.year) }, await actorOf(req)));
   } catch (e) {
     return fromError(res, e);
   }
@@ -61,26 +166,27 @@ export async function updatePayrollRecord(req: Request, res: Response) {
 export async function approvePayrollRecord(req: Request, res: Response) {
   try {
     const id = String(req.params.id);
-    const existing = await hrModel.get<{ status: string }>(hrTables.payrollRecords, id);
-    if (!existing) return fail(res, "Payroll record not found", 404);
-    if (existing.status === "Approved" || existing.status === "Paid") {
-      return fail(res, "Payroll already approved or paid", 409);
-    }
-    const now = new Date().toISOString();
-    const row = await hrModel.update(hrTables.payrollRecords, id, {
-      status: "Approved",
-      approvedAt: now,
-      updatedAt: now,
-    });
-    await hrModel.create(hrTables.auditLogs, {
-      id: newId(),
-      module: "payroll",
-      action: `Approved payroll record ${id}`,
-      entityType: "payroll_record",
-      entityId: id,
-      changedBy: (req.body as { changedBy?: string })?.changedBy ?? "HR Manager",
-    });
-    return ok(res, await enrichPayrollRecord(row as Parameters<typeof enrichPayrollRecord>[0]));
+    await approveRecord(id, await actorOf(req));
+    return await respondWithRecord(res, id);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function approvePayrollBatch(req: Request, res: Response) {
+  try {
+    const body = req.body as Record<string, unknown>;
+    return ok(res, await approveBatch({ ids: ids(body.ids), month: num(body.month), year: num(body.year) }, await actorOf(req)));
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function unlockPayrollRecord(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id);
+    await unlockRecord(id, String((req.body as { reason?: string })?.reason ?? ""), await actorOf(req));
+    return await respondWithRecord(res, id);
   } catch (e) {
     return fromError(res, e);
   }
@@ -88,51 +194,39 @@ export async function approvePayrollRecord(req: Request, res: Response) {
 
 export async function recordSalaryPayment(req: Request, res: Response) {
   try {
-    const payrollId = String(req.params.id);
-    const payroll = await hrModel.get<{ status: string; employeeId: string; netSalary: number }>(
-      hrTables.payrollRecords,
-      payrollId,
-    );
-    if (!payroll) return fail(res, "Payroll record not found", 404);
-    if (payroll.status !== "Approved") {
-      return fail(res, "Payroll must be approved before recording payment", 400);
-    }
+    const result = await recordPayment(String(req.params.id), req.body as Record<string, unknown>, await actorOf(req));
+    return ok(res, result, 201);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
 
+export async function listSalaryPayments(req: Request, res: Response) {
+  try {
+    return ok(res, await listPayments(String(req.params.id)));
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function sendPayslipById(req: Request, res: Response) {
+  try {
+    return ok(res, await sendPayslip(String(req.params.id), await actorOf(req)));
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function sendPayslipBatch(req: Request, res: Response) {
+  try {
     const body = req.body as Record<string, unknown>;
-    const now = new Date().toISOString();
-    const payment = await hrModel.create(hrTables.salaryPayments, {
-      id: newId(),
-      payrollId,
-      employeeId: payroll.employeeId,
-      amount: body.amount ?? payroll.netSalary,
-      paymentDate: body.paymentDate,
-      paymentMode: body.paymentMode ?? "Bank Transfer",
-      transactionReference: body.transactionReference,
-      status: body.status ?? "Completed",
-      remarks: body.remarks ?? "",
-      recordedBy: body.recordedBy ?? "HR Manager",
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    if ((body.status ?? "Completed") === "Completed") {
-      await hrModel.update(hrTables.payrollRecords, payrollId, {
-        status: "Paid",
-        updatedAt: now,
-      });
-    }
-
-    await hrModel.create(hrTables.auditLogs, {
-      id: newId(),
-      module: "payroll",
-      action: `Recorded salary payment for payroll ${payrollId}`,
-      entityType: "salary_payment",
-      entityId: (payment as { id: string }).id,
-      changedBy: String(body.recordedBy ?? "HR Manager"),
-      auditNotes: body.remarks ? String(body.remarks) : undefined,
-    });
-
-    return ok(res, payment, 201);
+    return ok(
+      res,
+      await sendPayslipsBatch(
+        { ids: ids(body.ids), payrollIds: ids(body.payrollIds), month: num(body.month), year: num(body.year) },
+        await actorOf(req),
+      ),
+    );
   } catch (e) {
     return fromError(res, e);
   }
@@ -141,6 +235,7 @@ export async function recordSalaryPayment(req: Request, res: Response) {
 export async function listAuditLogs(_req: Request, res: Response) {
   try {
     const rows = await hrModel.list(hrTables.auditLogs, {
+      filters: { module: "payroll" },
       orderBy: "created_at",
       ascending: false,
       limit: 100,
