@@ -471,6 +471,7 @@ create table if not exists public.acc_voucher_lines (
   cheque_no text not null default '',
   cheque_date date,
   gst_rate numeric(9,4),
+  narration text not null default '',
   reconciled boolean not null default false,
   recon_date date,
   reconciled_by text,

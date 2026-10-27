@@ -35,6 +35,7 @@ export type VoucherLineInput = {
   chequeNo?: string;
   chequeDate?: string | null;
   gstRate?: number | string | null;
+  narration?: string;
 };
 
 export type BillAllocationInput = { billId: string; amount: number | string; deductions?: number | string };
@@ -145,6 +146,8 @@ type PreparedLine = {
   chequeNo: string;
   chequeDate: string | null;
   gstRate: number | null;
+  /** Omitted when blank so inserts work before the narration column exists. */
+  narration?: string;
 };
 
 function normalizeEntry(l: VoucherLineInput): { entryType: "Dr" | "Cr" | null; amount: number } {
@@ -180,7 +183,9 @@ async function prepareLines(voucherType: Row, input: VoucherInput): Promise<{ li
     }
     if (!entryType) errors.push({ path: `lines[${i}]`, message: "Select Dr or Cr and enter an amount" });
     else if (!(amount > 0)) errors.push({ path: `lines[${i}]`, message: "Amount must be greater than zero" });
+    const narration = String(l.narration ?? "").trim().slice(0, 500);
     return {
+      ...(narration ? { narration } : {}),
       lineNo: i + 1,
       accountId: l.accountId,
       partyId: voucherPartyId && acc && isPartyAccount(acc) ? voucherPartyId : null,
@@ -459,6 +464,7 @@ export async function convertProvisional(id: string, body: { voucherDate?: strin
       divisionId: l.divisionId,
       entryType: l.entryType,
       amount: l.amount,
+      narration: l.narration ?? "",
     })),
   });
   await update(accTables.vouchers, id, { status: "Converted", convertedVoucherId: converted.id });
@@ -515,6 +521,7 @@ function decorateLine(l: Row, maps: Maps): Row {
     debit,
     credit,
     gstRate: l.gstRate === null ? null : num(l.gstRate),
+    narration: l.narration ?? "",
     accountCode: acc?.code ?? null,
     accountName: acc?.name ?? null,
     partyName: l.partyId ? maps.parties.get(l.partyId)?.partyName ?? null : null,
@@ -766,7 +773,7 @@ export async function bankReconciliation(query: Record<string, unknown>) {
       voucherNo: v.voucherNo,
       voucherDate: v.voucherDate,
       voucherCategory: v.voucherCategory,
-      narration: v.narration,
+      narration: l.narration || v.narration,
       referenceNo: v.referenceNo,
       instrumentNo: l.chequeNo || v.instrumentNo,
       instrumentDate: l.chequeDate ?? v.instrumentDate,

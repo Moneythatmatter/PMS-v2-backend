@@ -4,7 +4,6 @@
 --
 --   * Each line is an entry type (Dr / Cr) + a single amount.
 --     debit / credit stay as read-only generated columns so reports keep working.
---   * Line-level narration is removed (the voucher header narration is used).
 --   * Lines may only post to ledgers that allow posting (never to groups).
 --   * Line party_id is system-derived from the voucher party by the API.
 -- =============================================================================
@@ -36,7 +35,7 @@ begin
   end if;
 end $$;
 
-alter table public.acc_voucher_lines drop column if exists narration;
+alter table public.acc_voucher_lines add column if not exists narration text not null default '';
 
 create or replace function public.acc_voucher_lines_ledger_only()
 returns trigger language plpgsql as $$

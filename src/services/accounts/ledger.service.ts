@@ -83,7 +83,7 @@ export async function loadLines(opts: {
       voucherCategory: v.voucherCategory,
       voucherTypeId: v.voucherTypeId,
       voucherStatus: v.status,
-      voucherNarration: v.narration ?? "",
+      voucherNarration: r.narration || v.narration || "",
       referenceNo: v.referenceNo ?? "",
       instrumentNo: v.instrumentNo ?? "",
       lineNo: r.lineNo,
