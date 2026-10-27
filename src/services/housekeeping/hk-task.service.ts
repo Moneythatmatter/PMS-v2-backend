@@ -149,6 +149,7 @@ export const HkTaskService = {
       taskType: normalizeHkTaskType(row.task_type),
       status: normalizeHkTaskStatus(row.status),
       assignedTo: row.assigned_to as string | null | undefined,
+      assignedStaffIds: row.assigned_staff_ids as string[] | null | undefined,
       createdBy: row.created_by as string | null | undefined,
       priority: normalizeHkTaskPriority(row.priority),
       notes: row.notes as string | null | undefined,
@@ -192,13 +193,6 @@ export const HkTaskService = {
       if (!isActiveInHouse) {
         body.bookingId = null;
       }
-    }
-
-    if (!schedule.scheduledDate && schedule.scheduledStartAt) {
-      schedule.scheduledDate = schedule.scheduledStartAt.slice(0, 10);
-    }
-    if (!schedule.scheduledDate && schedule.dueAt) {
-      schedule.scheduledDate = schedule.dueAt.slice(0, 10);
     }
 
     const scheduleError = validateHkTaskScheduleNotInPast(schedule);
@@ -295,7 +289,7 @@ export const HkTaskService = {
     return this.get(taskId);
   },
 
-  async assign(id: string, assignedTo: string): Promise<HkTask> {
+  async assign(id: string, assignees: string | string[]): Promise<HkTask> {
     const resolved = await resolveHkTaskId(id);
     if (!resolved) throw new NotFoundError("Task not found");
     const existing = await getTaskOrThrow(resolved);
@@ -304,25 +298,49 @@ export const HkTaskService = {
       throw new ConflictError(`Cannot assign task in status ${existing.status}`);
     }
 
-    const assigneeRaw = assignedTo.trim();
-    const assigneeLabel =
-      (await resolveHkTaskAssigneeLabel(assigneeRaw)) || assigneeRaw;
-    const resolvedAssignee = assigneeRaw
-      ? await resolveHkTaskAssignee(assigneeRaw)
-      : null;
+    const rawList = [
+      ...new Set(
+        (Array.isArray(assignees) ? assignees : [assignees])
+          .map((a) => String(a ?? "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (!rawList.length) throw new AppError("Select at least one staff member", 400);
+
+    const resolvedIds = (
+      await Promise.all(rawList.map((raw) => resolveHkTaskAssignee(raw)))
+    ).filter((v): v is string => Boolean(v));
+    const labels = await Promise.all(
+      rawList.map(async (raw) => (await resolveHkTaskAssigneeLabel(raw)) || raw),
+    );
+    const assigneeLabel = labels.join(", ");
+    const resolvedAssignee = resolvedIds[0] ?? null;
 
     const now = new Date().toISOString();
-    const row = await enrichHkTask(
-      await persistHkTaskRow(
-        {
-          status: "ASSIGNED",
-          assignedTo: resolvedAssignee,
-          assignedAt: now,
-        },
+    const payload: Record<string, unknown> = {
+      status: "ASSIGNED",
+      assignedTo: resolvedAssignee,
+      assignedStaffIds: resolvedIds,
+      assignedAt: now,
+    };
+    let saved: HkTask;
+    try {
+      saved = await persistHkTaskRow(
+        payload,
         { mode: "update", id: resolved },
         { assigned: assigneeLabel || undefined },
-      ),
-    );
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/assigned_staff_ids/i.test(message)) throw error;
+      delete payload.assignedStaffIds;
+      saved = await persistHkTaskRow(
+        payload,
+        { mode: "update", id: resolved },
+        { assigned: assigneeLabel || undefined },
+      );
+    }
+    const row = await enrichHkTask(saved);
 
     await syncHkRoomForTask(
       existing.roomId,
@@ -334,7 +352,7 @@ export const HkTaskService = {
     );
 
     await appendHistory({
-      user: assigneeLabel || assignedTo,
+      user: assigneeLabel,
       category: "Cleaning",
       action: "Task assigned",
       room: row.roomNo ?? existing.roomId,

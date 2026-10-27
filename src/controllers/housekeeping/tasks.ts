@@ -47,10 +47,17 @@ export async function createTask(req: Request, res: Response) {
 
 export async function assignTask(req: Request, res: Response) {
   try {
-    const body = (req.body ?? {}) as { assignedTo?: string; assignedStaff?: string };
-    const assignedTo = String(body.assignedTo ?? body.assignedStaff ?? "").trim();
-    if (!assignedTo) return fail(res, "assignedTo is required", 400);
-    const row = await HkTaskService.assign(String(req.params.id), assignedTo);
+    const body = (req.body ?? {}) as {
+      assignedTo?: string | string[];
+      assignedStaff?: string;
+      assignedStaffIds?: string[];
+    };
+    const raw = body.assignedStaffIds ?? body.assignedTo ?? body.assignedStaff ?? [];
+    const assignees = (Array.isArray(raw) ? raw : [raw])
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean);
+    if (!assignees.length) return fail(res, "assignedTo is required", 400);
+    const row = await HkTaskService.assign(String(req.params.id), assignees);
     return ok(res, row);
   } catch (e) {
     return fromError(res, e);

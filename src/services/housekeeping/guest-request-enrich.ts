@@ -15,6 +15,27 @@ type ReservationRow = {
 type UserRow = { id: string; name?: string };
 type StaffRow = { id: string; name?: string };
 
+/** HR employee display names keyed by hr_employees.id. */
+export async function fetchHrEmployeeNames(
+  ids: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return map;
+
+  const { data, error } = await supabase
+    .from("hr_employees")
+    .select("id, first_name, last_name")
+    .in("id", unique);
+
+  if (error) return map;
+  for (const row of data ?? []) {
+    const name = `${row.first_name ?? ""} ${row.last_name ?? ""}`.trim();
+    if (name) map.set(String(row.id), name);
+  }
+  return map;
+}
+
 /** Resolve hk_staff id from UI staff name or id. */
 export async function resolveGuestRequestAssignee(
   input: unknown,
@@ -58,6 +79,9 @@ export async function resolveGuestRequestAssigneeLabel(
     .eq("id", raw)
     .maybeSingle();
   if (byId?.name) return String(byId.name);
+
+  const employeeName = (await fetchHrEmployeeNames([raw])).get(raw);
+  if (employeeName) return employeeName;
 
   const { data: staffRows } = await supabase
     .from(staffTable)
@@ -131,11 +155,14 @@ async function fetchStaffByIds(ids: string[]): Promise<Map<string, StaffRow>> {
     .select("id, name")
     .in("id", unique);
 
-  if (error) return map;
-  for (const row of data ?? []) {
-    const staff = toCamel<StaffRow>(row);
-    map.set(staff.id, staff);
+  if (!error) {
+    for (const row of data ?? []) {
+      const staff = toCamel<StaffRow>(row);
+      map.set(staff.id, staff);
+    }
   }
+  const employees = await fetchHrEmployeeNames(unique.filter((id) => !map.has(id)));
+  for (const [id, name] of employees) map.set(id, { id, name });
   return map;
 }
 

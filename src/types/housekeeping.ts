@@ -88,6 +88,8 @@ export interface HkTask {
   taskType: HkTaskType;
   status: HkTaskStatus;
   assignedTo?: string | null;
+  /** All assignees; assignedTo mirrors the first one. */
+  assignedStaffIds?: string[] | null;
   createdBy?: string | null;
   priority: HkTaskPriority;
   notes?: string | null;
@@ -99,13 +101,12 @@ export interface HkTask {
   createdAt?: string;
   updatedAt?: string;
   scheduledDate?: string | null;
-  scheduledStartAt?: string | null;
-  dueAt?: string | null;
   /** Enriched — not stored */
   isOverdue?: boolean;
   roomNo?: string;
   bookingNo?: string;
   assignedToName?: string;
+  assignedStaffNames?: string[];
   createdByName?: string;
   approvedByName?: string;
   requestNumber?: string;
@@ -156,10 +157,15 @@ export const HK_TASK_OVERDUE_EXCLUDED_STATUSES = new Set<HkTaskStatus>([
   "CANCELLED",
 ]);
 
-export function computeHkTaskOverdue(task: Pick<HkTask, "dueAt" | "status">): boolean {
-  if (!task.dueAt) return false;
+/** Unfinished task whose cleaning date (YYYY-MM-DD) is before `today`. */
+export function computeHkTaskOverdue(
+  task: Pick<HkTask, "scheduledDate" | "status">,
+  today: string,
+): boolean {
+  const date = String(task.scheduledDate ?? "").slice(0, 10);
+  if (!date) return false;
   if (HK_TASK_OVERDUE_EXCLUDED_STATUSES.has(task.status)) return false;
-  return new Date(task.dueAt).getTime() < Date.now();
+  return date < today;
 }
 
 export function normalizeHkTaskPriority(input: unknown): HkTaskPriority {

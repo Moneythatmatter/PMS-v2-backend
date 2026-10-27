@@ -19,6 +19,8 @@ import {
 } from "../models/front-office/index.js";
 import {
   guestCreateSchema,
+  guestDocumentCreateSchema,
+  guestDocumentUpdateSchema,
   guestUpdateSchema,
   paymentCreateSchema,
   paymentUpdateSchema,
@@ -34,6 +36,7 @@ import {
 import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 import * as cashierSessions from "../controllers/front-office/cashier-sessions.js";
 import * as guestPortal from "../controllers/front-office/guest-portal.js";
+import { getRequestStore } from "../utils/request-context.js";
 
 const router = Router();
 
@@ -69,6 +72,7 @@ router.post("/reservations/:id/check-in", reservations.checkIn);
 router.get("/reservations/:id/guests", reservations.listReservationGuests);
 router.post("/reservations/:id/check-out", reservations.checkOut);
 router.post("/reservations/:id/extend-stay", reservations.extendStay);
+router.post("/reservations/:id/transfer-room", reservations.transferRoom);
 
 // Groups (P0–P1)
 router.get("/groups", groups.listGroups);
@@ -152,6 +156,27 @@ mountCrud(
     table: foModel.tables.guestStayHistory,
     idPrefix: "SH",
     listFilters: (req) => ({ guest_id: req.query.guestId as string | undefined }),
+  }),
+);
+mountCrud(
+  router,
+  "/guest-documents",
+  createCrudController({
+    table: foModel.tables.guestDocuments,
+    idPrefix: "GD",
+    orderBy: "created_at",
+    createSchema: guestDocumentCreateSchema,
+    updateSchema: guestDocumentUpdateSchema,
+    listFilters: (req) => {
+      const guestId = req.query.guestId as string | undefined;
+      const reservationId = req.query.reservationId as string | undefined;
+      // Never list every document (payloads are large) — require a scope.
+      if (!guestId && !reservationId) return { guest_id: "__none__" };
+      return { guest_id: guestId, reservation_id: reservationId };
+    },
+    beforeCreate: async (body) => {
+      body.uploadedBy = getRequestStore()?.userId ?? body.uploadedBy ?? null;
+    },
   }),
 );
 

@@ -4,8 +4,6 @@
 -- New schedule + request columns (does not need new enum values)
 alter table public.housekeeping_tasks
   add column if not exists scheduled_date date,
-  add column if not exists scheduled_start_at timestamptz,
-  add column if not exists due_at timestamptz,
   add column if not exists request_id text;
 
 -- Backfill from legacy split date/time columns (if present)
@@ -19,19 +17,7 @@ begin
   ) then
     update public.housekeeping_tasks
     set
-      scheduled_date = coalesce(cleaning_date, schedule_start_date),
-      scheduled_start_at = case
-        when coalesce(cleaning_date, schedule_start_date) is not null
-          and schedule_start_time is not null
-        then (coalesce(cleaning_date, schedule_start_date)::text || ' ' || schedule_start_time::text)::timestamptz
-        else null
-      end,
-      due_at = case
-        when coalesce(cleaning_date, schedule_end_date, schedule_start_date) is not null
-          and schedule_end_time is not null
-        then (coalesce(cleaning_date, schedule_end_date, schedule_start_date)::text || ' ' || schedule_end_time::text)::timestamptz
-        else null
-      end
+      scheduled_date = coalesce(cleaning_date, schedule_start_date)
     where scheduled_date is null
       and (
         cleaning_date is not null
@@ -56,10 +42,6 @@ drop index if exists public.housekeeping_tasks_cleaning_date_idx;
 create index if not exists housekeeping_tasks_scheduled_date_idx
   on public.housekeeping_tasks (scheduled_date)
   where scheduled_date is not null;
-
-create index if not exists housekeeping_tasks_due_at_idx
-  on public.housekeeping_tasks (due_at)
-  where due_at is not null;
 
 create index if not exists housekeeping_tasks_request_id_idx
   on public.housekeeping_tasks (request_id)

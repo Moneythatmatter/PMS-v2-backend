@@ -8,31 +8,77 @@
 --   * Line party_id is system-derived from the voucher party by the API.
 -- =============================================================================
 
+-- Each piece (entry_type, amount, generated debit/credit) is checked separately,
+-- so partially migrated tables are completed instead of skipped.
 do $$
+declare
+  v_has_entry boolean;
+  v_has_amount boolean;
+  v_debit_gen text;   -- null = column missing, 'ALWAYS' = generated, 'NEVER' = plain
+  v_credit_gen text;
 begin
-  if not exists (
-    select 1 from information_schema.columns
-     where table_schema = 'public' and table_name = 'acc_voucher_lines' and column_name = 'entry_type'
-  ) then
-    alter table public.acc_voucher_lines
-      add column entry_type text,
-      add column amount numeric(18,2);
+  select exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'acc_voucher_lines'
+                    and column_name = 'entry_type') into v_has_entry;
+  select exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'acc_voucher_lines'
+                    and column_name = 'amount') into v_has_amount;
+  select is_generated into v_debit_gen from information_schema.columns
+   where table_schema = 'public' and table_name = 'acc_voucher_lines' and column_name = 'debit';
+  select is_generated into v_credit_gen from information_schema.columns
+   where table_schema = 'public' and table_name = 'acc_voucher_lines' and column_name = 'credit';
 
-    update public.acc_voucher_lines
-       set entry_type = case when debit > 0 then 'Dr' else 'Cr' end,
-           amount = greatest(debit, credit);
-
-    alter table public.acc_voucher_lines drop constraint if exists acc_voucher_lines_amount;
-    alter table public.acc_voucher_lines drop column debit, drop column credit;
-
-    alter table public.acc_voucher_lines
-      alter column entry_type set not null,
-      alter column amount set not null,
-      add column debit numeric(18,2) generated always as (case when entry_type = 'Dr' then amount else 0 end) stored,
-      add column credit numeric(18,2) generated always as (case when entry_type = 'Cr' then amount else 0 end) stored,
-      add constraint acc_voucher_lines_entry_type check (entry_type in ('Dr', 'Cr')),
-      add constraint acc_voucher_lines_amount check (amount > 0) not valid;
+  if not v_has_entry then
+    alter table public.acc_voucher_lines add column entry_type text;
   end if;
+  if not v_has_amount then
+    alter table public.acc_voucher_lines add column amount numeric(18,2);
+  end if;
+
+  -- Backfill from the legacy plain debit / credit columns, then drop them.
+  if v_debit_gen = 'NEVER' or v_credit_gen = 'NEVER' then
+    execute format(
+      'update public.acc_voucher_lines set
+         entry_type = coalesce(entry_type, case when coalesce(%1$s, 0) > 0 then ''Dr'' else ''Cr'' end),
+         amount     = coalesce(amount, greatest(coalesce(%1$s, 0), coalesce(%2$s, 0)))',
+      case when v_debit_gen = 'NEVER' then 'debit' else '0' end,
+      case when v_credit_gen = 'NEVER' then 'credit' else '0' end
+    );
+    alter table public.acc_voucher_lines drop constraint if exists acc_voucher_lines_amount;
+    if v_debit_gen = 'NEVER' then
+      alter table public.acc_voucher_lines drop column debit;
+      v_debit_gen := null;
+    end if;
+    if v_credit_gen = 'NEVER' then
+      alter table public.acc_voucher_lines drop column credit;
+      v_credit_gen := null;
+    end if;
+  end if;
+
+  update public.acc_voucher_lines set entry_type = 'Dr' where entry_type is null;
+  update public.acc_voucher_lines set amount = 0 where amount is null;
+
+  alter table public.acc_voucher_lines
+    alter column entry_type set not null,
+    alter column amount set not null;
+
+  if v_debit_gen is null then
+    alter table public.acc_voucher_lines
+      add column debit numeric(18,2)
+        generated always as (case when entry_type = 'Dr' then amount else 0 end) stored;
+  end if;
+  if v_credit_gen is null then
+    alter table public.acc_voucher_lines
+      add column credit numeric(18,2)
+        generated always as (case when entry_type = 'Cr' then amount else 0 end) stored;
+  end if;
+
+  alter table public.acc_voucher_lines drop constraint if exists acc_voucher_lines_entry_type;
+  alter table public.acc_voucher_lines
+    add constraint acc_voucher_lines_entry_type check (entry_type in ('Dr', 'Cr'));
+  alter table public.acc_voucher_lines drop constraint if exists acc_voucher_lines_amount;
+  alter table public.acc_voucher_lines
+    add constraint acc_voucher_lines_amount check (amount > 0) not valid;
 end $$;
 
 alter table public.acc_voucher_lines add column if not exists narration text not null default '';

@@ -12,6 +12,7 @@ export const PROPERTY_SCOPED_TABLES = new Set([
   "fo_group_billing_rules",
   "folio_charges",
   "guest_stay_history",
+  "guest_documents",
   "folio_entries",
   "folios",
   "payments",

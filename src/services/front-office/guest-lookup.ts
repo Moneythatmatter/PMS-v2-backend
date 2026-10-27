@@ -3,6 +3,10 @@ import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import { getActivePropertyId } from "../../utils/request-context.js";
 import type { Guest } from "../../types/front-office.js";
+import { ConflictError, DatabaseError } from "../../errors/index.js";
+
+/** Keeps `.in(...)` filters well under PostgREST's URL length limit. */
+const IN_FILTER_CHUNK = 150;
 
 /** Load guest by UUID id or display guest_no (e.g. G-12). */
 export async function getGuestByKey(key: string): Promise<Guest | null> {

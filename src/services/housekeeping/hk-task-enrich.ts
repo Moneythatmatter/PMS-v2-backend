@@ -5,6 +5,7 @@ import { toCamel } from "../../utils/mappers.js";
 import { todayIso } from "../../utils/date.js";
 import { resolveRoomId } from "./hk-room-enrich.js";
 import {
+  fetchHrEmployeeNames,
   resolveGuestRequestAssignee,
   resolveGuestRequestAssigneeLabel,
 } from "./guest-request-enrich.js";
@@ -90,11 +91,14 @@ async function fetchStaffByIds(ids: string[]): Promise<Map<string, StaffRow>> {
     .select("id, name")
     .in("id", unique);
 
-  if (error) return map;
-  for (const row of data ?? []) {
-    const staff = toCamel<StaffRow>(row);
-    map.set(staff.id, staff);
+  if (!error) {
+    for (const row of data ?? []) {
+      const staff = toCamel<StaffRow>(row);
+      map.set(staff.id, staff);
+    }
   }
+  const employees = await fetchHrEmployeeNames(unique.filter((id) => !map.has(id)));
+  for (const [id, name] of employees) map.set(id, { id, name });
   return map;
 }
 
@@ -109,6 +113,15 @@ function staffOrUserName(
     users.get(String(key))?.name ??
     String(key)
   );
+}
+
+/** Assignee ids for a task, falling back to the single assigned_to column. */
+export function taskAssigneeIds(
+  row: Pick<HkTask, "assignedTo" | "assignedStaffIds">,
+): string[] {
+  const ids = (row.assignedStaffIds ?? []).map(String).filter(Boolean);
+  if (ids.length) return [...new Set(ids)];
+  return row.assignedTo ? [String(row.assignedTo)] : [];
 }
 
 export function sanitizeHkTaskInput(
@@ -141,26 +154,18 @@ export function sanitizeHkTaskInput(
   delete body.roomIds;
   delete body.updatedAt;
   delete body.createdAt;
+  delete body.scheduledStartAt;
+  delete body.dueAt;
+  delete body.assignedStaffIds;
+  delete body.assignedStaffNames;
+  delete body.assignedToName;
 
   return body;
 }
 
 export type HkTaskScheduleInput = {
   scheduledDate?: string | null;
-  scheduledStartAt?: string | null;
-  dueAt?: string | null;
 };
-
-function combineDateAndTime(
-  date?: string | null,
-  time?: string | null,
-): string | null {
-  const d = String(date ?? "").trim();
-  const t = String(time ?? "").trim();
-  if (!d || !t) return null;
-  const normalized = t.length === 5 ? `${t}:00` : t;
-  return `${d}T${normalized}`;
-}
 
 export function parseHkTaskScheduleInput(
   input: Record<string, unknown>,
@@ -168,46 +173,13 @@ export function parseHkTaskScheduleInput(
   const scheduledDate =
     (typeof input.scheduledDate === "string" ? input.scheduledDate : null) ??
     (typeof input.cleaningDate === "string" ? input.cleaningDate : null);
-
-  let scheduledStartAt =
-    typeof input.scheduledStartAt === "string" ? input.scheduledStartAt : null;
-  let dueAt = typeof input.dueAt === "string" ? input.dueAt : null;
-
-  const startTime =
-    typeof input.startTime === "string"
-      ? input.startTime
-      : typeof input.scheduleStartTime === "string"
-        ? input.scheduleStartTime
-        : null;
-  const dueTime =
-    typeof input.dueTime === "string"
-      ? input.dueTime
-      : typeof input.scheduleEndTime === "string"
-        ? input.scheduleEndTime
-        : null;
-
-  if (!scheduledStartAt && scheduledDate && startTime) {
-    scheduledStartAt = combineDateAndTime(scheduledDate, startTime);
-  }
-  if (!dueAt && scheduledDate && dueTime) {
-    dueAt = combineDateAndTime(scheduledDate, dueTime);
-  }
-
-  return {
-    scheduledDate,
-    scheduledStartAt,
-    dueAt,
-  };
+  return { scheduledDate };
 }
 
 export function buildHkTaskSchedulePayload(
   input: HkTaskScheduleInput,
 ): Record<string, unknown> {
-  const payload: Record<string, unknown> = {};
-  if (input.scheduledDate) payload.scheduledDate = input.scheduledDate;
-  if (input.scheduledStartAt) payload.scheduledStartAt = input.scheduledStartAt;
-  if (input.dueAt) payload.dueAt = input.dueAt;
-  return payload;
+  return input.scheduledDate ? { scheduledDate: input.scheduledDate } : {};
 }
 
 function normalizeIsoDate(value: string): string | null {
@@ -229,19 +201,12 @@ export function validateHkTaskScheduleNotInPast(
   const min = normalizeIsoDate(minDate);
   if (!min) return null;
 
-  const dates = [
-    schedule.scheduledDate,
-    schedule.scheduledStartAt?.slice(0, 10),
-    schedule.dueAt?.slice(0, 10),
-  ].filter((value): value is string => Boolean(value));
-
-  for (const date of dates) {
-    const normalized = normalizeIsoDate(date);
-    if (normalized && normalized < min) {
-      return "Scheduled date cannot be in the past";
-    }
+  const normalized = schedule.scheduledDate
+    ? normalizeIsoDate(schedule.scheduledDate)
+    : null;
+  if (normalized && normalized < min) {
+    return "Scheduled date cannot be in the past";
   }
-
   return null;
 }
 
@@ -331,6 +296,10 @@ function applyEnrichment(
     roomNo: room?.roomNo ?? row.roomNo,
     bookingNo: booking?.bookingNo ?? row.bookingNo,
     assignedToName: staffOrUserName(row.assignedTo, staff, users),
+    assignedStaffIds: taskAssigneeIds(row),
+    assignedStaffNames: taskAssigneeIds(row).map(
+      (id) => staffOrUserName(id, staff, users) ?? id,
+    ),
     createdByName: staffOrUserName(row.createdBy, staff, users),
     approvedByName: staffOrUserName(row.approvedBy, staff, users),
     requestNumber: guestRequest?.requestNumber ?? row.requestNumber,
@@ -338,7 +307,7 @@ function applyEnrichment(
   };
   return {
     ...enriched,
-    isOverdue: computeHkTaskOverdue(enriched),
+    isOverdue: computeHkTaskOverdue(enriched, todayIso()),
   };
 }
 
@@ -346,7 +315,11 @@ export async function enrichHkTask(row: HkTask): Promise<HkTask> {
   const roomId = String(row.roomId ?? "");
   const bookingId = row.bookingId ? String(row.bookingId) : "";
   const requestId = row.requestId ? String(row.requestId) : "";
-  const staffIds = [row.assignedTo, row.createdBy, row.approvedBy]
+  const staffIds = [
+    ...taskAssigneeIds(row),
+    row.createdBy,
+    row.approvedBy,
+  ]
     .filter(Boolean)
     .map(String);
 
@@ -385,7 +358,7 @@ export async function enrichHkTasks(rows: HkTask[]): Promise<HkTask[]> {
   const staffIds = [
     ...new Set(
       rows
-        .flatMap((r) => [r.assignedTo, r.createdBy, r.approvedBy])
+        .flatMap((r) => [...taskAssigneeIds(r), r.createdBy, r.approvedBy])
         .filter(Boolean)
         .map(String),
     ),

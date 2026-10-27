@@ -80,6 +80,7 @@ export const ActivityType = {
   CHECK_IN: "CHECK_IN",
   CHECK_OUT: "CHECK_OUT",
   EXTEND_STAY: "EXTEND_STAY",
+  ROOM_TRANSFER: "ROOM_TRANSFER",
   PAYMENT: "PAYMENT",
 } as const;
 

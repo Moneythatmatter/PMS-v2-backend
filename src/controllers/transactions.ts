@@ -1,8 +1,10 @@
 import type { Request, Response, NextFunction } from "express";
 import { TransactionService } from "../services/shared/transaction.service.js";
 import { FolioService } from "../services/shared/folio.service.js";
+import { FolioChargeService } from "../services/shared/folio-charge.service.js";
 import {
   fnbPaymentSchema,
+  folioChargeCreateSchema,
   foPaymentSchema,
   reservationAdvanceSchema,
   transactionCreateSchema,
@@ -131,6 +133,32 @@ export async function getFolio(req: Request, res: Response, next: NextFunction) 
     const row = await FolioService.getById(paramId(req));
     if (!row) return fail(res, "Folio not found", 404);
     return ok(res, row);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function listFolioCharges(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { bookingId, folioId } = req.query;
+    if (!bookingId && !folioId) {
+      return fail(res, "bookingId or folioId is required", 400);
+    }
+    const rows = await FolioChargeService.list({
+      reservationId: bookingId as string | undefined,
+      folioId: folioId as string | undefined,
+    });
+    return ok(res, rows);
+  } catch (e) {
+    next(e);
+  }
+}
+
+export async function postFolioCharge(req: Request, res: Response, next: NextFunction) {
+  try {
+    const body = parseBody(folioChargeCreateSchema, req.body);
+    const row = await FolioChargeService.postManual(body);
+    return ok(res, row, 201);
   } catch (e) {
     next(e);
   }

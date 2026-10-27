@@ -139,6 +139,23 @@ export async function extendStay(req: Request, res: Response) {
   }
 }
 
+export async function transferRoom(req: Request, res: Response) {
+  try {
+    const { toRoom, reason, date } = req.body as Record<string, unknown>;
+    if (!String(toRoom ?? "").trim()) return fail(res, "toRoom is required");
+    return ok(
+      res,
+      await ReservationService.transferRoom(String(req.params.id), {
+        toRoom: String(toRoom).trim(),
+        reason: reason ? String(reason) : undefined,
+        date: date ? String(date) : undefined,
+      }),
+    );
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
 export async function getSummary(_req: Request, res: Response) {
   try {
     return ok(res, await ReservationService.getSummary());

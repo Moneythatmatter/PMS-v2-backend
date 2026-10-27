@@ -58,6 +58,14 @@ export const foPaymentSchema = z.object({
   notes: z.string().optional().nullable(),
 });
 
+export const folioChargeCreateSchema = z.object({
+  bookingId: z.string().trim().min(1),
+  chargeCategory: z.enum(["FOOD_BEVERAGE", "MINIBAR", "LAUNDRY", "OTHER"]),
+  description: z.string().trim().min(1).max(200),
+  quantity: z.coerce.number().positive().max(1000).optional(),
+  unitPrice: z.coerce.number().positive(),
+});
+
 export const fnbPaymentSchema = z.object({
   amount: z.coerce.number().positive(),
   orderId: z.string().min(1),

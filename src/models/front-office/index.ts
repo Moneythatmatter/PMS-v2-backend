@@ -21,6 +21,7 @@ export const tables = {
   foGroupBillingRules: "fo_group_billing_rules",
   folioCharges: "folio_charges",
   guestStayHistory: "guest_stay_history",
+  guestDocuments: "guest_documents",
   folioEntries: "folio_entries",
   folios: "folios",
   payments: "payments",

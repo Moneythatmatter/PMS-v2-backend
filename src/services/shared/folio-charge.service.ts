@@ -1,11 +1,36 @@
 import { supabase } from "../../utils/supabase.js";
 import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
-import { getActivePropertyId } from "../../utils/request-context.js";
-import type { FolioCharge } from "../../types/transactions.js";
-import { AppError } from "../../errors/index.js";
+import { getActivePropertyId, getRequestStore } from "../../utils/request-context.js";
+import type { Folio, FolioCharge } from "../../types/transactions.js";
+import type { Reservation } from "../../types/front-office.js";
+import { AppError, NotFoundError } from "../../errors/index.js";
 import { ChargeRouterService } from "./charge-router.service.js";
-import type { FoChargeCategoryValue } from "../../constants/front-office.js";
+import {
+  FoBillingResponsibility,
+  ReservationStatus,
+  type FoChargeCategoryValue,
+} from "../../constants/front-office.js";
+
+const CHARGE_BLOCKED_STATUSES = new Set<string>([
+  ReservationStatus.CANCELLED,
+  ReservationStatus.NO_SHOW,
+  ReservationStatus.CHECKED_OUT,
+]);
+
+/** Reservation columns that checkout reads to split the folio subtotal. */
+const RESERVATION_CHARGE_COLUMN: Partial<Record<string, string>> = {
+  FOOD_BEVERAGE: "restaurantBill",
+  LAUNDRY: "laundry",
+};
+
+export type PostManualChargeInput = {
+  bookingId: string;
+  chargeCategory: string;
+  description: string;
+  quantity?: number;
+  unitPrice: number;
+};
 
 export type PostFolioChargeInput = {
   reservationId: string;
@@ -110,6 +135,70 @@ export const FolioChargeService = {
     });
 
     await recalcFolio(folioId);
+    return toCamel<FolioCharge>(row as unknown as Record<string, unknown>);
+  },
+
+  /**
+   * Front-desk charge on a booking. Individual folios keep room revenue as a
+   * seeded subtotal (no ROOM charge rows), so the subtotal is incremented
+   * instead of recalculated from folio_charges.
+   */
+  async postManual(input: PostManualChargeInput): Promise<FolioCharge> {
+    const reservation = await foModel.get<Reservation>(
+      foModel.tables.reservations,
+      input.bookingId,
+    );
+    if (!reservation) throw new NotFoundError("Reservation not found");
+    const status = String(reservation.status ?? "");
+    if (CHARGE_BLOCKED_STATUSES.has(status)) {
+      throw new AppError(`Charges cannot be posted to a ${status.toLowerCase()} booking`);
+    }
+
+    const route = await ChargeRouterService.resolveForReservation(
+      reservation.id,
+      input.chargeCategory,
+    );
+    const folio = await foModel.get<Folio>(foModel.tables.folios, route.folioId);
+    if (!folio) throw new NotFoundError("Folio not found");
+    if (folio.status !== "OPEN") {
+      throw new AppError("Folio is closed — charges can no longer be posted");
+    }
+
+    const quantity = Number(input.quantity ?? 1);
+    const unitPrice = Number(input.unitPrice);
+    const amount = Math.round(quantity * unitPrice * 100) / 100;
+    if (!(amount > 0)) throw new AppError("Charge amount must be greater than 0");
+
+    const row = await foModel.create<FolioCharge>(foModel.tables.folioCharges, {
+      propertyId: getActivePropertyId() ?? null,
+      folioId: folio.id,
+      groupId: route.groupId,
+      reservationId: reservation.id,
+      bookingId: reservation.id,
+      guestId: reservation.guestId ?? null,
+      chargeCategory: route.chargeCategory,
+      description: input.description,
+      quantity,
+      unitPrice,
+      amount,
+      responsibility: route.responsibility,
+      sourceModule: "FRONT_OFFICE",
+      sourceType: "MANUAL_CHARGE",
+      createdBy: getRequestStore()?.userId ?? null,
+    });
+
+    await foModel.update(foModel.tables.folios, folio.id, {
+      subtotal: Math.round((Number(folio.subtotal ?? 0) + amount) * 100) / 100,
+    });
+
+    const column = RESERVATION_CHARGE_COLUMN[route.chargeCategory];
+    if (column && route.responsibility === FoBillingResponsibility.GUEST) {
+      const current = Number((reservation as unknown as Record<string, unknown>)[column] ?? 0);
+      await foModel.update(foModel.tables.reservations, reservation.id, {
+        [column]: Math.max(0, current + amount),
+      });
+    }
+
     return toCamel<FolioCharge>(row as unknown as Record<string, unknown>);
   },
 };

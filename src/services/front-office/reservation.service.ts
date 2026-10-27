@@ -3,6 +3,7 @@ import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import {
   ActivityType,
+  FoChargeCategory,
   ReservationStatus,
   RoomStatus,
 } from "../../constants/front-office.js";
@@ -17,13 +18,16 @@ import {
   ConflictError,
   DatabaseError,
   NotFoundError,
+  ValidationError,
 } from "../../errors/index.js";
 import {
   formatDate,
   formatTime,
   isArrivingTodayReservation,
   timestamp,
+  todayIso,
 } from "../../utils/date.js";
+import { FolioChargeService } from "../shared/folio-charge.service.js";
 import { IdService } from "../shared/id.service.js";
 import { ActivityService } from "../shared/activity.service.js";
 import { TransactionService } from "../shared/transaction.service.js";
@@ -45,6 +49,82 @@ import {
   getReservationByKey,
 } from "./reservation-lookup.js";
 import { HkTaskService } from "../housekeeping/hk-task.service.js";
+
+/** Stay dates are text columns; legacy rows hold en-IN labels like "27 Oct 2026". */
+function toIsoDate(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? "" : todayIso(parsed);
+}
+
+function nightsBetween(fromIso: string, toIso: string): number {
+  const ms = Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`);
+  return Math.max(1, Math.round(ms / 86_400_000));
+}
+const CHECK_IN_IDENTITY_FIELDS: [keyof Guest, string][] = [
+  ["gender", "Gender"],
+  ["dob", "Date of birth"],
+  ["nationality", "Nationality"],
+  ["address", "Address"],
+  ["city", "City"],
+  ["state", "State"],
+  ["country", "Country"],
+  ["pincode", "Pincode"],
+  ["idType", "ID proof type"],
+  ["idNumber", "ID number"],
+];
+
+/**
+ * Server-side guard so no client can check a guest in without a linked guest
+ * profile, an assigned room and the registration (identity) details.
+ */
+async function assertCheckInRequirements(
+  existing: Reservation,
+  extras: Record<string, unknown>,
+  assignedRoom: string | null | undefined,
+): Promise<void> {
+  const text = (v: unknown) => String(v ?? "").trim();
+  const missing: string[] = [];
+
+  const room = assignedRoom || resolveRoomRef(existing);
+  if (!room || !isRealRoomRef(room)) missing.push("Assigned room");
+
+  const guestId = text(extras.guestId) || text(existing.guestId);
+  let guest: Guest | null = null;
+  if (guestId) {
+    const { data, error } = await supabase
+      .from(foModel.tables.guests)
+      .select("*")
+      .eq("id", guestId)
+      .maybeSingle();
+    if (error) throw new DatabaseError(error.message);
+    guest = data ? toCamel<Guest>(data as Record<string, unknown>) : null;
+  }
+
+  if (!guest) {
+    missing.push("Guest staying in the room (name, mobile and ID details)");
+  } else {
+    if (!text(guest.name)) missing.push("Guest name");
+    if (text(guest.mobile).replace(/\D/g, "").length < 10) missing.push("Mobile");
+    const reservation = existing as unknown as Record<string, unknown>;
+    for (const [key, label] of CHECK_IN_IDENTITY_FIELDS) {
+      const aliases = key === "idType" ? ["idType", "idProofType"] : [key];
+      const value = aliases
+        .map((k) => text(extras[k]) || text(reservation[k]))
+        .find(Boolean) || text(guest[key]);
+      if (!value) missing.push(label);
+    }
+  }
+
+  if (missing.length) {
+    throw new ValidationError(
+      `Cannot check in — required details missing: ${missing.join(", ")}`,
+      missing.map((m) => ({ path: "checkIn", message: `${m} is required` })),
+    );
+  }
+}
 
 async function ensureReservationFolio(
   reservation: Pick<Reservation, "id" | "guestId">,
@@ -600,22 +680,159 @@ export const ReservationService = {
     const existing = await getOrThrow(id);
     if (!payload.checkOut) throw new AppError("checkOut is required");
 
+    if (
+      existing.status === ReservationStatus.CANCELLED ||
+      existing.status === ReservationStatus.NO_SHOW ||
+      existing.status === ReservationStatus.CHECKED_OUT
+    ) {
+      throw new AppError(`Cannot extend a ${String(existing.status).toLowerCase()} booking`);
+    }
+
+    const checkIn = toIsoDate(existing.checkIn);
+    const oldCheckOut = toIsoDate(existing.checkOut);
+    const newCheckOut = toIsoDate(payload.checkOut);
+    if (!checkIn || !oldCheckOut || !newCheckOut) {
+      throw new AppError("Invalid stay dates");
+    }
+    if (newCheckOut <= oldCheckOut) {
+      throw new AppError(`New check-out must be after the current check-out (${oldCheckOut})`);
+    }
+
+    const roomRef = resolveRoomRef(existing);
+    if (roomRef && isRealRoomRef(roomRef)) {
+      const room = await getRoomByRef(roomRef);
+      if (room?.id) {
+        const { data: others, error } = await supabase
+          .from(foModel.tables.reservations)
+          .select("id, check_in, check_out, status")
+          .eq("room_ref_id", room.id)
+          .neq("id", existing.id)
+          .not("status", "in", `("${ReservationStatus.CANCELLED}","${ReservationStatus.CHECKED_OUT}","${ReservationStatus.NO_SHOW}")`);
+        if (error) throw new DatabaseError(error.message);
+        const clash = (others ?? []).find((r) => {
+          const otherIn = toIsoDate(String(r.check_in ?? ""));
+          const otherOut = toIsoDate(String(r.check_out ?? ""));
+          return otherIn && otherOut && otherIn < newCheckOut && otherOut > oldCheckOut;
+        });
+        if (clash) {
+          throw new ConflictError(
+            `Room ${room.roomNo} is booked from ${toIsoDate(String(clash.check_in))} — transfer the guest to another room or pick an earlier date`,
+          );
+        }
+      }
+    }
+
+    const oldNights = Math.max(1, Number(existing.nights) || nightsBetween(checkIn, oldCheckOut));
+    const newNights = nightsBetween(checkIn, newCheckOut);
+    const extraNights = Math.max(0, newNights - nightsBetween(checkIn, oldCheckOut));
+    const rate =
+      Number(existing.roomRate) ||
+      Math.round((Number(existing.totalAmount) || 0) / oldNights);
+    const extraAmount = Math.round(extraNights * rate * 100) / 100;
+
     const row = await foModel.update<Reservation>(
       foModel.tables.reservations,
       existing.id,
       {
-        checkOut: payload.checkOut,
-        ...(payload.nights !== undefined ? { nights: payload.nights } : {}),
-        ...(payload.totalAmount !== undefined
-          ? { totalAmount: payload.totalAmount }
-          : {}),
-        ...(payload.balance !== undefined ? { balance: payload.balance } : {}),
+        checkOut: newCheckOut,
+        nights: newNights,
+        totalAmount: (Number(existing.totalAmount) || 0) + extraAmount,
+        balance: (Number(existing.balance) || 0) + extraAmount,
       } as Record<string, unknown>,
     );
 
+    if (extraAmount > 0) {
+      if (existing.groupId) {
+        await FolioChargeService.post({
+          reservationId: existing.id,
+          chargeCategory: FoChargeCategory.ROOM,
+          description: `Stay extension — ${extraNights} night${extraNights !== 1 ? "s" : ""}`,
+          quantity: extraNights,
+          unitPrice: rate,
+          guestId: existing.guestId ?? null,
+          sourceModule: "FRONT_OFFICE",
+          sourceType: "EXTEND_STAY",
+        });
+      } else {
+        const folioId = await TransactionService.ensureFolioForBooking(
+          existing.id,
+          existing.guestId ?? null,
+        );
+        const folio = await foModel.get<{ subtotal?: number }>(foModel.tables.folios, folioId);
+        await foModel.update(foModel.tables.folios, folioId, {
+          subtotal: Math.round((Number(folio?.subtotal ?? 0) + extraAmount) * 100) / 100,
+        });
+      }
+    }
+
     await ActivityService.log({
       type: ActivityType.EXTEND_STAY,
-      message: `Stay extended — checkout ${payload.checkOut}`,
+      message: `Stay extended — ${existing.guestName ?? "Guest"}, checkout ${newCheckOut} (+${extraNights} night${extraNights !== 1 ? "s" : ""})`,
+      guestId: existing.guestId,
+      room: roomRef,
+      reservationId: existing.id,
+    });
+
+    return enrichReservation(row);
+  },
+
+  /** Move an in-house guest to another room; the vacated room goes to housekeeping as dirty. */
+  async transferRoom(
+    id: string,
+    payload: { toRoom: string; reason?: string; date?: string },
+  ): Promise<Reservation> {
+    const existing = await getOrThrow(id);
+    if (
+      existing.status !== ReservationStatus.CHECKED_IN &&
+      existing.status !== ReservationStatus.IN_HOUSE
+    ) {
+      throw new AppError("Only in-house guests can be transferred to another room");
+    }
+
+    const target = await getRoomByRef(payload.toRoom);
+    if (!target?.id) throw new NotFoundError(`Room "${payload.toRoom}" was not found`);
+
+    const fromRef = resolveRoomRef(existing);
+    const fromRoom = fromRef && isRealRoomRef(fromRef) ? await getRoomByRef(fromRef) : null;
+    if (fromRoom?.id === target.id) {
+      throw new AppError("Guest is already in this room");
+    }
+
+    const { data: occupants, error: occupantsError } = await supabase
+      .from(foModel.tables.reservations)
+      .select("id")
+      .eq("room_ref_id", target.id)
+      .in("status", [ReservationStatus.CHECKED_IN, ReservationStatus.IN_HOUSE])
+      .neq("id", existing.id)
+      .limit(1);
+    if (occupantsError) throw new DatabaseError(occupantsError.message);
+    if (occupants?.length) {
+      throw new ConflictError(`Room ${target.roomNo} is occupied by another guest`);
+    }
+
+    const row = await foModel.update<Reservation>(
+      foModel.tables.reservations,
+      existing.id,
+      { roomRefId: target.id } as Record<string, unknown>,
+    );
+    if (fromRoom?.id) await markRoomDirty(fromRoom.id);
+
+    const fromLabel = fromRoom?.roomNo ?? displayRoomNo(existing) ?? "TBA";
+    await foModel.create(foModel.tables.roomTransfers, {
+      id: foModel.newId("TR"),
+      guestName: existing.guestName ?? "Guest",
+      fromRoom: fromLabel,
+      toRoom: target.roomNo,
+      date: payload.date || formatDate(),
+      reason: payload.reason?.trim() || "Guest request",
+      status: "Completed",
+    });
+
+    await ActivityService.log({
+      type: ActivityType.ROOM_TRANSFER,
+      message: `Room transfer — ${existing.guestName ?? "Guest"}, Room ${fromLabel} → ${target.roomNo}`,
+      guestId: existing.guestId,
+      room: target.roomNo,
       reservationId: existing.id,
     });
 

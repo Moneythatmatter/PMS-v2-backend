@@ -32,6 +32,29 @@ export const guestCreateSchema = z
 /** Update guest — all fields optional, but validated when present. */
 export const guestUpdateSchema = guestCreateSchema.partial().passthrough();
 
+/** ~5 MB file once base64-encoded. */
+const MAX_DOCUMENT_DATA_URL_LENGTH = 7_000_000;
+
+export const guestDocumentCreateSchema = z.object({
+  id: z.string().optional(),
+  guestId: nonEmptyString("guestId"),
+  reservationId: z.string().optional().nullable(),
+  documentType: z.string().optional().nullable(),
+  fileName: nonEmptyString("fileName"),
+  mimeType: z.string().optional().nullable(),
+  fileSize: z.coerce.number().int().min(0).optional(),
+  dataUrl: z
+    .string()
+    .startsWith("data:", "dataUrl must be a data URL")
+    .max(MAX_DOCUMENT_DATA_URL_LENGTH, "File is too large (max 5 MB)"),
+  uploadedBy: z.string().optional().nullable(),
+});
+
+export const guestDocumentUpdateSchema = z.object({
+  documentType: z.string().optional().nullable(),
+  reservationId: z.string().optional().nullable(),
+});
+
 const reservationFieldsSchema = z
   .object({
     id: z.string().optional(),

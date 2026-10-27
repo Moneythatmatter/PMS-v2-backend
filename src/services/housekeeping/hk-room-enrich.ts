@@ -6,6 +6,7 @@ import type { Reservation } from "../../types/front-office.js";
 import { enrichReservations } from "../front-office/reservation-enrich.js";
 import { buildActiveBookingByRoomNo } from "../front-office/room-hk-status.js";
 import type { HkRoom } from "../../types/housekeeping.js";
+import { fetchHrEmployeeNames } from "./guest-request-enrich.js";
 
 type FoRoom = {
   id: string;
@@ -113,11 +114,14 @@ async function fetchStaffByIds(ids: string[]): Promise<Map<string, StaffRow>> {
     .select("id, name")
     .in("id", unique);
 
-  if (error) return map;
-  for (const row of data ?? []) {
-    const staff = toCamel<StaffRow>(row);
-    map.set(staff.id, staff);
+  if (!error) {
+    for (const row of data ?? []) {
+      const staff = toCamel<StaffRow>(row);
+      map.set(staff.id, staff);
+    }
   }
+  const employees = await fetchHrEmployeeNames(unique.filter((id) => !map.has(id)));
+  for (const [id, name] of employees) map.set(id, { id, name });
   return map;
 }
 

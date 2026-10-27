@@ -146,8 +146,8 @@ type PreparedLine = {
   chequeNo: string;
   chequeDate: string | null;
   gstRate: number | null;
-  /** Omitted when blank so inserts work before the narration column exists. */
-  narration?: string;
+  /** Always present — bulk inserts null-fill keys missing from some rows. */
+  narration: string;
 };
 
 function normalizeEntry(l: VoucherLineInput): { entryType: "Dr" | "Cr" | null; amount: number } {
@@ -183,9 +183,8 @@ async function prepareLines(voucherType: Row, input: VoucherInput): Promise<{ li
     }
     if (!entryType) errors.push({ path: `lines[${i}]`, message: "Select Dr or Cr and enter an amount" });
     else if (!(amount > 0)) errors.push({ path: `lines[${i}]`, message: "Amount must be greater than zero" });
-    const narration = String(l.narration ?? "").trim().slice(0, 500);
     return {
-      ...(narration ? { narration } : {}),
+      narration: String(l.narration ?? "").trim().slice(0, 500),
       lineNo: i + 1,
       accountId: l.accountId,
       partyId: voucherPartyId && acc && isPartyAccount(acc) ? voucherPartyId : null,

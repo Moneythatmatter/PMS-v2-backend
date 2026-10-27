@@ -24,6 +24,8 @@ router.post("/transactions/fnb/payment", transactions.recordFnbPayment);
 router.post("/transactions/reservation/advance", transactions.recordReservationAdvance);
 
 router.get("/folios", transactions.listFolios);
+router.get("/folios/charges", transactions.listFolioCharges);
+router.post("/folios/charges", transactions.postFolioCharge);
 router.get("/folios/:id", transactions.getFolio);
 router.post("/folios/ensure", transactions.ensureFolioForBooking);
 
