@@ -897,6 +897,7 @@ export const PosService = {
       kotStatus,
       placedAt: String(order.placedAt ?? kot.createdAt ?? ""),
       createdAt: kot.createdAt ?? null,
+      readyAt: kotStatus === "READY" || kotStatus === "SERVED" ? (kot.updatedAt ?? null) : null,
       printedAt: kot.printedAt ?? null,
       prepMinutes:
         order.prepMinutes != null ? Number(order.prepMinutes) : null,

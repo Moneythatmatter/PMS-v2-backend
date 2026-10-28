@@ -11,7 +11,7 @@ export async function listLiveTables(req: Request, res: Response) {
       filters: outletId ? { outlet_id: outletId } : undefined,
       orderBy: "table_no",
     });
-    return ok(res, rows);
+    return ok(res, rows.filter((t) => (t as LiveTable).isActive !== false));
   } catch (e) {
     return fromError(res, e);
   }

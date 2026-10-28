@@ -7,6 +7,8 @@ import {
 
 type Row = Record<string, unknown>;
 
+const isTableActive = (t: Row) => t.isActive !== false;
+
 export type TableDisplayState =
   | "BLANK"
   | "RUNNING"
@@ -249,14 +251,14 @@ export const FloorPlanService = {
         }),
         reservationOverlay(outletId),
       ]);
-      const rows = await Promise.all(tables.map((t) => loadContextForTable(t)));
+      const rows = await Promise.all(tables.filter(isTableActive).map((t) => loadContextForTable(t)));
       return rows.map((row) => withReservation(row, overlay));
     } catch {
       const tables = await fbModel.list<Row>(fbModel.tables.liveTables, {
         filters: outletId ? { outlet_id: outletId } : undefined,
         orderBy: "table_no",
       });
-      return tables.map((t) => ({
+      return tables.filter(isTableActive).map((t) => ({
         ...t,
         displayState: mapLegacyStatusToDisplay(String(t.status ?? "Available")),
         status: String(t.status ?? "Available"),

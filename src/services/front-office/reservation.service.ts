@@ -59,6 +59,22 @@ function toIsoDate(value: unknown): string {
   return Number.isNaN(parsed.getTime()) ? "" : todayIso(parsed);
 }
 
+function assertStayNotInPast(checkIn: unknown, checkOut: unknown): void {
+  const today = todayIso();
+  const inIso = toIsoDate(checkIn);
+  const outIso = toIsoDate(checkOut);
+  if (inIso && inIso < today) {
+    throw new ValidationError("Check-in date cannot be in the past", [
+      { path: "checkIn", message: "Check-in date cannot be in the past" },
+    ]);
+  }
+  if (inIso && outIso && outIso <= inIso) {
+    throw new ValidationError("Check-out must be after check-in", [
+      { path: "checkOut", message: "Check-out must be after check-in" },
+    ]);
+  }
+}
+
 function nightsBetween(fromIso: string, toIso: string): number {
   const ms = Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`);
   return Math.max(1, Math.round(ms / 86_400_000));
@@ -219,6 +235,7 @@ export const ReservationService = {
     if (advancePaid > 0 && !String(input.paymentMode ?? "").trim()) {
       throw new AppError("Payment method is required when advance amount is collected");
     }
+    assertStayNotInPast(input.checkIn, input.checkOut);
 
     const body = sanitizeReservationInput(input) as Record<string, unknown>;
     delete body.externalReference;
@@ -286,6 +303,10 @@ export const ReservationService = {
 
   async update(id: string, input: Partial<Reservation>): Promise<Reservation> {
     const existing = await getOrThrow(id);
+    const nextCheckIn = toIsoDate(input.checkIn);
+    if (nextCheckIn && nextCheckIn !== toIsoDate(existing.checkIn)) {
+      assertStayNotInPast(input.checkIn, input.checkOut ?? existing.checkOut);
+    }
     const body = sanitizeReservationInput(input);
     delete body.id;
     await normalizeReservationRoomRef(body);
