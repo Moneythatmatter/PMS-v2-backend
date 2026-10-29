@@ -2,6 +2,7 @@ import { AppError, NotFoundError } from "../../errors/index.js";
 import { fbModel } from "../../models/food-beverages/index.js";
 import { supabase } from "../../utils/supabase.js";
 import { toCamel } from "../../utils/mappers.js";
+import { getActivePropertyId, runWithRequestStore } from "../../utils/request-context.js";
 import { ReservationService } from "../front-office/reservation.service.js";
 import {
   CLOSED_OUTLET,
@@ -78,7 +79,11 @@ async function assertPendingCapacity(column: "live_table_id" | "room_id", value:
 }
 
 async function insertRequest(row: Row) {
-  const { data, error } = await supabase.from(TABLE).insert(row).select().single();
+  const { data, error } = await supabase
+    .from(TABLE)
+    .insert({ property_id: getActivePropertyId() ?? null, ...row })
+    .select()
+    .single();
   if (error) mapDbError(error.message);
   const created = toCamel<GuestOrderRequest>(data);
   return { id: created.id, requestNo: created.requestNo, subtotal: Number(created.subtotal) };
@@ -105,6 +110,15 @@ async function resolveTable(tableId: string, token: string) {
     outletName: outlet?.name ? String(outlet.name) : null,
     outletActive: !outlet || !CLOSED_OUTLET.test(String(outlet.status ?? "")),
   };
+}
+
+type TableContext = Awaited<ReturnType<typeof resolveTable>>;
+
+/** Public table QR calls have no login, so run them under the table's own property. */
+async function withTable<T>(tableId: string, token: string, fn: (ctx: TableContext) => Promise<T>): Promise<T> {
+  const ctx = await resolveTable(tableId, token);
+  const propertyId = ctx.table.propertyId ? String(ctx.table.propertyId) : undefined;
+  return runWithRequestStore({ propertyId }, () => fn(ctx));
 }
 
 const lineTotal = (lines: GuestPricedLine[]) =>
@@ -146,18 +160,16 @@ export const GuestOrderRequestService = {
   /* ---------- Public (guest) ---------- */
 
   async context(tableId: string, token: string) {
-    const ctx = await resolveTable(tableId, token);
-    return {
+    return withTable(tableId, token, async (ctx) => ({
       tableNo: ctx.tableNo,
       section: ctx.table.section ? String(ctx.table.section) : null,
       outletName: ctx.outletName,
       accepting: ctx.outletActive,
-    };
+    }));
   },
 
   async menu(tableId: string, token: string) {
-    await resolveTable(tableId, token);
-    return loadGuestMenu();
+    return withTable(tableId, token, () => loadGuestMenu());
   },
 
   async submit(
@@ -165,31 +177,32 @@ export const GuestOrderRequestService = {
     token: string,
     input: { lines?: unknown; guestName?: string; guestPhone?: string; pax?: number; instructions?: string },
   ) {
-    const ctx = await resolveTable(tableId, token);
-    if (!ctx.outletActive) throw new AppError("This outlet is not taking orders right now.", 409);
+    return withTable(tableId, token, async (ctx) => {
+      if (!ctx.outletActive) throw new AppError("This outlet is not taking orders right now.", 409);
 
-    await assertPendingCapacity(
-      "live_table_id",
-      ctx.tableId,
-      "This table already has requests waiting for staff. Please wait a moment.",
-    );
+      await assertPendingCapacity(
+        "live_table_id",
+        ctx.tableId,
+        "This table already has requests waiting for staff. Please wait a moment.",
+      );
 
-    const lines = await priceGuestLines(input.lines);
-    const pax = Math.floor(Number(input.pax) || 0);
-    return insertRequest({
-      request_no: fbModel.newCode("GOR"),
-      source: "Table",
-      outlet_id: ctx.outletId,
-      outlet_name: ctx.outletName,
-      live_table_id: ctx.tableId,
-      table_no: ctx.tableNo,
-      guest_name: cleanText(input.guestName).slice(0, 80) || null,
-      guest_phone: cleanText(input.guestPhone).slice(0, 20) || null,
-      pax: pax > 0 && pax <= 50 ? pax : null,
-      lines,
-      instructions: cleanText(input.instructions) || null,
-      subtotal: lineTotal(lines),
-      status: "Pending",
+      const lines = await priceGuestLines(input.lines);
+      const pax = Math.floor(Number(input.pax) || 0);
+      return insertRequest({
+        request_no: fbModel.newCode("GOR"),
+        source: "Table",
+        outlet_id: ctx.outletId,
+        outlet_name: ctx.outletName,
+        live_table_id: ctx.tableId,
+        table_no: ctx.tableNo,
+        guest_name: cleanText(input.guestName).slice(0, 80) || null,
+        guest_phone: cleanText(input.guestPhone).slice(0, 20) || null,
+        pax: pax > 0 && pax <= 50 ? pax : null,
+        lines,
+        instructions: cleanText(input.instructions) || null,
+        subtotal: lineTotal(lines),
+        status: "Pending",
+      });
     });
   },
 
@@ -295,6 +308,8 @@ export const GuestOrderRequestService = {
 
   async list(filters: { status?: string; outletId?: string; source?: string }) {
     let query = supabase.from(TABLE).select("*").order("created_at", { ascending: false }).limit(200);
+    const propertyId = getActivePropertyId();
+    if (propertyId) query = query.eq("property_id", propertyId);
     if (filters.status && filters.status !== "all") query = query.eq("status", filters.status);
     if (filters.source === "Table" || filters.source === "Room") query = query.eq("source", filters.source);
     if (filters.outletId) query = query.eq("outlet_id", filters.outletId);
@@ -305,6 +320,8 @@ export const GuestOrderRequestService = {
 
   async pendingCount(outletId?: string) {
     let query = supabase.from(TABLE).select("id", { count: "exact", head: true }).eq("status", "Pending");
+    const propertyId = getActivePropertyId();
+    if (propertyId) query = query.eq("property_id", propertyId);
     if (outletId) query = query.eq("outlet_id", outletId);
     const { count, error } = await query;
     if (error) mapDbError(error.message);

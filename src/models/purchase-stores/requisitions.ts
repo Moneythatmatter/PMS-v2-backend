@@ -4,6 +4,7 @@ import { throwIfRlsError } from "../../utils/db-errors.js";
 import { ValidationError } from "../../errors/index.js";
 import { deleteRow, getRowById, insertRow, updateRow } from "../front-office/base.js";
 import { psTables } from "./index.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
 
 const HEADER = psTables.purchaseRequisitions;
 const ITEMS = psTables.purchaseRequisitionItems;
@@ -126,6 +127,10 @@ async function fetchItemRows(requisitionIds?: string[]): Promise<ItemRow[]> {
         .order("line_no", { ascending: true })
         .range(from, from + PAGE - 1);
       if (batch) query = query.in("requisition_id", batch);
+      else {
+        const propertyId = getActivePropertyId();
+        if (propertyId) query = query.eq("property_id", propertyId);
+      }
       const { data, error } = await query;
       if (error) throw new Error(error.message);
       rows.push(...toCamel<ItemRow[]>(data ?? []));
@@ -156,6 +161,8 @@ export async function listRequisitions(filters: {
   sourceModules?: string[];
 } = {}): Promise<Requisition[]> {
   let query = supabase.from(HEADER).select("*").order("created_at", { ascending: false });
+  const propertyId = getActivePropertyId();
+  if (propertyId) query = query.eq("property_id", propertyId);
   if (filters.status) query = query.eq("status", filters.status);
   if (filters.department) query = query.eq("department", filters.department);
   if (filters.sourceModules?.length) query = query.in("source_module", filters.sourceModules);
@@ -174,7 +181,10 @@ export async function getRequisition(id: string): Promise<Requisition | null> {
 }
 
 export async function getRequisitionByNumber(prNumber: string): Promise<Requisition | null> {
-  const { data, error } = await supabase.from(HEADER).select("*").eq("pr_number", prNumber).limit(1);
+  let query = supabase.from(HEADER).select("*").eq("pr_number", prNumber);
+  const propertyId = getActivePropertyId();
+  if (propertyId) query = query.eq("property_id", propertyId);
+  const { data, error } = await query.limit(1);
   if (error) throw new Error(error.message);
   const header = data?.[0] ? toCamel<RequisitionHeader>(data[0]) : null;
   if (!header) return null;
@@ -216,10 +226,10 @@ async function loadProducts(ids: string[]): Promise<Map<string, ProductRow>> {
 async function loadStockOnHand(materialIds: string[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   for (const batch of chunks(materialIds)) {
-    const { data, error } = await supabase
-      .from(psTables.stockBalances)
-      .select("material_id, quantity")
-      .in("material_id", batch);
+    let query = supabase.from(psTables.stockBalances).select("material_id, quantity").in("material_id", batch);
+    const propertyId = getActivePropertyId();
+    if (propertyId) query = query.eq("property_id", propertyId);
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
     for (const row of data ?? []) {
       const id = String(row.material_id);
@@ -278,6 +288,7 @@ async function buildItemRows(requisitionId: string, raw: unknown, existing: Map<
 
     return {
       id: keepId,
+      property_id: getActivePropertyId() ?? null,
       requisition_id: requisitionId,
       line_no: idx + 1,
       material_id: product?.id ?? null,

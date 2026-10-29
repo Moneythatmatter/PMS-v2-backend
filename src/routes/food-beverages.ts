@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireProperty } from "../middleware/property.js";
 import { requireModule } from "../middleware/module-access.js";
+import { attachRequestContext } from "../middleware/request-context.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import { getDashboard } from "../controllers/food-beverages/dashboard.js";
 import * as liveTables from "../controllers/food-beverages/live-tables.js";
@@ -26,6 +27,7 @@ const router = Router();
 router.use(requireAuth);
 router.use(requireProperty);
 router.use(requireModule("food_beverages"));
+router.use(attachRequestContext);
 
 const outletFilter = (req: { query: Record<string, unknown> }) => ({
   outlet_id: req.query.outletId as string | undefined,

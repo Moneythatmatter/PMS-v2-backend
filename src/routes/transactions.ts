@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireProperty } from "../middleware/property.js";
 import { requireModule } from "../middleware/module-access.js";
+import { attachRequestContext } from "../middleware/request-context.js";
 import * as transactions from "../controllers/transactions.js";
 
 const router = Router();
@@ -11,6 +12,7 @@ router.use(
   requireAuth,
   requireProperty,
   requireModule(["front_office", "food_beverages", "accounts"]),
+  attachRequestContext,
 );
 
 router.get("/transactions", transactions.listTransactions);

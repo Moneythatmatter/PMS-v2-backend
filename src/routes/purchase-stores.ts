@@ -2,6 +2,7 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requireProperty } from "../middleware/property.js";
 import { requireModule } from "../middleware/module-access.js";
+import { attachRequestContext } from "../middleware/request-context.js";
 import { createTableCrud, mountCrud } from "../controllers/shared-crud.js";
 import * as dashboard from "../controllers/purchase-stores/dashboard.js";
 import * as receiving from "../controllers/purchase-stores/receiving.js";
@@ -25,6 +26,7 @@ router.use(
     { methods: "*", path: /^\/requisitions(\/|$)/, modules: "any" },
   ]),
 );
+router.use(attachRequestContext);
 
 const docCrud = (
   table: string,

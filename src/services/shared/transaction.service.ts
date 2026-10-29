@@ -6,7 +6,7 @@ import type {
   Transaction,
 } from "../../types/transactions.js";
 import { AppError } from "../../errors/index.js";
-import { getRequestStore } from "../../utils/request-context.js";
+import { getActivePropertyId, getRequestStore } from "../../utils/request-context.js";
 import { CashierSessionService } from "../front-office/cashier-session.service.js";
 
 function normalizePaymentMethod(mode?: string): string {
@@ -106,6 +106,17 @@ export const TransactionService = {
 
     if (error) throw new Error(error.message);
     const row = toCamel<Transaction>(data as Record<string, unknown>);
+    // record_transaction does not take a property, so stamp it here to keep the ledger property-scoped.
+    const propertyId = getActivePropertyId();
+    const raw = data as Record<string, unknown> | null;
+    if (propertyId && raw?.id && raw.property_id == null) {
+      const { error: stampErr } = await supabase
+        .from(foModel.tables.transactions)
+        .update({ property_id: propertyId })
+        .eq("id", String(raw.id));
+      if (stampErr) throw new Error(stampErr.message);
+      (row as Transaction & { propertyId?: string }).propertyId = propertyId;
+    }
     return CashierSessionService.attachTransaction(row);
   },
 

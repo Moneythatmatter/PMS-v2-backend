@@ -16,11 +16,13 @@ export async function getGuestByKey(key: string): Promise<Guest | null> {
   const byId = await foModel.get<Guest>(foModel.tables.guests, trimmed);
   if (byId) return byId;
 
-  const { data, error } = await supabase
+  const propertyId = getActivePropertyId();
+  let query = supabase
     .from(foModel.tables.guests)
     .select("*")
-    .eq("guest_no", trimmed)
-    .maybeSingle();
+    .eq("guest_no", trimmed);
+  if (propertyId) query = query.eq("property_id", propertyId);
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw new Error(error.message);
   return data ? toCamel<Guest>(data) : null;

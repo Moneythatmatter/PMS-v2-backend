@@ -996,11 +996,13 @@ export const ReservationService = {
   },
 
   async listInHouse(): Promise<InHouseGuest[]> {
-    const { data, error } = await supabase
+    const propertyId = getActivePropertyId();
+    let query = supabase
       .from(foModel.tables.reservations)
       .select("*")
-      .in("status", [ReservationStatus.CHECKED_IN, ReservationStatus.IN_HOUSE])
-      .order("check_out", { ascending: true });
+      .in("status", [ReservationStatus.CHECKED_IN, ReservationStatus.IN_HOUSE]);
+    if (propertyId) query = query.eq("property_id", propertyId);
+    const { data, error } = await query.order("check_out", { ascending: true });
 
     if (error) throw new DatabaseError(error.message);
 

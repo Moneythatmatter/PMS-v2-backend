@@ -1,4 +1,5 @@
 import { supabase } from "../../utils/supabase.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
 import { foModel } from "../../models/front-office/index.js";
 import { toCamel } from "../../utils/mappers.js";
 import type { Reservation } from "../../types/front-office.js";
@@ -16,11 +17,13 @@ export async function getReservationByKey(
   );
   if (byId) return byId;
 
-  const { data, error } = await supabase
+  const propertyId = getActivePropertyId();
+  let query = supabase
     .from(foModel.tables.reservations)
     .select("*")
-    .eq("booking_no", trimmed)
-    .maybeSingle();
+    .eq("booking_no", trimmed);
+  if (propertyId) query = query.eq("property_id", propertyId);
+  const { data, error } = await query.maybeSingle();
 
   if (error) throw new Error(error.message);
   return data ? toCamel<Reservation>(data) : null;
