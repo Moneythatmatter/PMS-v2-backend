@@ -75,6 +75,70 @@ function assertStayNotInPast(checkIn: unknown, checkOut: unknown): void {
   }
 }
 
+const INACTIVE_STAY_STATUSES = new Set<string>([
+  ReservationStatus.CANCELLED,
+  ReservationStatus.CHECKED_OUT,
+  ReservationStatus.NO_SHOW,
+]);
+
+function isInHouseStatus(status: unknown): boolean {
+  return status === ReservationStatus.CHECKED_IN || status === ReservationStatus.IN_HOUSE;
+}
+
+function describeStay(row: Reservation): string {
+  const ref = String((row as { bookingNo?: string }).bookingNo ?? row.id);
+  const room = displayRoomNo(row);
+  return `${ref}${room && isRealRoomRef(room) ? ` (Room ${room})` : ""}`;
+}
+
+/** One guest cannot hold two live individual stays over the same nights. */
+async function assertGuestHasNoOverlappingStay(
+  guestId: string,
+  checkIn: unknown,
+  checkOut: unknown,
+  excludeId?: string,
+): Promise<void> {
+  const nextDay = (iso: string) => new Date(Date.parse(`${iso}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  const stayEnd = (inIso: string, out: unknown) => {
+    const outIso = toIsoDate(out);
+    return outIso > inIso ? outIso : nextDay(inIso);
+  };
+  const inIso = toIsoDate(checkIn);
+  if (!guestId || !inIso) return;
+  const outIso = stayEnd(inIso, checkOut);
+  const rows = await foModel.list<Reservation>(foModel.tables.reservations, {
+    filters: { guest_id: guestId },
+  });
+  const clashes = rows.filter((r) => {
+    if (r.id === excludeId || r.groupId || INACTIVE_STAY_STATUSES.has(String(r.status))) return false;
+    const rIn = toIsoDate(r.checkIn);
+    return Boolean(rIn) && rIn < outIso && inIso < stayEnd(rIn, r.checkOut);
+  });
+  if (!clashes.length) return;
+  const [clash] = await enrichReservations(clashes);
+  throw new ConflictError(
+    isInHouseStatus(clash.status)
+      ? `This guest is already checked in on ${describeStay(clash)} for these dates.`
+      : `This guest already has reservation ${describeStay(clash)} for these dates.`,
+  );
+}
+
+/** The stay is already committed when this runs, so a failed guest link must not report the check-in as failed. */
+async function syncGuestsAfterCheckIn(
+  reservationId: string,
+  primaryGuestId: string | null,
+  companionGuestIds: string[],
+): Promise<void> {
+  try {
+    await ReservationService.syncReservationGuests(reservationId, primaryGuestId, companionGuestIds);
+  } catch (e) {
+    console.warn(
+      `[check-in] reservation ${reservationId} checked in, but linking guests failed:`,
+      e instanceof Error ? e.message : e,
+    );
+  }
+}
+
 function nightsBetween(fromIso: string, toIso: string): number {
   const ms = Date.parse(`${toIso}T00:00:00Z`) - Date.parse(`${fromIso}T00:00:00Z`);
   return Math.max(1, Math.round(ms / 86_400_000));
@@ -236,6 +300,9 @@ export const ReservationService = {
       throw new AppError("Payment method is required when advance amount is collected");
     }
     assertStayNotInPast(input.checkIn, input.checkOut);
+    if (!groupId) {
+      await assertGuestHasNoOverlappingStay(guestIdRaw, input.checkIn, input.checkOut);
+    }
 
     const body = sanitizeReservationInput(input) as Record<string, unknown>;
     delete body.externalReference;
@@ -306,6 +373,18 @@ export const ReservationService = {
     const nextCheckIn = toIsoDate(input.checkIn);
     if (nextCheckIn && nextCheckIn !== toIsoDate(existing.checkIn)) {
       assertStayNotInPast(input.checkIn, input.checkOut ?? existing.checkOut);
+    }
+    const stayChanged =
+      (input.checkIn !== undefined && toIsoDate(input.checkIn) !== toIsoDate(existing.checkIn)) ||
+      (input.checkOut !== undefined && toIsoDate(input.checkOut) !== toIsoDate(existing.checkOut)) ||
+      (input.guestId !== undefined && String(input.guestId ?? "") !== String(existing.guestId ?? ""));
+    if (stayChanged && !existing.groupId && !INACTIVE_STAY_STATUSES.has(String(existing.status))) {
+      await assertGuestHasNoOverlappingStay(
+        String(input.guestId ?? existing.guestId ?? ""),
+        input.checkIn ?? existing.checkIn,
+        input.checkOut ?? existing.checkOut,
+        existing.id,
+      );
     }
     const body = sanitizeReservationInput(input);
     delete body.id;
@@ -386,7 +465,31 @@ export const ReservationService = {
       existing.status === ReservationStatus.CHECKED_IN ||
       existing.status === ReservationStatus.IN_HOUSE
     ) {
-      throw new ConflictError("Guest is already checked in");
+      // A retry after a partial failure: finish the remaining steps instead of failing again.
+      const requestedRoom = resolveRoomRef(checkInExtras);
+      const currentRoom = resolveRoomRef(existing);
+      const currentRefs = [existing.roomRefId, existing.roomNo].map((v) => String(v ?? "").trim());
+      if (requestedRoom && isRealRoomRef(requestedRoom) && currentRoom && !currentRefs.includes(requestedRoom)) {
+        throw new ConflictError(
+          `Guest is already checked in to Room ${displayRoomNo(existing) || currentRoom}. Use Room Transfer to move them.`,
+        );
+      }
+      const guestId = String(checkInExtras.guestId ?? existing.guestId ?? "").trim();
+      if (guestId || companionGuestIds.length) {
+        await syncGuestsAfterCheckIn(reservationId, guestId || null, companionGuestIds);
+      }
+      return existing;
+    }
+    const stayGuestId = String(checkInExtras.guestId ?? existing.guestId ?? "");
+    if (stayGuestId && !existing.groupId) {
+      const others = await foModel.list<Reservation>(foModel.tables.reservations, {
+        filters: { guest_id: stayGuestId },
+      });
+      const inHouse = others.find((r) => r.id !== reservationId && isInHouseStatus(r.status));
+      if (inHouse) {
+        const [stay] = await enrichReservations([inHouse]);
+        throw new ConflictError(`This guest is already checked in on ${describeStay(stay)}.`);
+      }
     }
 
     const assignedRoom = resolveRoomRef(checkInExtras);
@@ -459,11 +562,7 @@ export const ReservationService = {
 
       const primaryGuestId = String(row.guestId ?? checkInExtras.guestId ?? "").trim();
       if (primaryGuestId || companionGuestIds.length) {
-        await this.syncReservationGuests(
-          reservationId,
-          primaryGuestId || null,
-          companionGuestIds,
-        );
+          await syncGuestsAfterCheckIn(reservationId, primaryGuestId || null, companionGuestIds);
       }
 
       return row;
@@ -487,11 +586,7 @@ export const ReservationService = {
       fallback.guestId ?? checkInExtras.guestId ?? "",
     ).trim();
     if (primaryGuestId || companionGuestIds.length) {
-      await this.syncReservationGuests(
-        reservationId,
-        primaryGuestId || null,
-        companionGuestIds,
-      );
+      await syncGuestsAfterCheckIn(reservationId, primaryGuestId || null, companionGuestIds);
     }
     return fallback;
   },

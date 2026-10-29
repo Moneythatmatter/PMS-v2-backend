@@ -1,5 +1,6 @@
 import { ReservationStatus } from "../../constants/front-office.js";
 import { AppError, NotFoundError } from "../../errors/index.js";
+import { supabase } from "../../utils/supabase.js";
 import { fbModel } from "../../models/food-beverages/index.js";
 import { foModel } from "../../models/front-office/index.js";
 import { hkModel } from "../../models/housekeeping/index.js";
@@ -92,6 +93,74 @@ function guestRequestStatusLabel(status: string) {
   }
 }
 
+const LAUNDRY_SERVICES = ["Wash & Iron", "Dry Clean", "Iron Only"];
+const CLEANING_PREFIX = "Room cleaning requested via guest QR · Preferred: ";
+const LAUNDRY_PREFIX = "Laundry pickup requested via guest QR · Service: ";
+
+function cleaningDescription(input: { preferredTime?: string; notes?: string }) {
+  const preferred = cleanText(input.preferredTime) || "As soon as possible";
+  const notes = cleanText(input.notes);
+  return {
+    description: `${CLEANING_PREFIX}${preferred}${notes ? ` · ${notes}` : ""}`,
+    priority: "MEDIUM",
+  };
+}
+
+function laundryDescription(input: { serviceType?: string; urgency?: string; notes?: string }) {
+  const serviceType = LAUNDRY_SERVICES.includes(String(input.serviceType)) ? String(input.serviceType) : "Wash & Iron";
+  const urgency = String(input.urgency) === "Express" ? "Express" : "Normal";
+  const notes = cleanText(input.notes);
+  return {
+    description: `${LAUNDRY_PREFIX}${serviceType} · Turnaround: ${urgency}${notes ? ` · ${notes}` : ""}`,
+    priority: urgency === "Express" ? "HIGH" : "MEDIUM",
+  };
+}
+
+/** Read the guest's choices back out of a description written by the builders above. */
+function parseCleaning(description: string) {
+  const m = description.startsWith(CLEANING_PREFIX)
+    ? /^(.+?)(?: · ([\s\S]*))?$/.exec(description.slice(CLEANING_PREFIX.length))
+    : null;
+  return { preferredTime: m?.[1] ?? "As soon as possible", notes: m?.[2] ?? "" };
+}
+
+function parseLaundry(description: string) {
+  const m = description.startsWith(LAUNDRY_PREFIX)
+    ? /^(.+?) · Turnaround: (Normal|Express)(?: · ([\s\S]*))?$/.exec(description.slice(LAUNDRY_PREFIX.length))
+    : null;
+  return { serviceType: m?.[1] ?? "Wash & Iron", urgency: m?.[2] ?? "Normal", notes: m?.[3] ?? "" };
+}
+
+async function updatePendingHkRequest(
+  ctx: RoomContext,
+  bookingId: string,
+  requestId: string,
+  requestType: "CLEANING" | "LAUNDRY",
+  patch: { description: string; priority: string },
+) {
+  const existing = await hkModel.get<Row>(hkModel.tables.guestRequests, requestId);
+  if (
+    !existing ||
+    String(existing.roomId ?? "") !== ctx.roomId ||
+    String(existing.bookingId ?? "") !== bookingId ||
+    String(existing.requestType ?? "") !== requestType
+  ) {
+    throw new NotFoundError("Request not found");
+  }
+  const locked = new AppError("Housekeeping has already picked up this request, so it can no longer be changed.", 409);
+  if (String(existing.status) !== "PENDING") throw locked;
+  const { data, error } = await supabase
+    .from(hkModel.tables.guestRequests)
+    .update({ description: patch.description, priority: patch.priority, updated_at: new Date().toISOString() })
+    .eq("id", requestId)
+    .eq("status", "PENDING")
+    .select("id, request_number")
+    .maybeSingle();
+  if (error) throw new AppError(error.message, 500);
+  if (!data) throw locked;
+  return { requestId: String(data.id), requestNumber: String(data.request_number ?? "") };
+}
+
 function firstName(name: string | undefined | null): string {
   return String(name ?? "").trim().split(/\s+/)[0] ?? "";
 }
@@ -162,6 +231,14 @@ export const GuestPortalService = {
                     ? `Declined${r.rejectReason ? ` · ${r.rejectReason}` : ""}`
                     : r.status,
             at: r.createdAt,
+            editable: r.status === "Pending",
+            edit:
+              r.status === "Pending"
+                ? {
+                    lines: r.lines.map((l) => ({ menuItemId: l.menuItemId, qty: l.qty })),
+                    instructions: r.instructions ?? "",
+                  }
+                : undefined,
           })),
           ...orders
             .filter((o) => !requestOrderIds.has(String(o.id)))
@@ -171,6 +248,7 @@ export const GuestPortalService = {
               label: `Food order ${o.orderNo ?? ""}`.trim(),
               status: String(o.status ?? "Pending"),
               at: String(o.createdAt ?? ""),
+              editable: false,
             })),
           ...requests
             .filter((r) => {
@@ -186,6 +264,13 @@ export const GuestPortalService = {
               label: `${String(r.requestType) === "LAUNDRY" ? "Laundry pickup" : "Room cleaning"} ${r.requestNumber ?? ""}`.trim(),
               status: guestRequestStatusLabel(String(r.status ?? "PENDING")),
               at: String(r.requestedAt ?? r.createdAt ?? ""),
+              editable: String(r.status ?? "PENDING") === "PENDING",
+              edit:
+                String(r.status ?? "PENDING") === "PENDING"
+                  ? String(r.requestType) === "LAUNDRY"
+                    ? parseLaundry(String(r.description ?? ""))
+                    : parseCleaning(String(r.description ?? ""))
+                  : undefined,
             })),
           ...laundry.map((j) => ({
             kind: "laundry" as const,
@@ -193,6 +278,7 @@ export const GuestPortalService = {
             label: "Laundry pickup",
             status: String(j.status ?? "Collection"),
             at: String(j.createdAt ?? ""),
+            editable: false,
           })),
         ]
           .sort((a, b) => b.at.localeCompare(a.at))
@@ -233,14 +319,11 @@ export const GuestPortalService = {
   async requestCleaning(roomId: string, token: string, input: { preferredTime?: string; notes?: string }) {
     return withRoom(roomId, token, async (ctx) => {
       const stay = await requireInHouse(ctx.roomId);
-      const preferred = cleanText(input.preferredTime) || "As soon as possible";
-      const notes = cleanText(input.notes);
       const request = await GuestRequestService.create({
         roomId: ctx.roomId,
         bookingId: stay.id,
         requestType: "CLEANING",
-        priority: "MEDIUM",
-        description: `Room cleaning requested via guest QR · Preferred: ${preferred}${notes ? ` · ${notes}` : ""}`,
+        ...cleaningDescription(input),
         createdBy: "Guest Portal",
       });
       return { requestId: String(request.id), requestNumber: String(request.requestNumber ?? "") };
@@ -254,20 +337,45 @@ export const GuestPortalService = {
   ) {
     return withRoom(roomId, token, async (ctx) => {
       const stay = await requireInHouse(ctx.roomId);
-      const serviceType = ["Wash & Iron", "Dry Clean", "Iron Only"].includes(String(input.serviceType))
-        ? String(input.serviceType)
-        : "Wash & Iron";
-      const urgency = String(input.urgency) === "Express" ? "Express" : "Normal";
-      const notes = cleanText(input.notes);
       const request = await GuestRequestService.create({
         roomId: ctx.roomId,
         bookingId: stay.id,
         requestType: "LAUNDRY",
-        priority: urgency === "Express" ? "HIGH" : "MEDIUM",
-        description: `Laundry pickup requested via guest QR · Service: ${serviceType} · Turnaround: ${urgency}${notes ? ` · ${notes}` : ""}`,
+        ...laundryDescription(input),
         createdBy: "Guest Portal",
       });
       return { requestId: String(request.id), requestNumber: String(request.requestNumber ?? "") };
+    });
+  },
+
+  async updateFoodOrder(
+    roomId: string,
+    token: string,
+    requestId: string,
+    input: { lines?: { menuItemId?: string; qty?: number }[]; instructions?: string },
+  ) {
+    return withRoom(roomId, token, async (ctx) => {
+      const stay = await requireInHouse(ctx.roomId);
+      return GuestOrderRequestService.updateRoom(requestId, { roomId: ctx.roomId, reservationId: stay.id }, input);
+    });
+  },
+
+  async updateCleaning(roomId: string, token: string, requestId: string, input: { preferredTime?: string; notes?: string }) {
+    return withRoom(roomId, token, async (ctx) => {
+      const stay = await requireInHouse(ctx.roomId);
+      return updatePendingHkRequest(ctx, stay.id, requestId, "CLEANING", cleaningDescription(input));
+    });
+  },
+
+  async updateLaundry(
+    roomId: string,
+    token: string,
+    requestId: string,
+    input: { serviceType?: string; urgency?: string; notes?: string },
+  ) {
+    return withRoom(roomId, token, async (ctx) => {
+      const stay = await requireInHouse(ctx.roomId);
+      return updatePendingHkRequest(ctx, stay.id, requestId, "LAUNDRY", laundryDescription(input));
     });
   },
 };

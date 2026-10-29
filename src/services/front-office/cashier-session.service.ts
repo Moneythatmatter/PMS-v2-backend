@@ -102,6 +102,30 @@ async function audit(
   });
 }
 
+async function userNames(ids: unknown[]): Promise<Map<string, { name: string; email: string | null }>> {
+  const map = new Map<string, { name: string; email: string | null }>();
+  const unique = [...new Set(ids.filter((id): id is string => typeof id === "string" && id.length > 0))];
+  if (!unique.length) return map;
+  const { data, error } = await supabase.from("users").select("id, name, email").in("id", unique);
+  if (error) return map;
+  for (const row of (data ?? []) as { id: string; name: string | null; email: string | null }[]) {
+    map.set(row.id, { name: row.name || row.email || "Unknown user", email: row.email });
+  }
+  return map;
+}
+
+async function withUserNames<T extends Record<string, unknown>>(rows: T[]) {
+  const names = await userNames(rows.flatMap((r) => [r.cashierId, r.closedBy, r.approvedBy]));
+  const nameOf = (id: unknown) => (typeof id === "string" ? names.get(id)?.name ?? null : null);
+  return rows.map((r) => ({
+    ...r,
+    cashierName: nameOf(r.cashierId),
+    cashierEmail: typeof r.cashierId === "string" ? names.get(r.cashierId)?.email ?? null : null,
+    closedByName: nameOf(r.closedBy),
+    approvedByName: nameOf(r.approvedBy),
+  }));
+}
+
 async function loadSession(id: string) {
   const row = await foModel.get<SessionRow>(foModel.tables.cashierSessions, id);
   if (!row) throw new AppError("Cashier session not found", 404);

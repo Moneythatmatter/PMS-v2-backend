@@ -232,6 +232,35 @@ export const GuestOrderRequestService = {
     });
   },
 
+  /** Guest edits their own room order while staff have not reviewed it yet. */
+  async updateRoom(
+    id: string,
+    owner: { roomId: string; reservationId: string },
+    input: { lines?: unknown; instructions?: string },
+  ) {
+    const existing = await getRequest(id);
+    if (
+      existing.source !== "Room" ||
+      existing.roomId !== owner.roomId ||
+      existing.reservationId !== owner.reservationId
+    ) {
+      throw new NotFoundError("Order request not found");
+    }
+    if (existing.status !== "Pending") {
+      throw new AppError("This order has already been reviewed by our staff and can no longer be changed.", 409);
+    }
+    const lines = await priceGuestLines(input.lines);
+    const updated = await transitionFromPending(id, {
+      lines,
+      instructions: cleanText(input.instructions) || null,
+      subtotal: lineTotal(lines),
+    });
+    if (!updated) {
+      throw new AppError("This order has already been reviewed by our staff and can no longer be changed.", 409);
+    }
+    return { id: updated.id, requestNo: updated.requestNo, subtotal: Number(updated.subtotal) };
+  },
+
   async listForReservation(reservationId: string) {
     const { data, error } = await supabase
       .from(TABLE)

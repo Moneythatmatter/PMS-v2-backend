@@ -10,6 +10,9 @@ router.get("/rooms/:roomId/menu", portal.getMenu);
 router.post("/rooms/:roomId/food-orders", portal.postFoodOrder);
 router.post("/rooms/:roomId/cleaning", portal.postCleaning);
 router.post("/rooms/:roomId/laundry", portal.postLaundry);
+router.put("/rooms/:roomId/food-orders/:requestId", portal.putFoodOrder);
+router.put("/rooms/:roomId/cleaning/:requestId", portal.putCleaning);
+router.put("/rooms/:roomId/laundry/:requestId", portal.putLaundry);
 
 router.get("/tables/:tableId", tablePortal.getTableContext);
 router.get("/tables/:tableId/menu", tablePortal.getTableMenu);

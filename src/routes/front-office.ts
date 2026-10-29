@@ -35,6 +35,7 @@ import {
 } from "../services/front-office/guest-lookup.js";
 import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 import * as cashierSessions from "../controllers/front-office/cashier-sessions.js";
+import * as dayClosing from "../controllers/front-office/day-closing.js";
 import * as guestPortal from "../controllers/front-office/guest-portal.js";
 import { getRequestStore } from "../utils/request-context.js";
 
@@ -317,14 +318,10 @@ mountCrud(
     idPrefix: "RCP",
   }),
 );
-mountCrud(
-  router,
-  "/day-closing",
-  createCrudController({
-    table: foModel.tables.dayClosings,
-    idPrefix: "DC",
-  }),
-);
+router.get("/day-closing/status", dayClosing.getStatus);
+router.get("/day-closing/history", dayClosing.listHistory);
+router.post("/day-closing/run", dayClosing.runClosing);
+router.get("/day-closing", dayClosing.listHistory);
 
 // Reports
 router.get("/reports/:type", getReport);

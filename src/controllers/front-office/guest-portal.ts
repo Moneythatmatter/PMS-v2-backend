@@ -51,6 +51,33 @@ export async function postLaundry(req: Request, res: Response) {
   }
 }
 
+export async function putFoodOrder(req: Request, res: Response) {
+  try {
+    const { roomId, token } = roomParams(req);
+    return ok(res, await GuestPortalService.updateFoodOrder(roomId, token, String(req.params.requestId), req.body ?? {}));
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function putCleaning(req: Request, res: Response) {
+  try {
+    const { roomId, token } = roomParams(req);
+    return ok(res, await GuestPortalService.updateCleaning(roomId, token, String(req.params.requestId), req.body ?? {}));
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function putLaundry(req: Request, res: Response) {
+  try {
+    const { roomId, token } = roomParams(req);
+    return ok(res, await GuestPortalService.updateLaundry(roomId, token, String(req.params.requestId), req.body ?? {}));
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
 export async function listQrTokens(_req: Request, res: Response) {
   try {
     return ok(res, await GuestPortalService.qrTokens());
