@@ -15,6 +15,8 @@ import type {
 } from "../../types/front-office.js";
 import { AppError, NotFoundError } from "../../errors/index.js";
 import { enrichReservations } from "./reservation-enrich.js";
+import { ReservationService } from "./reservation.service.js";
+import { resolveRoomId } from "./room-resolver.js";
 import { FolioService } from "../shared/folio.service.js";
 import { TransactionService } from "../shared/transaction.service.js";
 import type { FolioListItem } from "../shared/folio.service.js";
@@ -27,6 +29,8 @@ export type CreateGroupRoomLine = {
   mealPlan?: string | null;
   adults?: number;
   children?: number;
+  /** Optional pre-assigned room; unassigned rooms are picked at check-in. */
+  roomNo?: string | null;
 };
 
 export type CreateGroupBillingRule = {
@@ -82,6 +86,46 @@ function nightsBetween(arrival: string, departure: string): number {
   const b = Date.parse(departure);
   if (!Number.isFinite(a) || !Number.isFinite(b) || b <= a) return 1;
   return Math.max(1, Math.round((b - a) / 86_400_000));
+}
+
+const INACTIVE_RESERVATION_STATUSES = ["Cancelled", "Checked Out", "No Show"];
+
+/** Resolve each pre-assigned room and make sure it is free for the stay before anything is created. */
+async function resolveAssignedRooms(
+  roomLines: CreateGroupRoomLine[],
+  arrivalDate: string,
+  departureDate: string,
+): Promise<(string | null)[]> {
+  const seen = new Set<string>();
+  const resolved: (string | null)[] = [];
+  for (const line of roomLines) {
+    const roomNo = String(line.roomNo ?? "").trim();
+    if (!roomNo) {
+      resolved.push(null);
+      continue;
+    }
+    if (Math.max(1, Number(line.quantity ?? 1)) > 1) {
+      throw new AppError(`Room ${roomNo} can only be assigned to a single-room line`);
+    }
+    const roomId = await resolveRoomId(roomNo);
+    if (!roomId) throw new AppError(`Room ${roomNo} was not found for this property`);
+    if (seen.has(roomId)) throw new AppError(`Room ${roomNo} is selected on more than one line`);
+    seen.add(roomId);
+
+    const { data, error } = await supabase
+      .from(foModel.tables.reservations)
+      .select("id, status, check_in, check_out")
+      .eq("room_ref_id", roomId)
+      .lt("check_in", departureDate)
+      .gt("check_out", arrivalDate);
+    if (error) throw new Error(error.message);
+    const clash = (data ?? []).find(
+      (r) => !INACTIVE_RESERVATION_STATUSES.includes(String(r.status)),
+    );
+    if (clash) throw new AppError(`Room ${roomNo} is already booked for these dates`, 409);
+    resolved.push(roomId);
+  }
+  return resolved;
 }
 
 function defaultBillingRules(): CreateGroupBillingRule[] {
@@ -266,6 +310,8 @@ export const GroupService = {
     const idempotencyKey =
       String(input.idempotencyKey ?? "").trim() || randomUUID();
 
+    const assignedRooms = await resolveAssignedRooms(roomLines, arrivalDate, departureDate);
+
     const billingRules =
       input.billingRules && input.billingRules.length > 0
         ? input.billingRules
@@ -328,6 +374,17 @@ export const GroupService = {
         .update({ property_id: propertyId })
         .in("booking_id", reservationIds)
         .is("property_id", null);
+    }
+
+    if (!payload.idempotent) {
+      // fo_create_group creates reservations in room-line order, one per line here.
+      const singleRoomLines = roomLines.every((l) => Math.max(1, Number(l.quantity ?? 1)) === 1);
+      if (singleRoomLines && reservationIds.length === roomLines.length) {
+        for (let i = 0; i < roomLines.length; i++) {
+          const roomId = assignedRooms[i];
+          if (roomId) await ReservationService.update(reservationIds[i], { roomRefId: roomId });
+        }
+      }
     }
 
     const advancePaid = Number(input.advancePaid ?? 0);

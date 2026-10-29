@@ -20,6 +20,7 @@ export const groupRoomLineSchema = z.object({
   mealPlan: z.string().optional().nullable(),
   adults: z.coerce.number().int().min(0).optional(),
   children: z.coerce.number().int().min(0).optional(),
+  roomNo: z.string().optional().nullable(),
 });
 
 export const groupBillingRuleSchema = z.object({
