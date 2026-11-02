@@ -229,7 +229,12 @@ export const FbCashierSessionService = {
       const propertyId = getActivePropertyId();
       const cashierId = transaction.receivedBy || getRequestStore()?.userId;
       if (!propertyId || !cashierId) return;
-      const open = await findSessions({ property_id: propertyId, outlet_id: outletId, cashier_id: cashierId, status: "Open" }, 1);
+      let open = await findSessions({ property_id: propertyId, outlet_id: outletId, cashier_id: cashierId, status: "Open" }, 1);
+      if (!open[0]) {
+        // e.g. room service billed under another outlet: the money is in this cashier's own drawer
+        const mine = await findSessions({ property_id: propertyId, cashier_id: cashierId, status: "Open" }, 2);
+        if (mine.length === 1) open = mine;
+      }
       if (!open[0]) return;
       await supabase
         .from("transactions")
@@ -241,7 +246,10 @@ export const FbCashierSessionService = {
     }
   },
 
-  /** Pick up F&B payments at this outlet taken by this cashier since the shift opened. */
+  /**
+   * Pick up F&B payments taken by this cashier since the shift opened: those at this outlet, plus
+   * their payments at other outlets (e.g. room service) when this is their only open shift.
+   */
   async claimUnassigned(session: SessionRow) {
     const { data, error } = await supabase
       .from("transactions")
@@ -255,7 +263,13 @@ export const FbCashierSessionService = {
     const rows = ((data ?? []) as Row[]).filter((r) => !r.received_by || String(r.received_by) === session.cashierId);
     if (!rows.length) return;
     const outlets = await outletBySourceId(rows.map((r) => String(r.source_id ?? "")));
-    const ids = rows.filter((r) => outlets.get(String(r.source_id ?? "")) === session.outletId).map((r) => String(r.id));
+    const onlyShift = (await findSessions({ property_id: session.propertyId, cashier_id: session.cashierId, status: "Open" }, 2)).length === 1;
+    const ids = rows
+      .filter((r) => {
+        if (outlets.get(String(r.source_id ?? "")) === session.outletId) return true;
+        return onlyShift && String(r.received_by ?? "") === session.cashierId;
+      })
+      .map((r) => String(r.id));
     if (!ids.length) return;
     await supabase.from("transactions").update({ [SESSION_COLUMN]: session.id }).in("id", ids).is(SESSION_COLUMN, null);
   },
