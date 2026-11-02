@@ -24,6 +24,7 @@ import { generatePeriodsForYear } from "./fiscal.service.js";
 import { BILLING_POINTS, BILLING_POINT_CODES } from "./tax-resolver.js";
 import { assertCompanyPartyType, syncCompaniesFromParty } from "../shared/company-party.service.js";
 import { assertSupplierPartyType, syncSuppliersFromParty } from "../shared/vendor-party.service.js";
+import { listFbOutlets, OUTLET_RULE_POINTS } from "./outlet-posting-rules.js";
 
 type MasterConfig = {
   key: string;
@@ -939,6 +940,69 @@ const closingStock: MasterConfig = {
   },
 };
 
+const OUTLET_RULE_POINT_LABEL = new Map<string, string>(BILLING_POINTS.map((p) => [p.code, p.label]));
+
+async function assertPostingLedger(id: unknown, label: string) {
+  if (!id) return;
+  const acc = await getById(accTables.accounts, String(id));
+  if (!acc) throw new ValidationError(`${label}: select a valid ledger`);
+  if (acc.accountType !== "Ledger" || !acc.allowPosting) throw new ValidationError(`${label}: ${acc.name} is a group — select a ledger`);
+  if (acc.status !== "Active") throw new ValidationError(`${label}: ${acc.name} is inactive`);
+}
+
+const outletPostingRules: MasterConfig = {
+  key: "outletPostingRules",
+  table: accTables.outletPostingRules,
+  label: "Outlet posting rule",
+  columns: ["outletId", "billingPoint", "divisionId", "incomeAccountId", "cashAccountId", "remarks", "status"],
+  required: ["outletId"],
+  order: [{ column: "outlet_id" }, { column: "billing_point" }],
+  filterable: ["outletId", "status"],
+  defaults: { status: "Active" },
+  validate: async (p, existing) => {
+    assertStatus(p);
+    if (p.billingPoint === "" || p.billingPoint === "ALL") p.billingPoint = null;
+    if (p.billingPoint != null && !(OUTLET_RULE_POINTS as readonly string[]).includes(p.billingPoint)) {
+      throw new ValidationError("Billing point must be all F&B bills, restaurant bills or room service");
+    }
+    const merged = { ...(existing ?? {}), ...p };
+    if (!merged.divisionId && !merged.incomeAccountId && !merged.cashAccountId) {
+      throw new ValidationError("Set a division, an income ledger or a cash ledger");
+    }
+    if (p.outletId !== undefined) {
+      const outlets = await listFbOutlets();
+      if (!outlets.some((o) => String(o.id) === p.outletId)) throw new ValidationError("Select a valid F&B outlet");
+    }
+    if (p.divisionId) {
+      const div = await getById(accTables.divisions, String(p.divisionId));
+      if (!div) throw new ValidationError("Select a valid division");
+      if (div.status !== "Active") throw new ValidationError(`Division ${div.divisionName} is inactive`);
+    }
+    await assertPostingLedger(p.incomeAccountId, "Income ledger");
+    await assertPostingLedger(p.cashAccountId, "Cash ledger");
+  },
+  enrich: async (rows) => {
+    const [outlets, divs, accs] = await Promise.all([
+      listFbOutlets().catch(() => [] as Row[]),
+      nameMap(accTables.divisions, "division_name", "division_code"),
+      nameMap(accTables.accounts, "name", "code"),
+    ]);
+    const outletById = new Map(outlets.map((o) => [String(o.id), o]));
+    const acc = (id: unknown) => (id ? accs.get(String(id)) : undefined);
+    return rows.map((r) => ({
+      ...r,
+      outletName: outletById.get(r.outletId)?.name ?? "Deleted outlet",
+      outletType: outletById.get(r.outletId)?.type ?? null,
+      billingPointLabel: r.billingPoint ? OUTLET_RULE_POINT_LABEL.get(r.billingPoint) ?? r.billingPoint : "All F&B bills",
+      divisionName: r.divisionId ? divs.get(r.divisionId)?.divisionName ?? null : null,
+      incomeAccountName: acc(r.incomeAccountId)?.name ?? null,
+      incomeAccountCode: acc(r.incomeAccountId)?.code ?? null,
+      cashAccountName: acc(r.cashAccountId)?.name ?? null,
+      cashAccountCode: acc(r.cashAccountId)?.code ?? null,
+    }));
+  },
+};
+
 export const masters: Record<string, MasterConfig> = {
   currencies,
   companies,
@@ -955,6 +1019,7 @@ export const masters: Record<string, MasterConfig> = {
   budgets,
   fiscalYears,
   closingStock,
+  outletPostingRules,
 };
 
 // ---------------------------------------------------------------------------

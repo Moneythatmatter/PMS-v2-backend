@@ -123,6 +123,66 @@ test("voided after posting and collected again go through the Guest Ledger", () 
   assert.ok(balanced(b));
 });
 
+const outletLedgers: FbLedgers = {
+  ...ledgers,
+  incomeFor: (point, date, outletId) => {
+    const base = ledgers.incomeFor(point, date);
+    if ("issue" in base) return base;
+    if (outletId === "bar") return { accountId: "bar-revenue", divisionId: "div-bar" };
+    if (outletId === "rest") return { ...base, divisionId: "div-rest" };
+    return base;
+  },
+  paymentAccountFor: (mode, outletId) =>
+    mode === "CASH" && outletId === "bar" ? { accountId: "bar-cash" } : ledgers.paymentAccountFor(mode),
+  outletDivision: (outletId) => (outletId === "bar" ? "div-bar" : outletId === "rest" ? "div-rest" : null),
+  outletName: (id) => ({ bar: "Lounge Bar", rest: "Restaurant", cafe: "Cafe" })[id] ?? id,
+};
+
+test("each outlet keeps its own division, lines and totals", () => {
+  const b = buildFbPosting({
+    bills: [
+      bill("r1", 1000, 50, [pay("p20", 1050, "CASH")], { outletId: "rest" }),
+      bill("b1", 400, 20, [pay("p21", 420, "CASH")], { outletId: "bar" }),
+      bill("b2", 100, 5, [pay("p22", 105, "UPI")], { outletId: "bar" }),
+    ],
+    latePayments: [],
+    voids: [],
+    ledgers: outletLedgers,
+  });
+  assert.deepEqual(b.issues, []);
+  assert.deepEqual(b.warnings, []);
+  assert.equal(line(b, "restaurant-revenue", "Cr"), 1000);
+  assert.equal(line(b, "bar-revenue", "Cr"), 500);
+  assert.equal(line(b, "cash", "Dr"), 1050);
+  assert.equal(line(b, "bar-cash", "Dr"), 420);
+  const barLines = b.lines.filter((l) => l.divisionId === "div-bar");
+  assert.ok(barLines.every((l) => l.narration.endsWith("— Lounge Bar")));
+  assert.equal(
+    barLines.filter((l) => l.entryType === "Cr").reduce((s, l) => s + l.amount, 0),
+    525,
+  );
+  const bar = b.byOutlet.find((o) => o.outletId === "bar");
+  assert.equal(bar?.bills, 2);
+  assert.equal(bar?.sales, 500);
+  assert.equal(bar?.collections, 525);
+  assert.equal(b.byOutlet.find((o) => o.outletId === "rest")?.divisionId, "div-rest");
+  assert.ok(balanced(b));
+});
+
+test("outlet without a division posts but warns", () => {
+  const b = buildFbPosting({
+    bills: [bill("c1", 200, 10, [pay("p23", 210)], { outletId: "cafe" })],
+    latePayments: [],
+    voids: [pay("p24", 50, "CASH", true)].map((p) => ({ ...p, outletId: "bar" })),
+    ledgers: outletLedgers,
+  });
+  assert.deepEqual(b.issues, []);
+  assert.ok(b.warnings.some((w) => w.includes("Cafe")));
+  assert.equal(line(b, "bar-cash", "Cr"), 50);
+  assert.equal(b.byOutlet.find((o) => o.outletId === "bar")?.voided, 50);
+  assert.ok(balanced(b));
+});
+
 test("paid in excess: difference goes to the Guest Ledger", () => {
   const b = buildFbPosting({ bills: [bill("7", 100, 5, [pay("p10", 110)])], latePayments: [], voids: [], ledgers });
   assert.equal(line(b, "guest-ledger", "Cr"), 5);

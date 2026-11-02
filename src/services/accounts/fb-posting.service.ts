@@ -9,13 +9,14 @@ import {
   endOfDay,
   istDate,
   loadLedgers,
-  markPosted,
+  markPostedBatch,
   type FoLedgers,
   type FoPostingLine,
   type FoTaxDetail,
   type MarkTarget,
 } from "./fo-posting.service.js";
 import { FB_SOURCE_MODULE } from "./fo-posting-markers.js";
+import { fnbTransactionOutlets, storedOutlets } from "./outlet-posting-rules.js";
 
 // ---------------------------------------------------------------------------
 // Pure builder: settled POS bills and their payments in, balanced voucher lines out
@@ -27,6 +28,7 @@ export type FbPayment = {
   amount: number;
   /** Posted earlier and voided since: taken back out of the payment ledger. */
   voided?: boolean;
+  outletId?: string | null;
 };
 
 /** A fully paid POS bill (not charged to a room). */
@@ -40,23 +42,37 @@ export type FbBill = {
   total: number;
   businessDate: string;
   payments: FbPayment[];
+  outletId?: string | null;
 };
 
-export type FbLedgers = Pick<FoLedgers, "guestLedgerId" | "incomeFor" | "taxAccountFor" | "paymentAccountFor"> & {
+export type FbLedgers = Pick<
+  FoLedgers,
+  "guestLedgerId" | "incomeFor" | "taxAccountFor" | "paymentAccountFor" | "outletDivision" | "outletName"
+> & {
   /** Split a bill's tax across tax codes using the billing point's rules. */
   taxSplit: (point: BillingPointCode, taxable: number, date: string) => { details: FoTaxDetail[] } | { issue: string };
 };
 
 export type FbPostingTotals = { sales: number; tax: number; discount: number; collections: number; voided: number };
 
+export type FbOutletTotals = FbPostingTotals & {
+  outletId: string | null;
+  outletName: string;
+  divisionId: string | null;
+  bills: number;
+};
+
 export type FbPostingBuild = {
   lines: FoPostingLine[];
   issues: string[];
+  /** Do not block posting (e.g. an outlet with no Accounts division). */
+  warnings: string[];
   billIds: string[];
   /** Payments posted (with their bill, or later on an already-posted bill). */
   paymentIds: string[];
   voidIds: string[];
   totals: FbPostingTotals;
+  byOutlet: FbOutletTotals[];
 };
 
 const POINT_LABEL = new Map<string, string>(BILLING_POINTS.map((p) => [p.code, p.label]));
@@ -71,11 +87,34 @@ export function buildFbPosting(input: {
 }): FbPostingBuild {
   const { ledgers } = input;
   const issues = new Set<string>();
+  const warnings = new Set<string>();
   const groups = new Map<string, FoPostingLine>();
   const totals: FbPostingTotals = { sales: 0, tax: 0, discount: 0, collections: 0, voided: 0 };
   const billIds: string[] = [];
   const paymentIds: string[] = [];
   const voidIds: string[] = [];
+  const outlets = new Map<string, FbOutletTotals>();
+
+  const outletName = (id: string | null | undefined) => (id ? ledgers.outletName?.(id) ?? id : "No outlet");
+  /** " — Lounge Bar" on narrations, so each outlet keeps its own voucher lines. */
+  const at = (id: string | null | undefined) => (id ? ` — ${outletName(id)}` : "");
+  const outletTotals = (id: string | null | undefined, divisionId: string | null) => {
+    const key = id ?? "";
+    let t = outlets.get(key);
+    if (!t) {
+      t = { outletId: id ?? null, outletName: outletName(id), divisionId, bills: 0, sales: 0, tax: 0, discount: 0, collections: 0, voided: 0 };
+      outlets.set(key, t);
+    }
+    if (!t.divisionId && divisionId) t.divisionId = divisionId;
+    return t;
+  };
+  const checkDivision = (id: string | null | undefined, point?: BillingPointCode) => {
+    if (id && ledgers.outletDivision && !ledgers.outletDivision(id, point)) {
+      warnings.add(
+        `${outletName(id)} has no Accounts division — map one on F&B Posting → Outlet posting rules to report it as its own revenue centre`,
+      );
+    }
+  };
 
   const add = (accountId: string, entryType: "Dr" | "Cr", amount: number, narration: string, divisionId: string | null = null) => {
     const amt = round2(amount);
@@ -100,11 +139,13 @@ export function buildFbPosting(input: {
     const total = round2(net + tax);
     if (!(total > 0)) continue;
 
-    const income = ledgers.incomeFor(b.billingPoint, b.businessDate);
+    const income = ledgers.incomeFor(b.billingPoint, b.businessDate, b.outletId);
     if ("issue" in income) {
       issues.add(income.issue);
       continue;
     }
+    const where = at(b.outletId);
+    const division = income.divisionId;
     let details: FoTaxDetail[] = [];
     let shares: number[] = [];
     if (tax > 0) {
@@ -129,7 +170,7 @@ export function buildFbPosting(input: {
       issues.add(`Accounts → Tax Master: ${missingTax.taxCode} has no output tax ledger`);
       continue;
     }
-    const banks = b.payments.map((p) => ({ p, bank: ledgers.paymentAccountFor(p.paymentMethod) }));
+    const banks = b.payments.map((p) => ({ p, bank: ledgers.paymentAccountFor(p.paymentMethod, b.outletId, b.billingPoint) }));
     const badBank = banks.find((x) => "issue" in x.bank);
     if (badBank && "issue" in badBank.bank) {
       issues.add(badBank.bank.issue);
@@ -140,13 +181,20 @@ export function buildFbPosting(input: {
     if (diff !== 0 && !guestLedger()) continue;
 
     for (const { p, bank } of banks) {
-      if ("accountId" in bank) add(bank.accountId, "Dr", p.amount, `F&B collections — ${modeLabel(p.paymentMethod)}`);
+      if ("accountId" in bank) add(bank.accountId, "Dr", p.amount, `F&B collections — ${modeLabel(p.paymentMethod)}${where}`, division);
     }
-    add(income.accountId, "Cr", net, label, income.divisionId);
-    details.forEach((d, i) => add(taxAccounts[i], "Cr", shares[i], `${d.taxCode} on F&B bills`));
-    if (diff > 0) add(ledgers.guestLedgerId, "Cr", diff, "F&B bills paid in excess");
-    if (diff < 0) add(ledgers.guestLedgerId, "Dr", -diff, "F&B bills paid short");
+    add(income.accountId, "Cr", net, `${label}${where}`, division);
+    details.forEach((d, i) => add(taxAccounts[i], "Cr", shares[i], `${d.taxCode} on F&B bills${where}`, division));
+    if (diff > 0) add(ledgers.guestLedgerId, "Cr", diff, `F&B bills paid in excess${where}`, division);
+    if (diff < 0) add(ledgers.guestLedgerId, "Dr", -diff, `F&B bills paid short${where}`, division);
 
+    checkDivision(b.outletId, b.billingPoint);
+    const o = outletTotals(b.outletId, division);
+    o.bills += 1;
+    o.sales = round2(o.sales + net);
+    o.tax = round2(o.tax + tax);
+    o.discount = round2(o.discount + b.discount);
+    o.collections = round2(o.collections + paid);
     totals.sales = round2(totals.sales + net);
     totals.tax = round2(totals.tax + tax);
     totals.discount = round2(totals.discount + b.discount);
@@ -158,27 +206,33 @@ export function buildFbPosting(input: {
   for (const p of [...input.latePayments, ...input.voids]) {
     const amount = round2(p.amount);
     if (!(amount > 0)) continue;
-    const bank = ledgers.paymentAccountFor(p.paymentMethod);
+    const bank = ledgers.paymentAccountFor(p.paymentMethod, p.outletId);
     if ("issue" in bank) {
       issues.add(bank.issue);
       continue;
     }
     const ledger = guestLedger();
     if (!ledger) continue;
+    const where = at(p.outletId);
+    const division = ledgers.outletDivision?.(p.outletId) ?? null;
+    const o = outletTotals(p.outletId, division);
     if (p.voided) {
-      add(ledger, "Dr", amount, "Voided F&B payments");
-      add(bank.accountId, "Cr", amount, `Voided: F&B collections — ${modeLabel(p.paymentMethod)}`);
+      add(ledger, "Dr", amount, `Voided F&B payments${where}`, division);
+      add(bank.accountId, "Cr", amount, `Voided: F&B collections — ${modeLabel(p.paymentMethod)}${where}`, division);
+      o.voided = round2(o.voided + amount);
       totals.voided = round2(totals.voided + amount);
       voidIds.push(p.id);
     } else {
-      add(bank.accountId, "Dr", amount, `F&B collections — ${modeLabel(p.paymentMethod)}`);
-      add(ledger, "Cr", amount, "F&B bills collected after posting");
+      add(bank.accountId, "Dr", amount, `F&B collections — ${modeLabel(p.paymentMethod)}${where}`, division);
+      add(ledger, "Cr", amount, `F&B bills collected after posting${where}`, division);
+      o.collections = round2(o.collections + amount);
       totals.collections = round2(totals.collections + amount);
       paymentIds.push(p.id);
     }
   }
 
-  return { lines: [...groups.values()], issues: [...issues], billIds, paymentIds, voidIds, totals };
+  const byOutlet = [...outlets.values()].sort((a, b) => a.outletName.localeCompare(b.outletName));
+  return { lines: [...groups.values()], issues: [...issues], warnings: [...warnings], billIds, paymentIds, voidIds, totals, byOutlet };
 }
 
 // ---------------------------------------------------------------------------
@@ -233,9 +287,10 @@ async function loadBills(date: string, start: string): Promise<{ bills: FbBill[]
   const rows = (data ?? []) as Row[];
   if (!rows.length) return { bills: [], beforeStart: 0 };
 
-  const [orders, txns] = await Promise.all([
-    selectIn("fb_orders", "id, type, payment_mode", "id", [...new Set(rows.map((r) => String(r.order_id)))]),
+  const [orders, txns, billOutlets] = await Promise.all([
+    selectIn("fb_orders", "id, type, payment_mode, outlet_id", "id", [...new Set(rows.map((r) => String(r.order_id)))]),
     selectIn("transactions", "id, source_id, payment_method, amount, status, transaction_type, transaction_date, acc_voucher_id, source_module", "source_id", rows.map((r) => String(r.id))),
+    storedOutlets("fb_bills", rows.map((r) => String(r.id))),
   ]);
   const orderById = new Map(orders.map((o) => [String(o.id), o]));
   const paysByBill = new Map<string, Row[]>();
@@ -260,8 +315,10 @@ async function loadBills(date: string, start: string): Promise<{ bills: FbBill[]
       beforeStart++;
       continue;
     }
+    const outletId = billOutlets.get(String(r.id)) ?? (order?.outlet_id ? String(order.outlet_id) : null);
     bills.push({
       id: String(r.id),
+      outletId,
       billNo: String(r.bill_no ?? r.id),
       billingPoint: String(order?.type ?? "").trim() === "Room Service" ? "FB_ROOM_SERVICE" : "FB_RESTAURANT_BILL",
       subtotal: num(r.subtotal),
@@ -269,7 +326,7 @@ async function loadBills(date: string, start: string): Promise<{ bills: FbBill[]
       tax: num(r.tax),
       total: num(r.total),
       businessDate,
-      payments: pays.map((p) => paymentFrom(p)),
+      payments: pays.map((p) => ({ ...paymentFrom(p), outletId })),
     });
   }
   bills.sort((a, b) => a.businessDate.localeCompare(b.businessDate));
@@ -290,7 +347,7 @@ async function loadLateAndVoided(date: string): Promise<{ latePayments: FbPaymen
       .lt("transaction_date", endOfDay(date)),
     supabase
       .from("transactions")
-      .select("id, payment_method, amount")
+      .select("id, source_id, payment_method, amount")
       .eq("property_id", pid())
       .eq("source_module", "FNB")
       .eq("transaction_type", "PAYMENT")
@@ -309,9 +366,15 @@ async function loadLateAndVoided(date: string): Promise<{ latePayments: FbPaymen
           .map((b) => String(b.id)),
       )
     : new Set<string>();
+  const lateOnPosted = lateRows.filter((r) => postedBills.has(String(r.source_id)));
+  const voidRows = (voided.data ?? []) as Row[];
+  const outlets = await fnbTransactionOutlets(
+    [...lateOnPosted, ...voidRows].map((r) => ({ id: String(r.id), sourceId: String(r.source_id ?? "") })),
+  );
+  const withOutlet = (p: FbPayment): FbPayment => ({ ...p, outletId: outlets.get(p.id) ?? null });
   return {
-    latePayments: lateRows.filter((r) => postedBills.has(String(r.source_id))).map((r) => paymentFrom(r)),
-    voids: ((voided.data ?? []) as Row[]).map((r) => paymentFrom(r, true)),
+    latePayments: lateOnPosted.map((r) => withOutlet(paymentFrom(r))),
+    voids: voidRows.map((r) => withOutlet(paymentFrom(r, true))),
   };
 }
 
@@ -378,6 +441,11 @@ export const FbPostingService = {
         partyName: null,
       })),
       issues: [...new Set(issues)],
+      warnings: result.warnings,
+      byOutlet: result.byOutlet.map((o) => ({
+        ...o,
+        divisionName: o.divisionId ? divById.get(o.divisionId) ?? null : null,
+      })),
       counts: { ...counts(result), beforeStart },
       totals: { ...result.totals, debit, credit },
       canPost: issues.length === 0 && result.lines.length > 0,
@@ -420,8 +488,7 @@ export const FbPostingService = {
       { table: "transactions", column: "acc_voucher_id", ids: result.paymentIds },
       { table: "transactions", column: "acc_void_voucher_id", ids: result.voidIds },
     ];
-    const marked = await Promise.all(targets.map((t) => markPosted(t, voucher.id)));
-    if (marked.some((n, i) => n !== targets[i].ids.length)) {
+    if (!(await markPostedBatch(targets, voucher.id))) {
       if (status === "Draft") await deleteVoucher(voucher.id);
       throw new ConflictError("F&B posting ran twice at the same time — refresh and check the vouchers");
     }
@@ -429,6 +496,7 @@ export const FbPostingService = {
       businessDate: date,
       voucher: { id: voucher.id, voucherNo: voucher.voucherNo, status: voucher.status, totalAmount: voucher.totalAmount },
       totals: result.totals,
+      byOutlet: result.byOutlet,
       counts: counts(result),
     };
   },

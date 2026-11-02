@@ -28,6 +28,7 @@ export const accTables = {
   coveringLetters: "acc_covering_letters",
   coveringLetterBills: "acc_covering_letter_bills",
   auditLogs: "acc_audit_logs",
+  outletPostingRules: "acc_outlet_posting_rules",
 } as const;
 
 export type AccTable = (typeof accTables)[keyof typeof accTables];
@@ -83,6 +84,7 @@ const UNIQUE_MESSAGES: Record<string, string> = {
   acc_covering_letters_no_unique: "This covering letter number is already used",
   acc_covering_letter_bills_unique: "Bill is already part of this covering letter",
   acc_company_settings_company_unique: "Settings already exist for this company",
+  acc_outlet_posting_rules_unique: "This outlet already has a rule for that billing point",
 };
 
 function mapDbError(error: PgError, table: string): never {

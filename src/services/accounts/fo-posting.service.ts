@@ -14,6 +14,7 @@ import {
   type BillingPointCode,
 } from "./tax-resolver.js";
 import { FO_SOURCE_MODULE, raiseFoCompanyBills } from "./fo-posting-markers.js";
+import { fnbTransactionOutlets, loadOutletPosting } from "./outlet-posting-rules.js";
 
 // ---------------------------------------------------------------------------
 // Pure builder: business facts in, balanced voucher lines out
@@ -35,6 +36,8 @@ export type FoCharge = {
   reversal?: boolean;
   /** Posted earlier and voided since: posted again the other way round. */
   voided?: boolean;
+  /** F&B outlet of a room service charge. */
+  outletId?: string | null;
 };
 
 export type FoPayment = {
@@ -71,9 +74,18 @@ export type FoLedgers = {
   guestLedgerId: string;
   guestDepositId: string;
   defaultReceivableId: string;
-  incomeFor: (point: BillingPointCode, date: string) => { accountId: string; divisionId: string | null } | { issue: string };
+  /** With an outlet, its posting rule overrides the income ledger and division. */
+  incomeFor: (
+    point: BillingPointCode,
+    date: string,
+    outletId?: string | null,
+  ) => { accountId: string; divisionId: string | null } | { issue: string };
   taxAccountFor: (detail: FoTaxDetail) => string;
-  paymentAccountFor: (mode: string) => { accountId: string } | { issue: string };
+  /** With an outlet, its posting rule may send cash to the outlet's own cash ledger. */
+  paymentAccountFor: (mode: string, outletId?: string | null, point?: BillingPointCode) => { accountId: string } | { issue: string };
+  /** Division mapped to an outlet (null when the outlet has no rule). */
+  outletDivision?: (outletId: string | null | undefined, point?: BillingPointCode) => string | null;
+  outletName?: (outletId: string) => string;
   /** Split an amount that already includes tax, using the billing point's tax rules. */
   inclusiveTax: (point: BillingPointCode, gross: number, date: string) => { taxable: number; details: FoTaxDetail[] } | { issue: string };
 };
@@ -171,11 +183,12 @@ export function buildFoPosting(input: {
     let taxAmount = round2(c.taxAmount);
     let details = c.taxDetails.filter((d) => round2(d.amount) > 0);
     if (!(amount > 0) && !(taxAmount > 0)) continue;
-    const income = ledgers.incomeFor(point, c.businessDate);
+    const income = ledgers.incomeFor(point, c.businessDate, c.outletId);
     if ("issue" in income) {
       issues.add(income.issue);
       continue;
     }
+    const outlet = c.outletId && ledgers.outletName ? ` — ${ledgers.outletName(c.outletId)}` : "";
     if (c.source === "transaction") {
       const split = ledgers.inclusiveTax(point, amount, c.businessDate);
       if ("issue" in split) {
@@ -208,7 +221,7 @@ export function buildFoPosting(input: {
     const reverse = Boolean(c.reversal) !== Boolean(c.voided);
     const suffix = c.voided ? " (voided)" : reverse ? " (cancelled)" : "";
     add(ledger, flip("Dr", reverse), amount + taxAmount, `Guest folio charges${suffix}`);
-    add(income.accountId, flip("Cr", reverse), amount, `${label}${suffix}`, income.divisionId);
+    add(income.accountId, flip("Cr", reverse), amount, `${label}${outlet}${suffix}`, income.divisionId);
     details.forEach((d, i) => add(taxAccounts[i], flip("Cr", reverse), taxShares[i], `${d.taxCode} on guest folio charges${suffix}`));
     if (c.voided) {
       totals.voided = round2(totals.voided + amount + taxAmount);
@@ -396,7 +409,7 @@ async function loadCharges(date: string, start: string): Promise<{ charges: FoCh
   return { charges, beforeStart };
 }
 
-function moduleChargeFrom(r: Row, voided = false): FoCharge | null {
+function moduleChargeFrom(r: Row, voided = false, outlets?: Map<string, string>): FoCharge | null {
   const kind = MODULE_CHARGE_TYPES[String(r.source_type ?? "")];
   if (!kind) return null;
   return {
@@ -410,14 +423,24 @@ function moduleChargeFrom(r: Row, voided = false): FoCharge | null {
     source: "transaction",
     reversal: kind.reversal,
     voided,
+    outletId: outlets?.get(String(r.id)) ?? null,
   };
+}
+
+/** Outlets of the room service charges among these transactions. */
+function roomServiceOutlets(rows: Row[]): Promise<Map<string, string>> {
+  return fnbTransactionOutlets(
+    rows
+      .filter((r) => r.source_module === "FNB" && String(r.source_type ?? "").startsWith("ROOM_SERVICE"))
+      .map((r) => ({ id: String(r.id), sourceId: String(r.source_id ?? "") })),
+  );
 }
 
 /** Room service and laundry charged to the room (recorded by those modules as transactions). */
 async function loadModuleCharges(date: string, start: string): Promise<FoCharge[]> {
   let q = supabase
     .from("transactions")
-    .select("id, source_type, amount, transaction_date")
+    .select("id, source_module, source_type, source_id, amount, transaction_date")
     .eq("property_id", pid())
     .is("acc_voucher_id", null)
     .eq("status", "COMPLETED")
@@ -428,7 +451,9 @@ async function loadModuleCharges(date: string, start: string): Promise<FoCharge[
   if (start) q = q.gte("transaction_date", startOfDay(start));
   const { data, error } = await q.order("transaction_date");
   if (error) dbError(error, "room service / laundry charges");
-  return ((data ?? []) as Row[]).map((r) => moduleChargeFrom(r)).filter((c): c is FoCharge => !!c);
+  const rows = (data ?? []) as Row[];
+  const outlets = await roomServiceOutlets(rows);
+  return rows.map((r) => moduleChargeFrom(r, false, outlets)).filter((c): c is FoCharge => !!c);
 }
 
 function paymentFrom(r: Row, voided = false): FoPayment {
@@ -463,17 +488,19 @@ async function loadPayments(cutoff: string, start: string): Promise<FoPayment[]>
 async function loadVoids(): Promise<{ charges: FoCharge[]; payments: FoPayment[] }> {
   const { data, error } = await supabase
     .from("transactions")
-    .select("id, transaction_number, transaction_type, payment_method, amount, source_module, source_type, transaction_date, acc_adjust_voucher_id")
+    .select("id, transaction_number, transaction_type, payment_method, amount, source_module, source_type, source_id, transaction_date, acc_adjust_voucher_id")
     .eq("property_id", pid())
     .not("acc_voucher_id", "is", null)
     .is("acc_void_voucher_id", null)
     .in("status", ["VOIDED", "FAILED"]);
   if (error) dbError(error, "voided transactions");
+  const rows = (data ?? []) as Row[];
+  const outlets = await roomServiceOutlets(rows.filter((r) => r.transaction_type === "ADJUSTMENT"));
   const charges: FoCharge[] = [];
   const payments: FoPayment[] = [];
-  for (const r of (data ?? []) as Row[]) {
+  for (const r of rows) {
     if (r.transaction_type === "ADJUSTMENT") {
-      const c = moduleChargeFrom(r, true);
+      const c = moduleChargeFrom(r, true, outlets);
       if (c) charges.push(c);
     } else {
       payments.push(paymentFrom(r, true));
@@ -558,10 +585,11 @@ export async function loadLedgers(): Promise<{
   settings: Row | null;
   setup: Awaited<ReturnType<typeof loadTaxSetup>>;
 }> {
-  const [settings, setup, methods] = await Promise.all([
+  const [settings, setup, methods, outlets] = await Promise.all([
     getSettings(),
     loadTaxSetup(),
     list(accTables.paymentMethods),
+    loadOutletPosting(),
   ]);
   if (settings && !("defaultGuestLedgerAccountId" in settings)) {
     throw new AppError(`Front Office posting is not set up (company settings). ${SETUP_HINT}`, 500, "SCHEMA_MISSING");
@@ -572,19 +600,25 @@ export async function loadLedgers(): Promise<{
     guestLedgerId: String(settings?.defaultGuestLedgerAccountId ?? ""),
     guestDepositId: String(settings?.defaultGuestDepositAccountId ?? ""),
     defaultReceivableId: String(settings?.defaultReceivableAccountId ?? ""),
-    incomeFor: (point, date) => {
+    incomeFor: (point, date, outletId) => {
       const label = POINT_LABEL.get(point) ?? point;
       const r = resolveBillingPoint(setup, point, date);
       if (!r.configured || !r.categoryId) {
         return { issue: `Accounts → Tax/GST Master → Billing Points: map "${label}" to a revenue category` };
       }
-      if (!r.incomeAccountId) {
+      const rule = outlets.rule(outletId, point);
+      const accountId = rule.incomeAccountId || r.incomeAccountId;
+      if (!accountId) {
         return { issue: `Accounts → Revenue Category Master: ${r.categoryName} has no income ledger` };
       }
-      return { accountId: r.incomeAccountId, divisionId: r.divisionId || null };
+      return { accountId, divisionId: rule.divisionId || r.divisionId || null };
     },
     taxAccountFor: (d) => d.outputAccountId || taxByCode.get(d.taxCode) || "",
-    paymentAccountFor: (mode) => {
+    outletDivision: (outletId, point) => outlets.rule(outletId, point).divisionId,
+    outletName: (outletId) => outlets.name(outletId),
+    paymentAccountFor: (mode, outletId, point) => {
+      const cash = mode === "CASH" ? outlets.rule(outletId, point).cashAccountId : null;
+      if (cash) return { accountId: cash };
       const label = mode.replace(/_/g, " ");
       const method = methods.find((m) => m.foPaymentMode === mode && m.status === "Active");
       if (!method) {
@@ -647,6 +681,28 @@ export async function markPosted({ table, column, ids }: MarkTarget, voucherId: 
     marked += (data ?? []).length;
   }
   return marked;
+}
+
+/**
+ * Mark every posted row in one database transaction (acc_mark_posted_batch). Returns false when
+ * another run had already posted some of them; nothing is marked then. Falls back to row-by-table
+ * updates until fb-outlet-posting.sql is run.
+ */
+export async function markPostedBatch(targets: MarkTarget[], voucherId: string): Promise<boolean> {
+  const payload = targets.filter((t) => t.ids.length).map((t) => ({ table: t.table, column: t.column, ids: t.ids }));
+  if (!payload.length) return true;
+  const { error } = await supabase.rpc("acc_mark_posted_batch", {
+    p_property_id: pid(),
+    p_voucher_id: voucherId,
+    p_targets: payload,
+  });
+  if (!error) return true;
+  if (/ALREADY_POSTED/.test(error.message)) return false;
+  if (error.code === "PGRST202" || /could not find the function|acc_mark_posted_batch.*does not exist/i.test(error.message)) {
+    const marked = await Promise.all(targets.map((t) => markPosted(t, voucherId)));
+    return marked.every((n, i) => n === targets[i].ids.length);
+  }
+  throw new AppError(`Could not mark rows as posted: ${error.message}`, 500);
 }
 
 // ---------------------------------------------------------------------------
@@ -751,8 +807,7 @@ export const FoPostingService = {
       { table: "fo_company_bills", column: "acc_voucher_id", ids: result.companyBillIds },
       { table: "fo_company_bills", column: "acc_void_voucher_id", ids: result.companyBillVoidIds },
     ];
-    const marked = await Promise.all(targets.map((t) => markPosted(t, voucher.id)));
-    if (marked.some((n, i) => n !== targets[i].ids.length)) {
+    if (!(await markPostedBatch(targets, voucher.id))) {
       // Another run posted some of these rows at the same time; undo this voucher.
       if (status === "Draft") await deleteVoucher(voucher.id);
       throw new ConflictError("Front Office posting ran twice at the same time — refresh and check the vouchers");

@@ -24,6 +24,7 @@ import {
 } from "../controllers/accounts/index.js";
 import type { masters } from "../services/accounts/masters.service.js";
 import { BILLING_POINTS } from "../services/accounts/tax-resolver.js";
+import { listFbOutlets } from "../services/accounts/outlet-posting-rules.js";
 import { ok } from "../utils/response.js";
 
 const router = Router();
@@ -56,6 +57,14 @@ router.get("/fb-posting/preview", fbPostingHandlers.preview);
 router.post("/fb-posting/post", fbPostingHandlers.post);
 router.get("/fb-posting/history", fbPostingHandlers.history);
 
+router.get("/masters/outlet-posting-rules/outlets", async (_req, res, next) => {
+  try {
+    ok(res, await listFbOutlets());
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get("/masters/party-types", partyTypeHandlers.list);
 router.get("/masters/party-types/:id", partyTypeHandlers.get);
 
@@ -75,6 +84,7 @@ const masterRoutes: [string, keyof typeof masters][] = [
   ["/masters/budgets", "budgets"],
   ["/masters/fiscal-years", "fiscalYears"],
   ["/closing-stock", "closingStock"],
+  ["/masters/outlet-posting-rules", "outletPostingRules"],
 ];
 
 router.post("/closing-stock/post", closingStockPost);

@@ -102,7 +102,27 @@ export const PropertyService = {
       .select()
       .single();
     if (error) throw new AppError(error.message, 500);
-    return toCamel<PropertyRow>(data);
+    const accountsSetup = await this.seedAccounts(id);
+    return { ...toCamel<PropertyRow>(data), accountsSetup } as PropertyRow;
+  },
+
+  /**
+   * Basic Accounts masters for a new property (backend/sql/accounts-property-setup.sql).
+   * Never blocks property creation: the result says whether it ran.
+   */
+  async seedAccounts(propertyId: string): Promise<{ seeded: boolean; message: string }> {
+    const { data, error } = await supabase.rpc("acc_seed_property", { p_property_id: propertyId });
+    if (error) {
+      console.warn(`[accounts] basic setup for ${propertyId} failed: ${error.message}`);
+      return {
+        seeded: false,
+        message: /acc_seed_property/i.test(error.message)
+          ? "Run backend/sql/accounts-property-setup.sql in Supabase, then re-run it to set up this property's Accounts."
+          : error.message,
+      };
+    }
+    const res = (data ?? {}) as { seeded?: boolean; reason?: string };
+    return { seeded: Boolean(res.seeded), message: res.seeded ? "Accounts basic setup created" : res.reason ?? "" };
   },
 
   async update(

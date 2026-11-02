@@ -172,6 +172,27 @@ test("room service charged to the room: tax carved out of the gross, reversal po
   assert.ok(balanced(b));
 });
 
+test("room service income follows the outlet's posting rule", () => {
+  const b = buildFoPosting({
+    charges: [moduleCharge("t7", 1050, "ROOM_SERVICE", { outletId: "kitchen" }), moduleCharge("t8", 525, "ROOM_SERVICE")],
+    payments: [],
+    adjustments: [],
+    ledgers: {
+      ...ledgers,
+      incomeFor: (point, date, outletId) =>
+        outletId === "kitchen" ? { accountId: "rs-revenue", divisionId: "div-room-service" } : ledgers.incomeFor(point, date),
+      outletName: (id) => (id === "kitchen" ? "Main Kitchen" : id),
+    },
+  });
+  assert.deepEqual(b.issues, []);
+  const rs = b.lines.find((l) => l.accountId === "rs-revenue");
+  assert.equal(rs?.amount, 1000);
+  assert.equal(rs?.divisionId, "div-room-service");
+  assert.ok(rs?.narration.includes("Main Kitchen"));
+  assert.equal(line(b, "fnb-revenue", "Cr"), 500);
+  assert.ok(balanced(b));
+});
+
 test("payments and room charges voided after posting are posted back", () => {
   const b = buildFoPosting({
     charges: [moduleCharge("t3", 1050, "ROOM_SERVICE", { voided: true })],
