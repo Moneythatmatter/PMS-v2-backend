@@ -11,6 +11,10 @@
     "typecheck": "tsc --noEmit",
     "test:leave": "node --import tsx --test src/services/human-resources/leave/leave-integration.test.ts",
     "test:weekly-off": "node --import tsx --test src/services/human-resources/weekly-off/weekly-off.service.test.ts",
+    "test:night-audit": "node --import tsx --test src/services/front-office/room-night.service.test.ts",
+    "test:tax": "node --import tsx --test src/services/accounts/tax-resolver.test.ts",
+    "test:fo-posting": "node --import tsx --test src/services/accounts/fo-posting.service.test.ts",
+    "test:fb-posting": "node --import tsx --test src/services/accounts/fb-posting.service.test.ts",
     "seed:ps": "tsx scripts/seed-purchase-stores.ts"
   },
   "keywords": [],

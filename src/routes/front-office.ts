@@ -36,8 +36,16 @@ import {
 import * as lostFoundItems from "../controllers/housekeeping/lost-found-items.js";
 import * as cashierSessions from "../controllers/front-office/cashier-sessions.js";
 import * as dayClosing from "../controllers/front-office/day-closing.js";
+import * as nightAudit from "../controllers/front-office/night-audit.js";
 import * as guestPortal from "../controllers/front-office/guest-portal.js";
 import { getRequestStore } from "../utils/request-context.js";
+import { fromError, ok } from "../utils/response.js";
+import {
+  attachPartyData,
+  listCompanyPartyOptions,
+  prepareCompanyCreate,
+  prepareCompanyUpdate,
+} from "../services/shared/company-party.service.js";
 
 const router = Router();
 
@@ -72,6 +80,7 @@ router.delete("/reservations/:id", reservations.deleteReservation);
 router.post("/reservations/:id/check-in", reservations.checkIn);
 router.get("/reservations/:id/guests", reservations.listReservationGuests);
 router.post("/reservations/:id/check-out", reservations.checkOut);
+router.post("/reservations/:id/room-nights/post-pending", reservations.postPendingRoomNights);
 router.post("/reservations/:id/extend-stay", reservations.extendStay);
 router.post("/reservations/:id/transfer-room", reservations.transferRoom);
 
@@ -83,6 +92,9 @@ router.put("/groups/:id", groups.updateGroup);
 router.patch("/groups/:id", groups.updateGroup);
 router.get("/groups/:id/reservations", groups.listGroupReservations);
 router.get("/groups/:id/folio", groups.getGroupFolio);
+router.post("/groups/:id/bill-to-company", groups.billGroupToCompany);
+router.get("/company-bills", groups.listCompanyBills);
+router.post("/company-bills/:id/void", groups.voidCompanyBill);
 router.get("/groups/:id/billing-rules", groups.listGroupBillingRules);
 router.put("/groups/:id/billing-rules", groups.updateGroupBillingRules);
 
@@ -114,12 +126,23 @@ mountCrud(
     idPrefix: "TP",
   }),
 );
+router.get("/masters/companies/party-options", async (_req, res) => {
+  try {
+    return ok(res, await listCompanyPartyOptions());
+  } catch (e) {
+    return fromError(res, e);
+  }
+});
 mountCrud(
   router,
   "/masters/companies",
   createCrudController({
     table: foModel.tables.companies,
     idPrefix: "CO",
+    beforeCreate: prepareCompanyCreate,
+    beforeUpdate: prepareCompanyUpdate,
+    afterList: attachPartyData,
+    afterGet: async (row) => (await attachPartyData([row]))[0],
   }),
 );
 mountCrud(
@@ -322,6 +345,9 @@ router.get("/day-closing/status", dayClosing.getStatus);
 router.get("/day-closing/history", dayClosing.listHistory);
 router.post("/day-closing/run", dayClosing.runClosing);
 router.get("/day-closing", dayClosing.listHistory);
+router.get("/night-audit/status", nightAudit.getStatus);
+router.get("/night-audit/history", nightAudit.listHistory);
+router.post("/night-audit/run", nightAudit.runAudit);
 
 // Reports
 router.get("/reports/:type", getReport);

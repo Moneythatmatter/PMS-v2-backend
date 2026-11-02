@@ -32,6 +32,10 @@ export const fbTables = {
   wastage: "fb_wastage",
   stockAdjustments: "fb_stock_adjustments",
   dayClosings: "fb_day_closings",
+  cashierSessions: "fb_cashier_sessions",
+  cashierReconciliations: "fb_cashier_reconciliations",
+  cashierSessionAudits: "fb_cashier_session_audits",
+  outletDayClosings: "fb_outlet_day_closings",
 } as const;
 
 export type FbTableName = (typeof fbTables)[keyof typeof fbTables];

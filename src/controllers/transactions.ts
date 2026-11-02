@@ -13,6 +13,9 @@ import {
 import { foModel } from "../models/front-office/index.js";
 import { fail, ok } from "../utils/response.js";
 
+const POSTING_MARKERS = ["accVoucherId", "accAdjustVoucherId", "accVoidVoucherId"];
+const POSTED_LOCKED_FIELDS = ["amount", "transactionType", "paymentMethod", "transactionDate", "sourceModule", "bookingId"];
+
 function parseBody<T>(schema: { parse: (v: unknown) => T }, body: unknown): T {
   return schema.parse(body);
 }
@@ -64,8 +67,23 @@ export async function createTransaction(req: Request, res: Response, next: NextF
 
 export async function updateTransaction(req: Request, res: Response, next: NextFunction) {
   try {
-    const body = parseBody(transactionUpdateSchema, req.body);
-    const row = await foModel.update(foModel.tables.transactions, paramId(req), body);
+    const body = parseBody(transactionUpdateSchema, req.body) as Record<string, unknown>;
+    for (const k of POSTING_MARKERS) delete body[k];
+    const id = paramId(req);
+    const existing = await foModel.get<Record<string, unknown>>(foModel.tables.transactions, id);
+    if (!existing) return fail(res, "Transaction not found", 404);
+    if (existing.accVoucherId) {
+      const changed = POSTED_LOCKED_FIELDS.filter(
+        (k) => body[k] !== undefined && String(body[k]) !== String(existing[k] ?? ""),
+      );
+      if (changed.length) {
+        return fail(res, "This transaction is already posted to Accounts — void it and record a new one instead", 409);
+      }
+      if (existing.accVoidVoucherId && body.status === "COMPLETED") {
+        return fail(res, "The void of this transaction is already posted to Accounts — record a new transaction instead", 409);
+      }
+    }
+    const row = await foModel.update(foModel.tables.transactions, id, body);
     return ok(res, row);
   } catch (e) {
     next(e);

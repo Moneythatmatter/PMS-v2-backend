@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { fbModel } from "../../models/food-beverages/index.js";
+import { supabase } from "../../utils/supabase.js";
 import { fail, fromError, ok } from "../../utils/response.js";
 
 type Order = Record<string, unknown>;
@@ -115,6 +116,58 @@ function inDateRange(isoDay: string, from: string, to: string) {
   return isoDay >= from && isoDay <= to;
 }
 
+/** Business date of a cashier session, else the Indian calendar day it opened. */
+function shiftDay(s: Shift): string {
+  if (s.businessDate) return String(s.businessDate).slice(0, 10);
+  const opened = new Date(String(s.openedAt ?? ""));
+  return Number.isNaN(opened.getTime()) ? "" : opened.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+type SessionTotals = { cash: number; digital: number; total: number; variance: number | null };
+
+/** Collections (payments tagged to each session) and counted variance per F&B cashier session. */
+async function cashierTotals(shifts: Shift[]) {
+  const ids = shifts.map((s) => String(s.id));
+  const bySession = new Map<string, SessionTotals>();
+  const names = new Map<string, string>();
+  let cash = 0;
+  let digital = 0;
+  let variance = 0;
+  if (!ids.length) return { bySession, names, cash, digital, variance };
+
+  const [txns, recons, users] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("fb_cashier_session_id, payment_method, amount, status, transaction_type")
+      .in("fb_cashier_session_id", ids),
+    supabase.from(fbModel.tables.cashierReconciliations).select("cashier_session_id, variance").in("cashier_session_id", ids),
+    supabase.from("users").select("id, name, email").in("id", [...new Set(shifts.map((s) => String(s.cashierId ?? "")))]),
+  ]);
+  for (const u of (users.data ?? []) as Record<string, unknown>[]) names.set(String(u.id), String(u.name || u.email || "Unknown user"));
+
+  for (const id of ids) bySession.set(id, { cash: 0, digital: 0, total: 0, variance: null });
+  for (const t of (txns.data ?? []) as Record<string, unknown>[]) {
+    const row = bySession.get(String(t.fb_cashier_session_id));
+    if (!row || String(t.status) === "VOIDED" || String(t.status) === "FAILED" || String(t.status) === "PENDING") continue;
+    const sign = String(t.transaction_type ?? "PAYMENT") === "PAYMENT" && String(t.status) === "COMPLETED" ? 1 : -1;
+    const amount = sign * Number(t.amount ?? 0);
+    if (String(t.payment_method ?? "").toUpperCase() === "CASH") row.cash += amount;
+    else row.digital += amount;
+    row.total += amount;
+  }
+  for (const r of (recons.data ?? []) as Record<string, unknown>[]) {
+    if (r.variance == null) continue;
+    const row = bySession.get(String(r.cashier_session_id));
+    if (row) row.variance = (row.variance ?? 0) + Number(r.variance);
+  }
+  for (const row of bySession.values()) {
+    cash += row.cash;
+    digital += row.digital;
+    variance += row.variance ?? 0;
+  }
+  return { bySession, names, cash, digital, variance };
+}
+
 function eachDay(from: string, to: string) {
   const out: string[] = [];
   const cur = new Date(`${from}T12:00:00`);
@@ -141,7 +194,11 @@ export async function getReport(req: Request, res: Response) {
         fbModel.list<Order>(fbModel.tables.orders),
         fbModel.list<Outlet>(fbModel.tables.outlets),
         fbModel.list<Ingredient>(fbModel.tables.ingredients),
-        fbModel.list<Shift>(fbModel.tables.cashierShifts),
+        type === "cashier"
+          ? fbModel
+              .list<Shift>(fbModel.tables.cashierSessions, { orderBy: "opened_at", ascending: false })
+              .catch(() => [] as Shift[])
+          : Promise.resolve([] as Shift[]),
         fbModel.list<LiveTable>(fbModel.tables.liveTables),
         fbModel.list<KdsTicket>(fbModel.tables.kdsTickets),
       ]);
@@ -161,9 +218,11 @@ export async function getReport(req: Request, res: Response) {
       return inDateRange(orderDay(o), from, to);
     });
     const settled = settledOrders(orders);
-    const shifts = outletIdFilter
-      ? shiftsAll.filter((s) => String(s.outletId) === outletIdFilter)
-      : shiftsAll;
+    const shifts = shiftsAll.filter((s) => {
+      if (outletIdFilter && String(s.outletId) !== outletIdFilter) return false;
+      return inDateRange(shiftDay(s), from, to);
+    });
+    const cashier = type === "cashier" ? await cashierTotals(shifts) : null;
     const tables = outletIdFilter
       ? tablesAll.filter((t) => String(t.outletId) === outletIdFilter)
       : tablesAll;
@@ -343,27 +402,21 @@ export async function getReport(req: Request, res: Response) {
 
         case "cashier":
           return shifts.map((s) => {
-            const sales =
-              Number(s.cashSales ?? 0) +
-              Number(s.cardSales ?? 0) +
-              Number(s.upiSales ?? 0);
-            const declared = s.declaredCash;
-            const expected =
-              Number(s.openingFloat ?? 0) +
-              Number(s.cashSales ?? 0) -
-              Number(s.refunds ?? 0);
-            const variance =
-              declared === null || declared === undefined
-                ? "—"
-                : inr(Number(declared) - expected);
+            const t = cashier!.bySession.get(String(s.id)) ?? { cash: 0, digital: 0, total: 0, variance: null };
             return {
               id: String(s.id),
-              cashier: s.cashier,
-              outlet: outletName(outlets, s.outletId),
+              cashier: cashier!.names.get(String(s.cashierId)) ?? "Unknown cashier",
+              outlet: outletName(outletsAll, s.outletId),
               outletId: s.outletId,
-              shift: s.shift,
-              sales: inr(sales),
-              variance,
+              shift: s.shiftName,
+              opened: s.openedAt
+                ? new Date(String(s.openedAt)).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
+                : "—",
+              cash: inr(t.cash),
+              digital: inr(t.digital),
+              sales: inr(t.total),
+              salesValue: t.total,
+              variance: t.variance == null ? "—" : `${t.variance > 0 ? "+" : t.variance < 0 ? "−" : ""}${inr(Math.abs(t.variance))}`,
               status: s.status,
             };
           });
@@ -547,6 +600,13 @@ export async function getReport(req: Request, res: Response) {
         from,
         to,
         outletId: outletIdFilter || null,
+        ...(cashier
+          ? {
+              cashLabel: inr(cashier.cash),
+              digitalLabel: inr(cashier.digital),
+              varianceLabel: `${cashier.variance > 0 ? "+" : cashier.variance < 0 ? "−" : ""}${inr(Math.abs(cashier.variance))}`,
+            }
+          : {}),
       },
       rows,
       generatedAt: new Date().toISOString(),

@@ -21,6 +21,9 @@ type CrudOptions = {
     ctx?: { isCreate: boolean },
   ) => Record<string, unknown>;
   mapOutgoing?: <T>(row: T) => T;
+  beforeCreate?: (body: Record<string, unknown>) => Promise<void>;
+  beforeUpdate?: (id: string, body: Record<string, unknown>) => Promise<void>;
+  afterRead?: <T>(rows: T[]) => Promise<T[]>;
 };
 
 export function createTableCrud(options: CrudOptions) {
@@ -38,6 +41,7 @@ export function createTableCrud(options: CrudOptions) {
         if (options.mapOutgoing) {
           rows = rows.map((r: unknown) => options.mapOutgoing!(r));
         }
+        if (options.afterRead) rows = await options.afterRead(rows);
         return ok(res, rows);
       } catch (e) {
         return fromError(res, e);
@@ -50,6 +54,7 @@ export function createTableCrud(options: CrudOptions) {
         let row = await getRowById(options.table, id, idCol);
         if (!row) return fail(res, "Not found", 404);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
+        if (options.afterRead) [row] = await options.afterRead([row]);
         return ok(res, row);
       } catch (e) {
         return fromError(res, e);
@@ -60,9 +65,11 @@ export function createTableCrud(options: CrudOptions) {
       try {
         let body = { ...(req.body as Record<string, unknown>) };
         if (options.mapIncoming) body = options.mapIncoming(body, { isCreate: true });
+        if (options.beforeCreate) await options.beforeCreate(body);
         if (!body[idCol]) body[idCol] = newId(options.idPrefix);
         let row = await insertRow(options.table, body);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
+        if (options.afterRead) [row] = await options.afterRead([row]);
         return ok(res, row, 201);
       } catch (e) {
         return fromError(res, e);
@@ -76,8 +83,10 @@ export function createTableCrud(options: CrudOptions) {
         delete body[idCol];
         delete body.id;
         if (options.mapIncoming) body = options.mapIncoming(body, { isCreate: false });
+        if (options.beforeUpdate) await options.beforeUpdate(id, body);
         let row = await updateRow(options.table, id, body, idCol);
         if (options.mapOutgoing) row = options.mapOutgoing(row);
+        if (options.afterRead) [row] = await options.afterRead([row]);
         return ok(res, row);
       } catch (e) {
         return fromError(res, e);

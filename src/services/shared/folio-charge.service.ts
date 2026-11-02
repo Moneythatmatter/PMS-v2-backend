@@ -11,6 +11,8 @@ import {
   ReservationStatus,
   type FoChargeCategoryValue,
 } from "../../constants/front-office.js";
+import { chargeBillingPoint, quoteBillingPoint } from "../accounts/tax-resolver.js";
+import { currentBusinessDate } from "../front-office/business-date.js";
 
 const CHARGE_BLOCKED_STATUSES = new Set<string>([
   ReservationStatus.CANCELLED,
@@ -23,6 +25,16 @@ const RESERVATION_CHARGE_COLUMN: Partial<Record<string, string>> = {
   FOOD_BEVERAGE: "restaurantBill",
   LAUNDRY: "laundry",
 };
+
+/** Split a charge into taxable amount + tax using the billing point's tax rules (none when unmapped). */
+async function quoteManualCharge(category: string, amount: number) {
+  const point = chargeBillingPoint(category, "MANUAL_CHARGE");
+  const { businessDate: date } = await currentBusinessDate();
+  const result = await quoteBillingPoint(point, amount, date);
+  if (!result.configured) return { taxable: amount, tax: 0, lines: [], date };
+  if (!result.quote.ok) throw new AppError(`Tax setup incomplete — ${result.quote.issue}`, 409);
+  return { taxable: result.quote.taxableAmount, tax: result.quote.taxAmount, lines: result.quote.lines, date };
+}
 
 export type PostManualChargeInput = {
   bookingId: string;
@@ -168,6 +180,7 @@ export const FolioChargeService = {
     const unitPrice = Number(input.unitPrice);
     const amount = Math.round(quantity * unitPrice * 100) / 100;
     if (!(amount > 0)) throw new AppError("Charge amount must be greater than 0");
+    const quote = await quoteManualCharge(route.chargeCategory, amount);
 
     const row = await foModel.create<FolioCharge>(foModel.tables.folioCharges, {
       propertyId: getActivePropertyId() ?? null,
@@ -180,7 +193,10 @@ export const FolioChargeService = {
       description: input.description,
       quantity,
       unitPrice,
-      amount,
+      amount: quote.taxable,
+      taxAmount: quote.tax,
+      taxDetails: quote.lines,
+      businessDate: quote.date,
       responsibility: route.responsibility,
       sourceModule: "FRONT_OFFICE",
       sourceType: "MANUAL_CHARGE",
@@ -188,14 +204,15 @@ export const FolioChargeService = {
     });
 
     await foModel.update(foModel.tables.folios, folio.id, {
-      subtotal: Math.round((Number(folio.subtotal ?? 0) + amount) * 100) / 100,
+      subtotal: Math.round((Number(folio.subtotal ?? 0) + quote.taxable) * 100) / 100,
+      taxTotal: Math.round((Number(folio.taxTotal ?? 0) + quote.tax) * 100) / 100,
     });
 
     const column = RESERVATION_CHARGE_COLUMN[route.chargeCategory];
     if (column && route.responsibility === FoBillingResponsibility.GUEST) {
       const current = Number((reservation as unknown as Record<string, unknown>)[column] ?? 0);
       await foModel.update(foModel.tables.reservations, reservation.id, {
-        [column]: Math.max(0, current + amount),
+        [column]: Math.max(0, current + quote.taxable),
       });
     }
 

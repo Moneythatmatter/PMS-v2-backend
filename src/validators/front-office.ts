@@ -75,6 +75,7 @@ const reservationFieldsSchema = z
     arrivingToday: z.boolean().optional(),
     bookingType: z.string().optional(),
     companyName: z.string().optional(),
+    companyId: z.string().optional().nullable(),
     adults: z.coerce.number().int().min(0).optional(),
     children: z.coerce.number().int().min(0).optional(),
     nights: z.coerce.number().int().min(0).optional(),

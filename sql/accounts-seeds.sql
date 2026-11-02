@@ -165,7 +165,7 @@ declare
   v_fy_prev uuid;
   v_fy_cur uuid;
   v_fy_next uuid;
-  v_type_cust uuid; v_type_vend uuid; v_type_ta uuid; v_type_corp uuid; v_type_cc uuid; v_type_emp uuid;
+  v_type_cust uuid; v_type_vend uuid; v_type_ta uuid; v_type_corp uuid; v_type_cc uuid; v_type_emp uuid; v_type_ota uuid;
   v_v uuid;
   v_b uuid;
   v_b2 uuid;
@@ -362,27 +362,24 @@ begin
       (p, v_company, pg_temp.acc_division_id(p, 'FNB'), 'FNB-REST', 'All Day Dining Restaurant', 'Restaurant', 'Revenue Center', 1, 'Main restaurant outlet'),
       (p, v_company, pg_temp.acc_division_id(p, 'FNB'), 'FNB-BAR', 'Lounge Bar', 'Bar', 'Revenue Center', 2, 'Bar and lounge outlet');
 
-    -- Party types / sub types ---------------------------------------------------
-    insert into public.acc_party_types (property_id, type_code, type_name, description, sequence) values
-      (p, 'CUST', 'Customer', 'Individual guests and city ledger customers', 1),
-      (p, 'CORP', 'Corporate', 'Corporate clients with credit facility', 2),
-      (p, 'TA', 'Travel Agent', 'Online and offline travel agents', 3),
-      (p, 'CC', 'Credit Card Company', 'Card acquirers and payment aggregators', 4),
-      (p, 'VEND', 'Vendor', 'Suppliers and service providers', 5),
-      (p, 'EMP', 'Employee', 'Staff advances and reimbursements', 6);
-    select id into v_type_cust from public.acc_party_types where property_id = p and type_code = 'CUST';
-    select id into v_type_corp from public.acc_party_types where property_id = p and type_code = 'CORP';
-    select id into v_type_ta from public.acc_party_types where property_id = p and type_code = 'TA';
-    select id into v_type_cc from public.acc_party_types where property_id = p and type_code = 'CC';
-    select id into v_type_vend from public.acc_party_types where property_id = p and type_code = 'VEND';
-    select id into v_type_emp from public.acc_party_types where property_id = p and type_code = 'EMP';
+    -- Party sub types (party types are shared: accounts-universal-party-types.sql) ----
+    select id into v_type_cust from public.acc_party_types where type_code = 'CUST';
+    select id into v_type_corp from public.acc_party_types where type_code = 'CORP';
+    select id into v_type_ta from public.acc_party_types where type_code = 'TA';
+    select id into v_type_ota from public.acc_party_types where type_code = 'OTA';
+    select id into v_type_cc from public.acc_party_types where type_code = 'CC';
+    select id into v_type_vend from public.acc_party_types where type_code = 'VEND';
+    select id into v_type_emp from public.acc_party_types where type_code = 'EMP';
+    if v_type_cust is null then
+      raise exception 'Run accounts-universal-party-types.sql before accounts-seeds.sql';
+    end if;
 
     insert into public.acc_party_sub_types (property_id, party_type_id, sub_type_code, sub_type_name, description, sequence) values
       (p, v_type_cust, 'WALKIN', 'Walk-in Guest', 'Direct walk-in guests', 1),
       (p, v_type_cust, 'CITYLEDGER', 'City Ledger', 'Guests billed on account', 2),
       (p, v_type_corp, 'CORPCONTRACT', 'Contracted Corporate', 'Corporates with negotiated rates', 1),
       (p, v_type_corp, 'MICE', 'MICE Client', 'Meetings, incentives, conferences and events', 2),
-      (p, v_type_ta, 'OTA', 'Online Travel Agent', 'Online booking channels', 1),
+      (p, v_type_ota, 'OTA', 'Online Travel Agent', 'Online booking channels', 1),
       (p, v_type_ta, 'OFFLINETA', 'Offline Travel Agent', 'Tour operators and offline agents', 2),
       (p, v_type_cc, 'CCACQ', 'Card Acquirer', 'EDC and payment gateway settlements', 1),
       (p, v_type_vend, 'FNBSUP', 'F&B Supplier', 'Food and beverage suppliers', 1),
@@ -431,8 +428,8 @@ begin
         ('P-0012', 'Voltas Ltd', 'Voltas AMC', 'VEND', 'AMC', 'Sundry Creditors', 'amc.east@voltas.example.com', '+91 33 2282 1234', 'Camac Street', 'Kolkata', 'West Bengal', '700016', 'Arindam Ghosh', '+91 98300 44455', 'arindam@voltas.example.com', 'Service Manager', 'AAACV2809D', '19AAACV2809D1ZK', 'Non-MSME', 30, 400000, 'NEFT', 'Kotak Mahindra Bank', '0412345678', 'KKBK0000321', 'Camac Street', null, '2410'),
         ('P-0013', 'BrandCraft Marketing LLP', 'BrandCraft', 'VEND', 'MKTG', 'Sundry Creditors', 'hello@brandcraft.example.com', '+91 674 256 6677', 'Patia Square', 'Bhubaneswar', 'Odisha', '751024', 'Neha Mohanty', '+91 94373 55566', 'neha@brandcraft.example.com', 'Account Director', 'AAMFB3456C', '21AAMFB3456C1Z1', 'Small', 15, 150000, 'NEFT', 'HDFC Bank', '50200055443322', 'HDFC0000456', 'Patia', null, '2410')
       ) as x(code, name, short_name, ptype, pstype, grp, email, phone, addr, city, state, pin, cp, cp_phone, cp_email, cp_desg, pan, gstin, msme, days, limit_amt, pm, bank, acct, ifsc, branch, recv, pay)
-      join public.acc_party_types pt on pt.property_id = p and pt.type_code = x.ptype
-      join public.acc_party_sub_types pst on pst.property_id = p and pst.sub_type_code = x.pstype;
+      join public.acc_party_sub_types pst on pst.property_id = p and pst.sub_type_code = x.pstype
+      join public.acc_party_types pt on pt.id = pst.party_type_id;
 
     -- Voucher types ------------------------------------------------------------
     insert into public.acc_voucher_types (property_id, company_id, voucher_type_name, short_code, category, sequence, prefix_template, starting_number, reset_frequency, default_entry_nature, party_required, division_required, is_system) values

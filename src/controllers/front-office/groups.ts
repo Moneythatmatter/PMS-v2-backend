@@ -2,8 +2,11 @@ import type { Request, Response } from "express";
 import { GroupService } from "../../services/front-office/group.service.js";
 import { fail, fromError, ok } from "../../utils/response.js";
 import { parseBody } from "../../utils/validate.js";
+import { CompanyBillService } from "../../services/front-office/company-bill.service.js";
 import {
+  companyBillVoidSchema,
   groupBillingRulesUpdateSchema,
+  groupBillToCompanySchema,
   groupCreateSchema,
   groupUpdateSchema,
 } from "../../validators/front-office-groups.js";
@@ -68,6 +71,33 @@ export async function getGroupFolio(req: Request, res: Response) {
     const folio = await GroupService.getMasterFolio(String(req.params.id));
     if (!folio) return fail(res, "Master folio not found", 404);
     return ok(res, folio);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function billGroupToCompany(req: Request, res: Response) {
+  try {
+    const body = parseBody(groupBillToCompanySchema, req.body) as { amount: number; notes?: string | null };
+    return ok(res, await GroupService.billToCompany(String(req.params.id), body), 201);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function listCompanyBills(req: Request, res: Response) {
+  try {
+    const q = req.query as Record<string, string | undefined>;
+    return ok(res, await CompanyBillService.list({ status: q.status, from: q.from, to: q.to }));
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function voidCompanyBill(req: Request, res: Response) {
+  try {
+    const body = parseBody(companyBillVoidSchema, req.body) as { reason: string };
+    return ok(res, await CompanyBillService.void(String(req.params.id), body.reason));
   } catch (e) {
     return fromError(res, e);
   }

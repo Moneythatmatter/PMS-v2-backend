@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { fromError, ok } from "../../utils/response.js";
 import {
+  accSharedTables,
   accTables,
   actorName,
   cleanPayload,
@@ -8,6 +9,7 @@ import {
   isIsoDate,
   isUuid,
   list,
+  listShared,
   mustGet,
   update,
   type Row,
@@ -17,11 +19,15 @@ import {
   createMaster,
   deleteMaster,
   getMaster,
+  getPartyType,
   listMaster,
+  listPartyTypes,
   masters,
   updateMaster,
 } from "../../services/accounts/masters.service.js";
 import * as fiscal from "../../services/accounts/fiscal.service.js";
+import { FoPostingService } from "../../services/accounts/fo-posting.service.js";
+import { FbPostingService } from "../../services/accounts/fb-posting.service.js";
 import * as vouchers from "../../services/accounts/vouchers.service.js";
 import * as bills from "../../services/accounts/bills.service.js";
 import * as reports from "../../services/accounts/reports.service.js";
@@ -55,6 +61,23 @@ export function masterHandlers(key: keyof typeof masters) {
   };
 }
 
+export const partyTypeHandlers = {
+  list: handle((req) => listPartyTypes(q(req))),
+  get: handle((req) => getPartyType(id(req))),
+};
+
+export const foPostingHandlers = {
+  preview: handle((req) => FoPostingService.preview(q(req).date)),
+  post: handle((req) => FoPostingService.post(body(req).businessDate, { trigger: "MANUAL" }), 201),
+  history: handle(() => FoPostingService.history()),
+};
+
+export const fbPostingHandlers = {
+  preview: handle((req) => FbPostingService.preview(q(req).date)),
+  post: handle((req) => FbPostingService.post(body(req).businessDate, { trigger: "MANUAL" }), 201),
+  history: handle(() => FbPostingService.history()),
+};
+
 // ---------------------------------------------------------------------------
 // Company settings
 // ---------------------------------------------------------------------------
@@ -65,6 +88,7 @@ const SETTINGS_COLUMNS = [
   "allowManualVoucherNo", "preventDuplicateVouchers", "requirePostingApproval", "allowNegativeCash",
   "enforceCreditLimit", "defaultReceivableAccountId", "defaultPayableAccountId", "defaultRoundOffAccountId",
   "defaultGuestDepositAccountId", "enableGst", "enableEinvoice", "defaultTaxRegion", "enableTdsDeductions",
+  "defaultGuestLedgerAccountId", "foPostingStatus", "foPostingStartDate",
 ] as const;
 
 export const getCompanySettings = handle(async (req) => {
@@ -90,6 +114,22 @@ export const updateCompanySettings = handle(async (req) => {
   }
   if (payload.lockDateBefore !== undefined && payload.lockDateBefore !== null && !isIsoDate(payload.lockDateBefore)) {
     throw new ValidationError("Lock date must be YYYY-MM-DD");
+  }
+  if (payload.foPostingStatus !== undefined && !["Draft", "Posted"].includes(String(payload.foPostingStatus))) {
+    throw new ValidationError("Front Office vouchers must be created as Draft or Posted");
+  }
+  if (payload.foPostingStartDate !== undefined) {
+    if (payload.foPostingStartDate === "") payload.foPostingStartDate = null;
+    if (payload.foPostingStartDate !== null && !isIsoDate(payload.foPostingStartDate)) {
+      throw new ValidationError("Front Office posting start date must be YYYY-MM-DD");
+    }
+    const current = await mustGet(accTables.companySettings, id(req), "Company settings");
+    if (!("foPostingStartDate" in current)) {
+      if (payload.foPostingStartDate) {
+        throw new ValidationError("Run backend/sql/accounts-fo-posting-phase2.sql in Supabase before setting a posting start date");
+      }
+      delete payload.foPostingStartDate;
+    }
   }
   if (payload.backDatedLimitMode !== undefined && !["Days", "Date"].includes(String(payload.backDatedLimitMode))) {
     throw new ValidationError("Back-dated limit must be by Days or Date");
@@ -126,7 +166,7 @@ export const lookups = handle(async () => {
       list(accTables.paymentMethods, { order: [{ column: "payment_method_name" }] }),
       list(accTables.currencies, { order: [{ column: "code" }] }),
       list(accTables.fiscalYears, { order: [{ column: "start_date", ascending: false }] }),
-      list(accTables.partyTypes, { order: [{ column: "sequence" }] }),
+      listShared(accSharedTables.partyTypes, [{ column: "sequence" }]),
       list(accTables.partySubTypes, { order: [{ column: "sequence" }] }),
       list(accTables.companies, { order: [{ column: "created_at" }] }),
       list(accTables.taxDefinitions, { order: [{ column: "rate" }] }),

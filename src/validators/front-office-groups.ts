@@ -37,6 +37,7 @@ export const groupCreateSchema = z
     contactPhone: z.string().optional().nullable(),
     contactEmail: z.string().optional().nullable(),
     companyName: z.string().optional().nullable(),
+    companyId: z.string().optional().nullable(),
     arrivalDate: nonEmptyString("arrivalDate"),
     departureDate: nonEmptyString("departureDate"),
     nights: z.coerce.number().int().min(1).optional(),
@@ -57,6 +58,15 @@ export const groupBillingRulesUpdateSchema = z
   })
   .passthrough();
 
+export const groupBillToCompanySchema = z.object({
+  amount: z.coerce.number().positive("Enter the amount to bill to the company"),
+  notes: z.string().max(500).optional().nullable(),
+});
+
+export const companyBillVoidSchema = z.object({
+  reason: nonEmptyString("reason"),
+});
+
 export const groupUpdateSchema = z
   .object({
     groupName: z.string().min(1).optional(),
@@ -65,6 +75,7 @@ export const groupUpdateSchema = z
     contactPhone: z.string().optional().nullable(),
     contactEmail: z.string().optional().nullable(),
     companyName: z.string().optional().nullable(),
+    companyId: z.string().optional().nullable(),
     arrivalDate: z.string().optional(),
     departureDate: z.string().optional(),
     notes: z.string().optional().nullable(),

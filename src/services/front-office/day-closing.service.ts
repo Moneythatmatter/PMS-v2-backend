@@ -12,6 +12,8 @@ import {
   localTodayIso,
 } from "./room-hk-status.js";
 import type { Reservation } from "../../types/front-office.js";
+import { addDays, currentBusinessDate, isoDay } from "./business-date.js";
+import { FbDayCloseService } from "../food-beverages/fb-day-close.service.js";
 
 type Row = Record<string, unknown>;
 
@@ -50,34 +52,8 @@ function round2(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function isoDay(value: unknown) {
-  const s = String(value ?? "").slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
-}
-
-function addDays(iso: string, days: number) {
-  const d = new Date(`${iso}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
 function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
-
-async function lastClosing() {
-  const rows = await foModel.list<Row>(foModel.tables.dayClosings, {
-    orderBy: "created_at",
-    ascending: false,
-    limit: 1,
-  });
-  return rows[0] ?? null;
-}
-
-async function currentBusinessDate() {
-  const last = await lastClosing();
-  const next = isoDay(last?.nextBusinessDate);
-  return { businessDate: next || localTodayIso(), last };
 }
 
 async function transactionsOn(businessDate: string) {
@@ -115,9 +91,9 @@ async function safeList(table: string) {
 export const DayClosingService = {
   async status() {
     if (!getActivePropertyId()) throw new AppError("Select a property first");
-    const { businessDate, last } = await currentBusinessDate();
+    const { businessDate, lastClosing: last } = await currentBusinessDate();
 
-    const [reservationsRaw, rooms, txns, sessions, folios, maintenance, laundry, luggage, bills] =
+    const [reservationsRaw, rooms, txns, sessions, folios, maintenance, laundry, luggage, bills, fbOutletsOpen] =
       await Promise.all([
         foModel.list<Reservation>(foModel.tables.reservations),
         foModel.list<Row>(foModel.tables.rooms),
@@ -128,6 +104,7 @@ export const DayClosingService = {
         safeList(hkModel.tables.laundryJobs),
         safeList(foModel.tables.luggageItems),
         fbModel.list<Row>(fbModel.tables.bills).catch(() => [] as Row[]),
+        FbDayCloseService.outletsNotClosed(businessDate),
       ]);
     const reservations = await enrichReservations(reservationsRaw);
 
@@ -179,6 +156,8 @@ export const DayClosingService = {
     for (const t of txns) {
       const status = String(t.status ?? "");
       if (status !== "COMPLETED" && status !== "REFUNDED") continue;
+      // Folio balances billed to companies: not money received.
+      if (String(t.sourceModule ?? "") === "ACCOUNTS") continue;
       const amount = num(t.amount);
       const type = String(t.transactionType ?? "PAYMENT");
       if (type === "REFUND") {
@@ -290,6 +269,16 @@ export const DayClosingService = {
         detail: openBills.length ? `${plural(openBills.length, "open bill")} across outlets` : "No open bills",
         href: "/food-beverages/restaurants/bills",
       },
+      {
+        id: "fnb-day-close",
+        label: "F&B outlets day closed",
+        mandatory: false,
+        passed: fbOutletsOpen.length === 0,
+        detail: fbOutletsOpen.length
+          ? `Not closed: ${fbOutletsOpen.map((o) => o.name).join(", ")}`
+          : "All active outlets closed",
+        href: "/food-beverages/restaurants/day-close",
+      },
     ];
 
     const today = localTodayIso();
@@ -303,6 +292,8 @@ export const DayClosingService = {
       calendarDate: today,
       isBehind: businessDate < today,
       canCloseDate: businessDate <= today && closedFor.length === 0,
+      /** Closed but not yet rolled forward — Night Audit advances the date. */
+      nightAuditPending: closedFor.length > 0,
       lastClosing: last,
       checks,
       blockers: checks.filter((c) => c.mandatory && !c.passed).length,
@@ -346,7 +337,7 @@ export const DayClosingService = {
       throw new AppError(
         status.businessDate > status.calendarDate
           ? "This business date is in the future. Run day closing on that date."
-          : "This business date is already closed.",
+          : "This business date is already closed. Run Night Audit to move to the next date.",
         409,
       );
     }

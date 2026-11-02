@@ -16,6 +16,9 @@ import {
 } from "../../models/food-beverages/modifiers.js";
 import { consumeRecipesForOrder } from "./recipe-consumption.service.js";
 import { TableReservationService } from "./table-reservations.service.js";
+import { FbCashierSessionService } from "./fb-cashier-session.service.js";
+import { quoteBillingPoint } from "../accounts/tax-resolver.js";
+import { localTodayIso } from "../front-office/room-hk-status.js";
 
 type Row = Record<string, unknown>;
 
@@ -210,13 +213,17 @@ async function syncBillAfterCancellation(orderId: string) {
   const amount = await recomputeOrderAmount(orderId);
 
   if (order && bill && isRoomChargeSettledOrder(order)) {
-    const tax = Number(bill.tax ?? 0);
+    // Bills settled before F&B tax was mapped stay untaxed.
+    const split = Number(bill.tax ?? 0) > 0
+      ? await fbBillAmounts(orderId, amount, order)
+      : { subtotal: amount, tax: 0 };
+    const tax = split.tax;
     const discount = Number(bill.discount ?? 0);
-    const total = Math.max(0, amount + tax - discount);
+    const total = Math.max(0, split.subtotal + tax - discount);
     await syncRoomServiceAfterCancellationViaRpc({
       billId: String(bill.id),
       orderId,
-      newSubtotal: amount,
+      newSubtotal: split.subtotal,
       newTax: tax,
       newDiscount: discount,
       newTotal: total,
@@ -271,7 +278,21 @@ async function maybeCancelKotTicket(kotId: string) {
   });
 }
 
-async function ensureBillForOrder(orderId: string, subtotal: number) {
+/**
+ * Split an order's item total into bill subtotal + tax using the F&B billing point.
+ * Unmapped billing points carry no tax; a mapped point with incomplete tax setup blocks billing.
+ */
+async function fbBillAmounts(orderId: string, gross: number, order?: Row | null) {
+  const o = order ?? (await fbModel.get<Row>(fbModel.tables.orders, orderId));
+  const point = String(o?.type ?? "").trim() === "Room Service" ? "FB_ROOM_SERVICE" : "FB_RESTAURANT_BILL";
+  const result = await quoteBillingPoint(point, gross, localTodayIso());
+  if (!result.configured || !(gross > 0)) return { subtotal: gross, tax: 0 };
+  if (!result.quote.ok) throw new AppError(`F&B tax setup incomplete — ${result.quote.issue}`, 409);
+  return { subtotal: result.quote.taxableAmount, tax: result.quote.taxAmount };
+}
+
+async function ensureBillForOrder(orderId: string, itemsTotal: number) {
+  const { subtotal, tax } = await fbBillAmounts(orderId, itemsTotal);
   const existing = await fbModel.list<Row>(fbModel.tables.bills, {
     filters: { order_id: orderId },
     limit: 1,
@@ -282,9 +303,9 @@ async function ensureBillForOrder(orderId: string, subtotal: number) {
     if (paymentStatus === "PAID" || paymentStatus === "PARTIALLY_PAID") return bill;
     return fbModel.update<Row>(fbModel.tables.bills, String(bill.id), {
       subtotal,
-      tax: Number(bill.tax ?? 0),
+      tax,
       discount: Number(bill.discount ?? 0),
-      total: subtotal + Number(bill.tax ?? 0) - Number(bill.discount ?? 0),
+      total: Math.round((subtotal + tax - Number(bill.discount ?? 0)) * 100) / 100,
       updatedAt: nowIso(),
     });
   }
@@ -295,9 +316,9 @@ async function ensureBillForOrder(orderId: string, subtotal: number) {
     status: "OPEN",
     paymentStatus: "UNPAID",
     subtotal,
-    tax: 0,
+    tax,
     discount: 0,
-    total: subtotal,
+    total: Math.round((subtotal + tax) * 100) / 100,
   });
 }
 
@@ -674,7 +695,7 @@ export const PosService = {
     } else {
       if (!(input.amount > 0)) throw new AppError("Payment amount must be > 0", 400);
 
-      await TransactionService.recordViaRpc({
+      const txn = await TransactionService.recordViaRpc({
         amount: input.amount,
         transactionType: "PAYMENT",
         paymentMethod: TransactionService.normalizePaymentMethod(
@@ -689,6 +710,7 @@ export const PosService = {
         receivedBy: input.receivedBy ?? null,
         notes: input.notes ?? null,
       });
+      await FbCashierSessionService.attachTransaction(txn, order?.outletId ? String(order.outletId) : null);
     }
 
     const updatedBill = roomCharge

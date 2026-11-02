@@ -49,6 +49,13 @@ import {
   getReservationByKey,
 } from "./reservation-lookup.js";
 import { HkTaskService } from "../housekeeping/hk-task.service.js";
+import { BillingMode, RoomNightService } from "./room-night.service.js";
+import { currentBusinessDate } from "./business-date.js";
+import {
+  applyReservationCompany,
+  loadBillableCompany,
+} from "../shared/company-party.service.js";
+import { assertCompanyBillsReady, createCompanyBill } from "./company-bill.service.js";
 
 /** Stay dates are text columns; legacy rows hold en-IN labels like "27 Oct 2026". */
 function toIsoDate(value: unknown): string {
@@ -89,6 +96,39 @@ function describeStay(row: Reservation): string {
   const ref = String((row as { bookingNo?: string }).bookingNo ?? row.id);
   const room = displayRoomNo(row);
   return `${ref}${room && isRealRoomRef(room) ? ` (Room ${room})` : ""}`;
+}
+
+/** Checked before checkout so a bad company never leaves a half-finished checkout. */
+async function prepareCompanyBill(existing: Reservation, amountInput: unknown) {
+  const amount = Math.round(Number(amountInput ?? 0) * 100) / 100;
+  if (!Number.isFinite(amount) || amount < 0) throw new ValidationError("Bill to company amount must be zero or more");
+  if (amount === 0) return null;
+  let companyId = existing.companyId ?? null;
+  if (!companyId && existing.groupId) {
+    const group = await foModel.get<{ companyId?: string | null }>(foModel.tables.foGroups, existing.groupId);
+    companyId = group?.companyId ?? null;
+  }
+  if (!companyId) {
+    throw new ValidationError(
+      existing.groupId
+        ? "Neither this reservation nor its group has a company — set the company first"
+        : "This reservation has no company — set the company on the reservation first",
+    );
+  }
+  const company = await loadBillableCompany(companyId);
+  await assertCompanyBillsReady();
+  return {
+    record: async () => {
+      const folioId = await TransactionService.ensureFolioForBooking(existing.id, existing.guestId ?? null);
+      await createCompanyBill({
+        company,
+        amount,
+        folioId,
+        reservationId: existing.id,
+        notes: `Checkout — ${String(existing.guestName ?? "Guest")}, booking ${String(existing.bookingNo ?? existing.id)}`,
+      });
+    },
+  };
 }
 
 /** One guest cannot hold two live individual stays over the same nights. */
@@ -307,6 +347,7 @@ export const ReservationService = {
     const body = sanitizeReservationInput(input) as Record<string, unknown>;
     delete body.externalReference;
     delete body.paymentReference;
+    await applyReservationCompany(body);
     if (groupId) {
       body.groupId = groupId;
       if (!guestIdRaw) body.guestId = null;
@@ -347,8 +388,10 @@ export const ReservationService = {
       guestId,
     );
 
-    // Individual bookings: legacy subtotal seed. Group children: folio_charges own ROOM.
-    if (!groupId && totalAmount > 0) {
+    // LEGACY_SEEDED individual bookings carry the whole stay in the folio subtotal; NIGHTLY
+    // stays are charged per night by Night Audit. Group children: folio_charges own ROOM.
+    const billingMode = (row as { billingMode?: string }).billingMode;
+    if (!groupId && totalAmount > 0 && billingMode !== BillingMode.NIGHTLY) {
       await foModel.update(foModel.tables.folios, folioId, {
         subtotal: totalAmount,
       });
@@ -388,6 +431,7 @@ export const ReservationService = {
     }
     const body = sanitizeReservationInput(input);
     delete body.id;
+    await applyReservationCompany(body);
     await normalizeReservationRoomRef(body);
     await normalizeReservationSourceRef(body);
 
@@ -646,6 +690,7 @@ export const ReservationService = {
     options: {
       paymentMode?: string;
       amountReceived?: number;
+      billToCompanyAmount?: number;
       externalReference?: string | null;
     } = {},
   ): Promise<Reservation> {
@@ -655,6 +700,9 @@ export const ReservationService = {
     if (existing.status === ReservationStatus.CHECKED_OUT) {
       throw new ConflictError("Reservation is already checked out");
     }
+    const companyBill = await prepareCompanyBill(existing, options.billToCompanyAmount);
+
+    await RoomNightService.postForCheckout(existing);
 
     const amountReceived = Number(options.amountReceived ?? 0);
     const paymentId = IdService.generatePayment();
@@ -691,6 +739,7 @@ export const ReservationService = {
           notes: `Checkout payment — ${String(existing.guestName ?? "Guest")}`,
         });
       }
+      await companyBill?.record();
       await FolioService.closeOpenFoliosForBooking(reservationId).catch(() => {
         /* folios table may not exist in older deployments */
       });
@@ -706,7 +755,7 @@ export const ReservationService = {
       throw new DatabaseError(error.message);
     }
 
-    return this.checkOutFallback(reservationId, existing, options);
+    return this.checkOutFallback(reservationId, existing, options, companyBill?.record);
   },
 
   async checkOutFallback(
@@ -717,6 +766,7 @@ export const ReservationService = {
       amountReceived?: number;
       externalReference?: string | null;
     },
+    beforeFolioClose?: () => Promise<void>,
   ): Promise<Reservation> {
     const paymentMode = options.paymentMode;
     const amountReceived = Number(options.amountReceived ?? 0);
@@ -777,11 +827,25 @@ export const ReservationService = {
       reservationId,
     });
 
+    await beforeFolioClose?.();
     await FolioService.closeOpenFoliosForBooking(reservationId).catch(() => {
       /* folios table may not exist in older deployments */
     });
 
     return enriched;
+  },
+
+  /** Charge nights owed so far, so the checkout bill matches what checkout will settle. */
+  async postPendingRoomNights(id: string) {
+    const existing = await getOrThrow(id);
+    const postings = await RoomNightService.postForCheckout(existing);
+    const posted = postings.filter((p) => p.posted);
+    return {
+      posted: posted.length,
+      amount: Math.round(posted.reduce((s, p) => s + p.amount, 0) * 100) / 100,
+      tax: Math.round(posted.reduce((s, p) => s + p.tax, 0) * 100) / 100,
+      nights: posted.map((p) => p.night),
+    };
   },
 
   async extendStay(
@@ -869,7 +933,7 @@ export const ReservationService = {
           sourceModule: "FRONT_OFFICE",
           sourceType: "EXTEND_STAY",
         });
-      } else {
+      } else if (existing.billingMode !== BillingMode.NIGHTLY) {
         const folioId = await TransactionService.ensureFolioForBooking(
           existing.id,
           existing.guestId ?? null,
@@ -1010,6 +1074,18 @@ export const ReservationService = {
       (data ?? []).map((row) => toCamel<Reservation>(row)),
     );
     await Promise.all(rows.map((r) => ensureReservationFolio(r)));
+    // Group stays without their own company bill to the group's company.
+    const groupIds = [...new Set(rows.filter((r) => r.groupId && !r.companyId).map((r) => String(r.groupId)))];
+    const groupCompany = new Map<string, { companyId: string; companyName: string | null }>();
+    if (groupIds.length) {
+      const { data: groups } = await supabase
+        .from(foModel.tables.foGroups)
+        .select("id, company_id, company_name")
+        .in("id", groupIds);
+      for (const g of (groups ?? []) as { id: string; company_id?: string | null; company_name?: string | null }[]) {
+        if (g.company_id) groupCompany.set(g.id, { companyId: g.company_id, companyName: g.company_name ?? null });
+      }
+    }
     return rows.map((r) => ({
       id: r.id,
       guestId: r.guestId ?? undefined,
@@ -1030,6 +1106,9 @@ export const ReservationService = {
       email: r.email,
       adults: r.adults ?? 1,
       children: r.children ?? 0,
+      companyId: r.companyId ?? groupCompany.get(String(r.groupId))?.companyId ?? null,
+      companyName: r.companyId ? r.companyName ?? null : groupCompany.get(String(r.groupId))?.companyName ?? r.companyName ?? null,
+      groupId: r.groupId ?? null,
     }));
   },
 

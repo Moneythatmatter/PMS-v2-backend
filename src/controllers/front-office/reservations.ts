@@ -107,12 +107,21 @@ export async function checkOut(req: Request, res: Response) {
         paymentMode:
           typeof body.paymentMode === "string" ? body.paymentMode : undefined,
         amountReceived: Number(body.amountReceived ?? 0),
+        billToCompanyAmount: Number(body.billToCompanyAmount ?? 0),
         externalReference:
           typeof body.externalReference === "string"
             ? body.externalReference.trim() || null
             : null,
       }),
     );
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
+export async function postPendingRoomNights(req: Request, res: Response) {
+  try {
+    return ok(res, await ReservationService.postPendingRoomNights(String(req.params.id)));
   } catch (e) {
     return fromError(res, e);
   }

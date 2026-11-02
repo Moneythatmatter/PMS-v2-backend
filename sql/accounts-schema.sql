@@ -217,19 +217,18 @@ create table if not exists public.acc_divisions (
   constraint acc_divisions_code_unique unique (property_id, division_code)
 );
 
+-- Shared by every property; rows come from accounts-universal-party-types.sql.
 create table if not exists public.acc_party_types (
   id uuid primary key default gen_random_uuid(),
-  property_id text not null references public.properties(id) on delete cascade,
   type_code text not null,
   type_name text not null,
   description text not null default '',
   sequence int not null default 1,
+  is_system boolean not null default true,
   status text not null default 'Active' check (status in ('Active','Inactive')),
-  created_by text,
-  updated_by text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint acc_party_types_code_unique unique (property_id, type_code)
+  constraint acc_party_types_code_unique unique (type_code)
 );
 
 create table if not exists public.acc_party_sub_types (

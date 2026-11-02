@@ -11,7 +11,6 @@ export const accTables = {
   fiscalPeriods: "acc_fiscal_periods",
   accounts: "acc_accounts",
   divisions: "acc_divisions",
-  partyTypes: "acc_party_types",
   partySubTypes: "acc_party_sub_types",
   paymentMethods: "acc_payment_methods",
   parties: "acc_parties",
@@ -19,6 +18,7 @@ export const accTables = {
   revenueCategories: "acc_revenue_categories",
   taxDefinitions: "acc_tax_definitions",
   taxRules: "acc_tax_rules",
+  taxApplications: "acc_tax_applications",
   budgets: "acc_budgets",
   vouchers: "acc_vouchers",
   voucherLines: "acc_voucher_lines",
@@ -31,6 +31,13 @@ export const accTables = {
 } as const;
 
 export type AccTable = (typeof accTables)[keyof typeof accTables];
+
+/** Tables shared by every property (no property_id column). Read-only from the API. */
+export const accSharedTables = {
+  partyTypes: "acc_party_types",
+} as const;
+
+export type AccSharedTable = (typeof accSharedTables)[keyof typeof accSharedTables];
 
 export type Row = Record<string, any>;
 
@@ -152,6 +159,24 @@ export async function list<T = Row>(table: AccTable, opts: ListOptions = {}): Pr
     if (opts.limit && out.length >= opts.limit) break;
   }
   return toCamel<T[]>(out);
+}
+
+export async function listShared<T = Row>(
+  table: AccSharedTable,
+  order: { column: string; ascending?: boolean }[] = [],
+): Promise<T[]> {
+  let q = supabase.from(table).select("*");
+  for (const o of order) q = q.order(o.column, { ascending: o.ascending ?? true });
+  const { data, error } = await q.order("id", { ascending: true });
+  if (error) mapDbError(error, table);
+  return toCamel<T[]>(data ?? []);
+}
+
+export async function getSharedById<T = Row>(table: AccSharedTable, id: string): Promise<T | null> {
+  if (!isUuid(id)) return null;
+  const { data, error } = await supabase.from(table).select("*").eq("id", id).maybeSingle();
+  if (error) mapDbError(error, table);
+  return data ? toCamel<T>(data) : null;
 }
 
 export async function getById<T = Row>(table: AccTable, id: string): Promise<T | null> {

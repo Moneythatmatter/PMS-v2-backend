@@ -1,12 +1,15 @@
 import {
+  accSharedTables,
   accTables,
   actorName,
   cleanPayload,
   count,
   getById,
+  getSharedById,
   insert,
   isIsoDate,
   list,
+  listShared,
   mustGet,
   num,
   remove,
@@ -16,8 +19,11 @@ import {
   type AccTable,
   type Row,
 } from "../../models/accounts/repo.js";
-import { ConflictError, ValidationError } from "../../errors/index.js";
+import { ConflictError, NotFoundError, ValidationError } from "../../errors/index.js";
 import { generatePeriodsForYear } from "./fiscal.service.js";
+import { BILLING_POINTS, BILLING_POINT_CODES } from "./tax-resolver.js";
+import { assertCompanyPartyType, syncCompaniesFromParty } from "../shared/company-party.service.js";
+import { assertSupplierPartyType, syncSuppliersFromParty } from "../shared/vendor-party.service.js";
 
 type MasterConfig = {
   key: string;
@@ -38,6 +44,9 @@ type MasterConfig = {
 };
 
 const STATUS_VALUES = ["Active", "Inactive"];
+
+/** Payment modes Front Office records on transactions.payment_method. */
+const FO_PAYMENT_MODES = ["CASH", "CARD", "UPI", "BANK_TRANSFER", "CHEQUE", "OTHER"];
 
 function assertStatus(payload: Row, allowed = STATUS_VALUES) {
   if (payload.status !== undefined && !allowed.includes(payload.status)) {
@@ -326,28 +335,40 @@ const divisions: MasterConfig = {
   },
 };
 
-const partyTypes: MasterConfig = {
-  key: "partyTypes",
-  table: accTables.partyTypes,
-  label: "Party type",
-  columns: ["typeCode", "typeName", "description", "sequence", "status"],
-  required: ["typeCode", "typeName"],
-  uppercase: ["typeCode"],
-  order: [{ column: "sequence" }, { column: "type_name" }],
-  filterable: ["status"],
-  validate: (p) => assertStatus(p),
-  beforeDelete: async (row) => {
-    await blockIfUsed(accTables.partySubTypes, "party_type_id", row.id, "Party type has sub types");
-    await blockIfUsed(accTables.parties, "party_type_id", row.id, "Party type is assigned to parties");
-  },
-  enrich: async (rows) => {
-    const [subs, parties] = await Promise.all([
-      usageCounts(accTables.partySubTypes, "partyTypeId"),
-      usageCounts(accTables.parties, "partyTypeId"),
-    ]);
-    return rows.map((r) => ({ ...r, subTypeCount: subs.get(r.id) ?? 0, partyCount: parties.get(r.id) ?? 0 }));
-  },
-};
+// Party types are one fixed list shared by every property (codes used by posting logic).
+async function partyTypeMap(): Promise<Map<string, Row>> {
+  const rows = await listShared(accSharedTables.partyTypes);
+  return new Map(rows.map((r) => [r.id as string, r]));
+}
+
+async function assertActivePartyType(id: unknown): Promise<void> {
+  if (id === undefined || id === null || id === "") return;
+  const type = await getSharedById(accSharedTables.partyTypes, String(id));
+  if (!type) throw new ValidationError("Select a valid party type");
+  if (type.status !== "Active") throw new ValidationError(`Party type '${type.typeName}' is inactive`);
+}
+
+/** Shared party types with this property's sub type / party usage. */
+export async function listPartyTypes(query: Record<string, unknown>): Promise<Row[]> {
+  const [rows, subs, parties] = await Promise.all([
+    listShared(accSharedTables.partyTypes, [{ column: "sequence" }, { column: "type_name" }]),
+    usageCounts(accTables.partySubTypes, "partyTypeId"),
+    usageCounts(accTables.parties, "partyTypeId"),
+  ]);
+  const status = typeof query.status === "string" && query.status !== "all" ? query.status : "";
+  const search = typeof query.search === "string" ? query.search.trim().toLowerCase() : "";
+  return rows
+    .filter((r) => !status || r.status === status)
+    .filter((r) => !search || [r.typeCode, r.typeName, r.description].some((v) => String(v ?? "").toLowerCase().includes(search)))
+    .map((r) => ({ ...r, subTypeCount: subs.get(r.id) ?? 0, partyCount: parties.get(r.id) ?? 0 }));
+}
+
+export async function getPartyType(id: string): Promise<Row> {
+  requireUuid(id);
+  const row = await getSharedById(accSharedTables.partyTypes, id);
+  if (!row) throw new NotFoundError("Party type not found");
+  return row;
+}
 
 const partySubTypes: MasterConfig = {
   key: "partySubTypes",
@@ -358,13 +379,21 @@ const partySubTypes: MasterConfig = {
   uppercase: ["subTypeCode"],
   order: [{ column: "sequence" }, { column: "sub_type_name" }],
   filterable: ["status", "partyTypeId"],
-  validate: (p) => assertStatus(p),
+  validate: async (p, existing) => {
+    assertStatus(p);
+    if (p.partyTypeId !== undefined && p.partyTypeId !== existing?.partyTypeId) {
+      await assertActivePartyType(p.partyTypeId);
+      if (existing && (await count(accTables.parties, { party_sub_type_id: existing.id })) > 0) {
+        throw new ConflictError("Sub type is assigned to parties; its party type cannot be changed");
+      }
+    }
+  },
   beforeDelete: async (row) => {
     await blockIfUsed(accTables.parties, "party_sub_type_id", row.id, "Sub type is assigned to parties");
   },
   enrich: async (rows) => {
     const [types, parties] = await Promise.all([
-      nameMap(accTables.partyTypes, "type_name", "type_code"),
+      partyTypeMap(),
       usageCounts(accTables.parties, "partySubTypeId"),
     ]);
     return rows.map((r) => ({
@@ -382,13 +411,25 @@ const paymentMethods: MasterConfig = {
   label: "Payment method",
   columns: [
     "companyId", "accountId", "paymentMethodCode", "paymentMethodName", "methodType", "referenceRequired",
-    "description", "status",
+    "foPaymentMode", "description", "status",
   ],
   required: ["paymentMethodCode", "paymentMethodName", "methodType"],
-  uppercase: ["paymentMethodCode"],
+  uppercase: ["paymentMethodCode", "foPaymentMode"],
   order: [{ column: "payment_method_name" }],
   filterable: ["status", "methodType"],
-  validate: (p) => assertStatus(p),
+  validate: async (p, existing) => {
+    assertStatus(p);
+    if (p.foPaymentMode === "") p.foPaymentMode = null;
+    if (p.foPaymentMode === undefined || p.foPaymentMode === null) return;
+    if (!FO_PAYMENT_MODES.includes(p.foPaymentMode)) {
+      throw new ValidationError(`Front Office payment mode must be one of: ${FO_PAYMENT_MODES.join(", ")}`);
+    }
+    const taken = (await list(accTables.paymentMethods, { eq: { fo_payment_mode: p.foPaymentMode } }))
+      .find((m) => m.id !== existing?.id);
+    if (taken) {
+      throw new ConflictError(`${taken.paymentMethodName} already receives Front Office ${p.foPaymentMode} payments`);
+    }
+  },
   beforeDelete: async (row) => {
     await blockIfUsed(accTables.vouchers, "payment_method_id", row.id, "Payment method is used in vouchers");
   },
@@ -424,7 +465,7 @@ const parties: MasterConfig = {
   autoCode: { field: "partyCode", prefix: "P-", pad: 4 },
   order: [{ column: "party_name" }],
   filterable: ["status", "partyTypeId", "partySubTypeId", "partyGroup"],
-  validate: async (p) => {
+  validate: async (p, existing) => {
     assertStatus(p, ["Active", "Inactive", "Blocked"]);
     assertNonNegative(p, ["creditDays", "creditLimit"]);
     if (p.email && !/^\S+@\S+\.\S+$/.test(p.email)) throw new ValidationError("Invalid email address");
@@ -432,12 +473,27 @@ const parties: MasterConfig = {
     if (p.panNumber && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(p.panNumber)) {
       throw new ValidationError("PAN must be in the format AAAAA9999A");
     }
-    if (p.partySubTypeId && p.partyTypeId) {
-      const sub = await getById(accTables.partySubTypes, p.partySubTypeId);
-      if (sub && sub.partyTypeId !== p.partyTypeId) {
+    const subTypeId = p.partySubTypeId !== undefined ? p.partySubTypeId : p.partyTypeId ? existing?.partySubTypeId : null;
+    if (subTypeId) {
+      const sub = await getById(accTables.partySubTypes, subTypeId);
+      if (!sub) throw new ValidationError("Select a valid party sub type");
+      if (p.partyTypeId === undefined || p.partyTypeId === null || p.partyTypeId === "") {
+        p.partyTypeId = sub.partyTypeId;
+      } else if (sub.partyTypeId !== p.partyTypeId) {
         throw new ValidationError("Sub type does not belong to the selected party type");
       }
     }
+    if (p.partyTypeId !== existing?.partyTypeId) {
+      await assertActivePartyType(p.partyTypeId);
+      if (existing) {
+        await assertCompanyPartyType(existing.id, p.partyTypeId);
+        await assertSupplierPartyType(existing.id, p.partyTypeId);
+      }
+    }
+  },
+  afterSave: async (row) => {
+    await syncCompaniesFromParty(row);
+    await syncSuppliersFromParty(row);
   },
   beforeDelete: async (row) => {
     await blockIfUsed(accTables.voucherLines, "party_id", row.id, "Party has ledger transactions");
@@ -445,7 +501,7 @@ const parties: MasterConfig = {
   },
   enrich: async (rows) => {
     const [types, subs, accs, cur, pms, outstanding] = await Promise.all([
-      nameMap(accTables.partyTypes, "type_name", "type_code"),
+      partyTypeMap(),
       nameMap(accTables.partySubTypes, "sub_type_name", "sub_type_code"),
       nameMap(accTables.accounts, "name", "code"),
       nameMap(accTables.currencies, "code"),
@@ -562,6 +618,7 @@ const revenueCategories: MasterConfig = {
   validate: (p) => assertStatus(p),
   beforeDelete: async (row) => {
     await blockIfUsed(accTables.taxRules, "revenue_category_id", row.id, "Revenue category is used by tax rules");
+    await blockIfUsed(accTables.taxApplications, "revenue_category_id", row.id, "Revenue category is used by billing points");
   },
   enrich: async (rows) => {
     const [accs, rules] = await Promise.all([
@@ -633,6 +690,12 @@ const taxRules: MasterConfig = {
       throw new ValidationError("Effective To must be on or after Effective From");
     }
   },
+  beforeDelete: async (row) => {
+    const apps = await list(accTables.taxApplications);
+    if (apps.some((a) => Array.isArray(a.taxRuleIds) && a.taxRuleIds.includes(row.id))) {
+      throw new ConflictError("Tax rule is used by a billing point. Remove it there first.");
+    }
+  },
   enrich: async (rows) => {
     const [taxes, cats, divs] = await Promise.all([
       nameMap(accTables.taxDefinitions, "tax_name", "tax_code,rate"),
@@ -647,6 +710,117 @@ const taxRules: MasterConfig = {
       revenueCategoryName: r.revenueCategoryId ? cats.get(r.revenueCategoryId)?.revenueCategoryName ?? null : null,
       divisionName: r.divisionId ? divs.get(r.divisionId)?.divisionName ?? null : null,
     }));
+  },
+};
+
+/** Rules picked for one billing point form a slab set: ranges may repeat (taxes add up) but not partly overlap. */
+async function validateBillingPointRules(p: Row) {
+  if (p.taxRuleIds === null) p.taxRuleIds = [];
+  if (!Array.isArray(p.taxRuleIds)) throw new ValidationError("taxRuleIds must be a list of tax rule ids");
+  p.taxRuleIds = [...new Set(p.taxRuleIds.map(String))];
+  if (!p.taxRuleIds.length) return;
+  for (const id of p.taxRuleIds) requireUuid(id, "tax rule id");
+  const found = await list(accTables.taxRules, { in: { id: p.taxRuleIds } });
+  if (found.length !== p.taxRuleIds.length) throw new ValidationError("One or more selected tax rules do not exist");
+  const inactive = found.filter((r) => r.status !== "Active").map((r) => r.taxRuleCode);
+  if (inactive.length) throw new ValidationError(`Inactive tax rule selected: ${inactive.join(", ")}`);
+  const lo = (r: Row) => (r.minimumAmount == null ? 0 : num(r.minimumAmount));
+  const hi = (r: Row) => (r.maximumAmount == null ? Infinity : num(r.maximumAmount));
+  const day = (v: unknown, fallback: string) => String(v ?? "").slice(0, 10) || fallback;
+  for (let i = 0; i < found.length; i++) {
+    for (let j = i + 1; j < found.length; j++) {
+      const a = found[i];
+      const b = found[j];
+      const sameRange = lo(a) === lo(b) && hi(a) === hi(b);
+      const touching = hi(a) === lo(b) || hi(b) === lo(a);
+      const amountsOverlap = lo(a) <= hi(b) && lo(b) <= hi(a) && !touching;
+      const datesOverlap =
+        day(a.effectiveFrom, "0000-01-01") <= day(b.effectiveTo, "9999-12-31") &&
+        day(b.effectiveFrom, "0000-01-01") <= day(a.effectiveTo, "9999-12-31");
+      if (!sameRange && amountsOverlap && datesOverlap) {
+        throw new ValidationError(
+          `Tax rules ${a.taxRuleCode} and ${b.taxRuleCode} cover overlapping amounts. Pick rules whose amounts do not overlap.`,
+        );
+      }
+    }
+  }
+}
+
+const taxApplications: MasterConfig = {
+  key: "taxApplications",
+  table: accTables.taxApplications,
+  label: "Billing point",
+  columns: [
+    "companyId", "billingPoint", "revenueCategoryId", "priceIncludesTax", "taxRuleIds", "divisionId", "effectiveFrom",
+    "effectiveTo", "description", "status",
+  ],
+  required: ["billingPoint", "revenueCategoryId"],
+  uppercase: ["billingPoint"],
+  order: [{ column: "billing_point" }, { column: "effective_from", ascending: false }],
+  filterable: ["status", "billingPoint", "revenueCategoryId"],
+  validate: async (p, existing) => {
+    assertStatus(p);
+    const point = String(p.billingPoint ?? existing?.billingPoint ?? "");
+    if (p.billingPoint !== undefined && !BILLING_POINT_CODES.includes(point)) {
+      throw new ValidationError(`Billing point must be one of: ${BILLING_POINT_CODES.join(", ")}`);
+    }
+    if (p.taxRuleIds !== undefined) await validateBillingPointRules(p);
+    const from = String(p.effectiveFrom ?? existing?.effectiveFrom ?? "").slice(0, 10);
+    const to = String(p.effectiveTo === undefined ? existing?.effectiveTo ?? "" : p.effectiveTo ?? "").slice(0, 10);
+    if (from && to && to < from) throw new ValidationError("Effective To must be on or after Effective From");
+    const status = String(p.status ?? existing?.status ?? "Active");
+    if (status !== "Active" || !point) return;
+    const others = (await list(accTables.taxApplications, { eq: { billing_point: point, status: "Active" } }))
+      .filter((r) => r.id !== existing?.id);
+    const start = from || "0000-01-01";
+    const end = to || "9999-12-31";
+    const clash = others.find((r) => {
+      const rStart = String(r.effectiveFrom ?? "").slice(0, 10) || "0000-01-01";
+      const rEnd = String(r.effectiveTo ?? "").slice(0, 10) || "9999-12-31";
+      return rStart <= end && start <= rEnd;
+    });
+    if (clash) {
+      throw new ConflictError(
+        "Another active mapping for this billing point covers the same dates. End it (Effective To) or deactivate it first.",
+      );
+    }
+  },
+  enrich: async (rows) => {
+    const [cats, rules, taxes, divisions] = await Promise.all([
+      nameMap(accTables.revenueCategories, "revenue_category_name", "revenue_category_code"),
+      nameMap(accTables.taxRules, "tax_rule_code", "tax_rule_name,tax_id,minimum_amount,maximum_amount,status"),
+      nameMap(accTables.taxDefinitions, "tax_code", "rate,calculation_type"),
+      nameMap(accTables.divisions, "division_name"),
+    ]);
+    return rows.map((r) => {
+      const point = BILLING_POINTS.find((b) => b.code === r.billingPoint);
+      const taxRuleIds: string[] = Array.isArray(r.taxRuleIds) ? r.taxRuleIds : [];
+      return {
+        ...r,
+        taxRuleIds,
+        rules: taxRuleIds.map((id) => {
+          const rule = rules.get(id);
+          const t = rule ? taxes.get(rule.taxId) : undefined;
+          return {
+            id,
+            taxRuleCode: rule?.taxRuleCode ?? "?",
+            taxRuleName: rule?.taxRuleName ?? "Deleted rule",
+            taxCode: t?.taxCode ?? "?",
+            rate: t ? num(t.rate) : 0,
+            calculationType: t?.calculationType ?? "Percentage",
+            minimumAmount: rule?.minimumAmount ?? null,
+            maximumAmount: rule?.maximumAmount ?? null,
+            status: rule?.status ?? "Missing",
+          };
+        }),
+        module: point?.module ?? "",
+        billingPointLabel: point?.label ?? r.billingPoint,
+        revenueCategoryName: cats.get(r.revenueCategoryId)?.revenueCategoryName ?? null,
+        revenueCategoryCode: cats.get(r.revenueCategoryId)?.revenueCategoryCode ?? null,
+        divisionId: r.divisionId ?? null,
+        divisionName: r.divisionId ? divisions.get(r.divisionId)?.divisionName ?? null : null,
+      };
+    });
   },
 };
 
@@ -770,7 +944,6 @@ export const masters: Record<string, MasterConfig> = {
   companies,
   accounts,
   divisions,
-  partyTypes,
   partySubTypes,
   paymentMethods,
   parties,
@@ -778,6 +951,7 @@ export const masters: Record<string, MasterConfig> = {
   revenueCategories,
   taxDefinitions,
   taxRules,
+  taxApplications,
   budgets,
   fiscalYears,
   closingStock,

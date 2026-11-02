@@ -23,6 +23,13 @@ import {
 import { AppError, ConflictError, ValidationError } from "../../errors/index.js";
 import { findFiscalYear, findPeriod, getSettings, resolvePostingWindow } from "./fiscal.service.js";
 import { applyAllocations, createBillForVoucher, releaseVoucherBills } from "./bills.service.js";
+import {
+  FB_SOURCE_MODULE,
+  FO_SOURCE_MODULE,
+  raiseFoCompanyBills,
+  releaseFbPostingMarkers,
+  releaseFoPostingMarkers,
+} from "./fo-posting-markers.js";
 
 export type VoucherLineInput = {
   accountId: string;
@@ -32,6 +39,8 @@ export type VoucherLineInput = {
   debit?: number | string;
   credit?: number | string;
   divisionId?: string | null;
+  /** Party of this line (receivable / payable / advance ledgers only); defaults to the voucher party. */
+  partyId?: string | null;
   chequeNo?: string;
   chequeDate?: string | null;
   gstRate?: number | string | null;
@@ -70,6 +79,9 @@ export type VoucherInput = {
   provisionalType?: string | null;
   expiryDate?: string | null;
   sourceModule?: string;
+  sourceType?: string;
+  sourceRef?: string;
+  businessDate?: string | null;
   lines: VoucherLineInput[];
   billAllocations?: BillAllocationInput[];
   newBill?: NewBillInput | null;
@@ -78,6 +90,7 @@ export type VoucherInput = {
 const HEADER_COLUMNS = [
   "referenceNo", "narration", "partyId", "divisionId", "bankCashAccountId", "paymentMethodId", "instrumentNo",
   "instrumentDate", "provisionalCategory", "provisionalType", "expiryDate", "sourceModule",
+  "sourceType", "sourceRef", "businessDate",
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -187,7 +200,7 @@ async function prepareLines(voucherType: Row, input: VoucherInput): Promise<{ li
       narration: String(l.narration ?? "").trim().slice(0, 500),
       lineNo: i + 1,
       accountId: l.accountId,
-      partyId: voucherPartyId && acc && isPartyAccount(acc) ? voucherPartyId : null,
+      partyId: acc && isPartyAccount(acc) ? (isUuid(l.partyId) ? l.partyId : voucherPartyId) : null,
       divisionId: isUuid(l.divisionId) ? l.divisionId : isUuid(input.divisionId) ? input.divisionId : null,
       entryType: entryType ?? "Dr",
       amount,
@@ -202,7 +215,7 @@ async function prepareLines(voucherType: Row, input: VoucherInput): Promise<{ li
   if (dr !== cr) {
     throw new ValidationError(`Debits (${dr.toFixed(2)}) must equal credits (${cr.toFixed(2)})`);
   }
-  if (voucherType.partyRequired && !voucherPartyId) {
+  if (voucherType.partyRequired && !voucherPartyId && !lines.some((l) => l.partyId)) {
     throw new ValidationError(`${voucherType.voucherTypeName} requires a party`);
   }
   if (voucherType.divisionRequired && !lines.some((l) => l.divisionId)) {
@@ -386,6 +399,8 @@ export async function deleteVoucher(id: string) {
     await assertPostedMutable(v, v.voucherDate, "deleted");
     await releaseVoucherBills(v);
   }
+  if (v.sourceModule === FO_SOURCE_MODULE) await releaseFoPostingMarkers(id);
+  if (v.sourceModule === FB_SOURCE_MODULE) await releaseFbPostingMarkers(id);
   await remove(accTables.vouchers, id);
   await audit("voucher", id, "Deleted", {
     details: { voucherNo: v.voucherNo, status: v.status, total: num(v.totalAmount), voucherDate: v.voucherDate },
@@ -410,6 +425,7 @@ export async function postVoucher(id: string, body: { billAllocations?: BillAllo
   });
   if (body.newBill) await createBillForVoucher(posted, body.newBill, num(v.totalAmount));
   if (body.billAllocations?.length) await applyAllocations(posted, body.billAllocations);
+  if (v.sourceModule === FO_SOURCE_MODULE) await raiseFoCompanyBills(posted);
   await audit("voucher", id, "Posted", { details: { voucherNo: v.voucherNo } });
   return getVoucher(id);
 }
@@ -423,6 +439,8 @@ export async function reverseVoucher(id: string, reason: string) {
   }
   await resolvePostingWindow(v.voucherDate, { enforceSettings: false });
   if (v.status === "Posted") await releaseVoucherBills(v);
+  if (v.sourceModule === FO_SOURCE_MODULE) await releaseFoPostingMarkers(id);
+  if (v.sourceModule === FB_SOURCE_MODULE) await releaseFbPostingMarkers(id);
   const actor = await actorName();
   await update(accTables.vouchers, id, {
     status: "Reversed",

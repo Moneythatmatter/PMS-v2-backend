@@ -11,15 +11,20 @@ import {
   closingStockPost,
   coveringLetterHandlers,
   fiscalYearActions,
+  foPostingHandlers,
+  fbPostingHandlers,
   getCompanySettings,
   lookups,
   masterHandlers,
+  partyTypeHandlers,
   periods,
   reportHandlers,
   updateCompanySettings,
   voucherHandlers,
 } from "../controllers/accounts/index.js";
 import type { masters } from "../services/accounts/masters.service.js";
+import { BILLING_POINTS } from "../services/accounts/tax-resolver.js";
+import { ok } from "../utils/response.js";
 
 const router = Router();
 
@@ -30,6 +35,7 @@ router.use(attachRequestContext);
 
 router.get("/dashboard", reportHandlers.dashboard);
 router.get("/lookups", lookups);
+router.get("/masters/tax-billing-points", (_req, res) => ok(res, BILLING_POINTS));
 router.get("/audit-logs", auditLogs);
 
 // Masters -------------------------------------------------------------------
@@ -43,12 +49,21 @@ router.post("/masters/fiscal-years/:id/set-current", fiscalYearActions.setCurren
 router.post("/masters/fiscal-years/:id/close", fiscalYearActions.close);
 router.post("/masters/fiscal-years/:id/reopen", fiscalYearActions.reopen);
 
+router.get("/fo-posting/preview", foPostingHandlers.preview);
+router.post("/fo-posting/post", foPostingHandlers.post);
+router.get("/fo-posting/history", foPostingHandlers.history);
+router.get("/fb-posting/preview", fbPostingHandlers.preview);
+router.post("/fb-posting/post", fbPostingHandlers.post);
+router.get("/fb-posting/history", fbPostingHandlers.history);
+
+router.get("/masters/party-types", partyTypeHandlers.list);
+router.get("/masters/party-types/:id", partyTypeHandlers.get);
+
 const masterRoutes: [string, keyof typeof masters][] = [
   ["/masters/currencies", "currencies"],
   ["/masters/companies", "companies"],
   ["/masters/accounts", "accounts"],
   ["/masters/divisions", "divisions"],
-  ["/masters/party-types", "partyTypes"],
   ["/masters/party-sub-types", "partySubTypes"],
   ["/masters/payment-methods", "paymentMethods"],
   ["/masters/parties", "parties"],
@@ -56,6 +71,7 @@ const masterRoutes: [string, keyof typeof masters][] = [
   ["/masters/revenue-categories", "revenueCategories"],
   ["/masters/tax-definitions", "taxDefinitions"],
   ["/masters/tax-rules", "taxRules"],
+  ["/masters/tax-applications", "taxApplications"],
   ["/masters/budgets", "budgets"],
   ["/masters/fiscal-years", "fiscalYears"],
   ["/closing-stock", "closingStock"],

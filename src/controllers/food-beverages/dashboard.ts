@@ -17,9 +17,11 @@ export async function getDashboard(req: Request, res: Response) {
       fbModel.list<Order>(fbModel.tables.orders, {
         filters: outletId ? { outlet_id: outletId } : undefined,
       }),
-      fbModel.list<Shift>(fbModel.tables.cashierShifts, {
-        filters: outletId ? { outlet_id: outletId } : undefined,
-      }),
+      fbModel
+        .list<Shift>(fbModel.tables.cashierSessions, {
+          filters: { status: "Open", ...(outletId ? { outlet_id: outletId } : {}) },
+        })
+        .catch(() => [] as Shift[]),
     ]);
 
     const occupied = tables.filter((t) =>
@@ -27,7 +29,7 @@ export async function getDashboard(req: Request, res: Response) {
     ).length;
     const openOrders = orders.filter((o) => o.status !== "Settled").length;
     const salesToday = orders.reduce((s, o) => s + Number(o.amount ?? 0), 0);
-    const openShifts = shifts.filter((s) => s.status === "Open").length;
+    const openShifts = shifts.length;
 
     return ok(res, {
       outlets,
@@ -52,7 +54,7 @@ export async function getDashboard(req: Request, res: Response) {
         {
           label: "Sales Today",
           value: `₹${salesToday.toLocaleString("en-IN")}`,
-          sublabel: `${openShifts} open shifts`,
+          sublabel: `${openShifts} open shift${openShifts === 1 ? "" : "s"}`,
         },
       ],
       recentOrders: orders.slice(0, 8),

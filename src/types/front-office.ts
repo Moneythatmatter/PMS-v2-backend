@@ -44,6 +44,7 @@ export interface Reservation {
   arrivingToday?: boolean;
   bookingType?: string;
   companyName?: string;
+  companyId?: string | null;
   adults?: number;
   children?: number;
   nights?: number;
@@ -52,6 +53,8 @@ export interface Reservation {
   requestedRoomType?: string | null;
   roomRate?: number;
   totalAmount?: number;
+  /** LEGACY_SEEDED | NIGHTLY — set by the database, never by clients. */
+  billingMode?: string;
   advancePaid?: number;
   paymentMode?: string;
   specialRequests?: string;
@@ -94,6 +97,8 @@ export interface FoGroup {
   contactPhone?: string | null;
   contactEmail?: string | null;
   companyName?: string | null;
+  /** Billable company (Accounts Corporate party); the master folio can be billed to it. */
+  companyId?: string | null;
   arrivalDate: string;
   departureDate: string;
   status: string;
@@ -172,6 +177,9 @@ export interface InHouseGuest {
   email?: string;
   adults: number;
   children: number;
+  companyId?: string | null;
+  companyName?: string | null;
+  groupId?: string | null;
 }
 
 /** Guest linked to a reservation (primary or companion). */

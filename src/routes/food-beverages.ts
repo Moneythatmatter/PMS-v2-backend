@@ -11,6 +11,7 @@ import * as pos from "../controllers/food-beverages/pos.js";
 import * as orders from "../controllers/food-beverages/orders.js";
 import * as kds from "../controllers/food-beverages/kds.js";
 import * as cashier from "../controllers/food-beverages/cashier.js";
+import * as cashierSessions from "../controllers/food-beverages/cashier-sessions.js";
 import { getReport } from "../controllers/food-beverages/reports.js";
 import * as recipes from "../controllers/food-beverages/recipes.js";
 import * as modifiers from "../controllers/food-beverages/modifiers.js";
@@ -105,6 +106,17 @@ router.post("/cashier-shifts", cashier.openShift);
 router.patch("/cashier-shifts/:id", cashier.updateShift);
 router.put("/cashier-shifts/:id", cashier.updateShift);
 router.post("/cashier-shifts/:id/close", cashier.closeShift);
+
+// Outlet cashier sessions: start, count, submit, manager approval
+router.get("/cashier-sessions", cashierSessions.listSessions);
+router.get("/cashier-sessions/active", cashierSessions.activeSession);
+router.get("/cashier-sessions/:id", cashierSessions.getSession);
+router.post("/cashier-sessions", cashierSessions.startSession);
+router.put("/cashier-sessions/:id/closing", cashierSessions.saveClosing);
+router.post("/cashier-sessions/:id/submit", cashierSessions.submitClosing);
+router.post("/cashier-sessions/:id/approve", cashierSessions.approveClosing);
+router.post("/cashier-sessions/:id/reject", cashierSessions.rejectClosing);
+router.post("/cashier-sessions/:id/resubmit", cashierSessions.resubmitClosing);
 
 // Outlets
 mountCrud(
@@ -276,16 +288,11 @@ mountCrud(
   createTableCrud({ table: fbModel.tables.stockAdjustments, idPrefix: "ADJ" }),
 );
 
-// Day close
-mountCrud(
-  router,
-  "/day-close",
-  createTableCrud({
-    table: fbModel.tables.dayClosings,
-    idPrefix: "DC",
-    listFilters: outletFilter,
-  }),
-);
+// Outlet day close (hotel business date)
+router.get("/day-close/status", cashierSessions.dayCloseStatus);
+router.get("/day-close/history", cashierSessions.dayCloseHistory);
+router.post("/day-close/run", cashierSessions.runDayClose);
+router.get("/day-close", cashierSessions.dayCloseHistory);
 
 // Also expose raw KDS CRUD for completeness (list already custom)
 mountCrud(

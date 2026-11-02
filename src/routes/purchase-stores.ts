@@ -10,6 +10,13 @@ import * as openingStock from "../controllers/purchase-stores/opening-stock.js";
 import * as prLifecycle from "../controllers/purchase-stores/requisition-lifecycle.js";
 import { psModel } from "../models/purchase-stores/index.js";
 import { withPsDocumentDefaults } from "../utils/purchase-stores-docs.js";
+import { fromError, ok } from "../utils/response.js";
+import {
+  attachSupplierPartyData,
+  listSupplierPartyOptions,
+  prepareSupplierCreate,
+  prepareSupplierUpdate,
+} from "../services/shared/vendor-party.service.js";
 
 const router = Router();
 const T = psModel.tables;
@@ -60,7 +67,21 @@ router.get("/grns/by-po/:poNumber", dashboard.listGrnsByPo);
 // Masters
 mountCrud(router, "/masters/units", createTableCrud({ table: T.units, idPrefix: "PSU", orderBy: "unit_code" }));
 mountCrud(router, "/masters/categories", createTableCrud({ table: T.categories, idPrefix: "PSC", orderBy: "category_code" }));
-mountCrud(router, "/masters/suppliers", createTableCrud({ table: T.suppliers, idPrefix: "PSS", orderBy: "supplier_code" }));
+router.get("/masters/suppliers/party-options", async (_req, res) => {
+  try {
+    return ok(res, await listSupplierPartyOptions());
+  } catch (e) {
+    return fromError(res, e);
+  }
+});
+mountCrud(router, "/masters/suppliers", createTableCrud({
+  table: T.suppliers,
+  idPrefix: "PSS",
+  orderBy: "supplier_code",
+  beforeCreate: prepareSupplierCreate,
+  beforeUpdate: prepareSupplierUpdate,
+  afterRead: attachSupplierPartyData,
+}));
 mountCrud(router, "/masters/products", createTableCrud({
   table: T.products,
   idPrefix: "PSP",

@@ -13,7 +13,9 @@ import type {
   FoGroupBillingRule,
   Reservation,
 } from "../../types/front-office.js";
-import { AppError, NotFoundError } from "../../errors/index.js";
+import { AppError, NotFoundError, ValidationError } from "../../errors/index.js";
+import { loadBillableCompany, resolveGroupCompany } from "../shared/company-party.service.js";
+import { assertCompanyBillsReady, createCompanyBill } from "./company-bill.service.js";
 import { enrichReservations } from "./reservation-enrich.js";
 import { ReservationService } from "./reservation.service.js";
 import { resolveRoomId } from "./room-resolver.js";
@@ -46,6 +48,7 @@ export type CreateGroupInput = {
   contactPhone?: string | null;
   contactEmail?: string | null;
   companyName?: string | null;
+  companyId?: string | null;
   arrivalDate: string;
   departureDate: string;
   nights?: number;
@@ -74,6 +77,7 @@ export type UpdateGroupInput = {
   contactPhone?: string | null;
   contactEmail?: string | null;
   companyName?: string | null;
+  companyId?: string | null;
   arrivalDate?: string;
   departureDate?: string;
   notes?: string | null;
@@ -311,6 +315,7 @@ export const GroupService = {
       String(input.idempotencyKey ?? "").trim() || randomUUID();
 
     const assignedRooms = await resolveAssignedRooms(roomLines, arrivalDate, departureDate);
+    const company = await resolveGroupCompany(input.companyId);
 
     const billingRules =
       input.billingRules && input.billingRules.length > 0
@@ -326,7 +331,7 @@ export const GroupService = {
       p_contact_name: input.contactName ?? null,
       p_contact_phone: input.contactPhone ?? null,
       p_contact_email: input.contactEmail ?? null,
-      p_company_name: input.companyName ?? null,
+      p_company_name: company ? company.companyName : input.companyName ?? null,
       p_arrival_date: arrivalDate,
       p_departure_date: departureDate,
       p_nights: nights,
@@ -359,6 +364,10 @@ export const GroupService = {
     const reservationIds = Array.isArray(payload.reservationIds)
       ? payload.reservationIds.map(String)
       : [];
+
+    if (company && !payload.idempotent) {
+      await foModel.update(foModel.tables.foGroups, payload.groupId, { companyId: company.companyId });
+    }
 
     // Heal property_id until ensure_* RPCs are re-applied with property_id on insert
     if (payload.masterFolioId) {
@@ -488,6 +497,13 @@ export const GroupService = {
     if (input.updatedBy !== undefined) {
       patch.updatedBy = input.updatedBy;
     }
+    const company = await resolveGroupCompany(input.companyId);
+    if (company === null) {
+      patch.companyId = null;
+    } else if (company) {
+      patch.companyId = company.companyId;
+      patch.companyName = company.companyName;
+    }
 
     await foModel.update<FoGroup>(foModel.tables.foGroups, id, patch);
 
@@ -522,6 +538,35 @@ export const GroupService = {
     }
 
     return this.getById(id);
+  },
+
+  /** Move part (or all) of the master folio balance to the group's company. */
+  async billToCompany(groupId: string, input: { amount?: unknown; notes?: unknown }) {
+    const group = await this.getById(groupId);
+    if (!group.companyId) {
+      throw new ValidationError("This group has no company — edit the group and select the company first");
+    }
+    const amount = Math.round(Number(input.amount ?? 0) * 100) / 100;
+    if (!Number.isFinite(amount) || !(amount > 0)) {
+      throw new ValidationError("Enter the amount to bill to the company");
+    }
+    const company = await loadBillableCompany(group.companyId);
+    await assertCompanyBillsReady();
+    const folio = await this.getMasterFolio(groupId);
+    if (!folio) throw new ValidationError("This group has no master folio");
+    const balance = Number(folio.balanceAmount ?? 0);
+    if (amount > balance + 0.005) {
+      throw new ValidationError(`Amount is more than the master folio balance (₹${balance.toFixed(2)})`);
+    }
+    const notes = String(input.notes ?? "").trim();
+    const bill = await createCompanyBill({
+      company,
+      amount,
+      folioId: folio.id,
+      groupId,
+      notes: notes || `Group ${group.groupNo ?? group.groupName} — master folio`,
+    });
+    return { bill: toCamel(bill), folio: await FolioService.getById(folio.id) };
   },
 };
 

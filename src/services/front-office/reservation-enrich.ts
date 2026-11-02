@@ -77,6 +77,7 @@ export function sanitizeReservationInput(
   delete body.guestNo;
   delete body.paymentReference;
   delete body.externalReference;
+  delete body.billingMode;
 
   return body;
 }
