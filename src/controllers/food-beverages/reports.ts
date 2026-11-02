@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { fbModel } from "../../models/food-beverages/index.js";
 import { supabase } from "../../utils/supabase.js";
 import { fail, fromError, ok } from "../../utils/response.js";
+import { billTaxBreakdown } from "../../services/food-beverages/pos.service.js";
 
 type Order = Record<string, unknown>;
 type Outlet = Record<string, unknown>;
@@ -9,6 +10,70 @@ type Ingredient = Record<string, unknown>;
 type Shift = Record<string, unknown>;
 type LiveTable = Record<string, unknown>;
 type KdsTicket = Record<string, unknown>;
+type Bill = Record<string, unknown>;
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Indian calendar day a bill was raised (printed, else created). */
+function billDay(bill: Bill): string {
+  const raw = String(bill.billPrintedAt ?? bill.createdAt ?? "");
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime())
+    ? ""
+    : parsed.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
+/** One row per non-cancelled bill in the period, tax split into CGST / SGST / IGST. */
+async function gstRows(bills: Bill[], ordersById: Map<string, Order>, outlets: Outlet[]) {
+  return Promise.all(
+    bills.map(async (bill) => {
+      const order = ordersById.get(String(bill.orderId)) ?? {};
+      const tax = Number(bill.tax ?? 0);
+      const { lines } = await billTaxBreakdown(order, bill);
+      let cgst = 0;
+      let sgst = 0;
+      let igst = 0;
+      let other = 0;
+      for (const l of lines) {
+        const kind = String(l.type || l.code || "").toUpperCase();
+        if (kind.includes("CGST")) cgst += l.amount;
+        else if (kind.includes("SGST") || kind.includes("UTGST")) sgst += l.amount;
+        else if (kind.includes("IGST")) igst += l.amount;
+        else other += l.amount;
+      }
+      const rate = lines.reduce((n, l) => n + (l.fixed ? 0 : Number(l.rate ?? 0)), 0);
+      const taxable = Math.max(0, Number(bill.subtotal ?? 0) - Number(bill.discount ?? 0));
+      const day = billDay(bill);
+      return {
+        id: String(bill.id),
+        billNo: String(bill.billNo ?? bill.id),
+        date: day ? formatDayLabel(day) : "—",
+        isoDate: day,
+        outlet: outletName(outlets, order.outletId),
+        outletId: order.outletId ?? null,
+        orderType: String(order.type ?? "—"),
+        rate: rate ? `${rate}%` : "—",
+        taxable: inr2(taxable),
+        taxableValue: round2(taxable),
+        cgst: inr2(cgst),
+        cgstValue: round2(cgst),
+        sgst: inr2(sgst),
+        sgstValue: round2(sgst),
+        igst: inr2(igst + other),
+        igstValue: round2(igst + other),
+        totalTax: inr2(tax),
+        taxValue: round2(tax),
+        total: inr2(Number(bill.total ?? 0)),
+        totalValue: round2(Number(bill.total ?? 0)),
+        status: String(bill.paymentStatus ?? bill.status ?? "—"),
+      };
+    }),
+  );
+}
+
+function inr2(n: number) {
+  return `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
 const REPORT_TYPES = [
   "daily-sales",
@@ -22,6 +87,7 @@ const REPORT_TYPES = [
   "kitchen-performance",
   "cancelled-bills",
   "discount",
+  "gst",
 ] as const;
 
 function inr(n: number) {
@@ -202,6 +268,8 @@ export async function getReport(req: Request, res: Response) {
         fbModel.list<LiveTable>(fbModel.tables.liveTables),
         fbModel.list<KdsTicket>(fbModel.tables.kdsTickets),
       ]);
+    const billsAll =
+      type === "gst" ? await fbModel.list<Bill>(fbModel.tables.bills) : [];
 
     const diningOutletsAll = outletsAll.filter((o) =>
       ["restaurant", "cafe", "bar"].includes(String(o.type ?? "")),
@@ -247,8 +315,33 @@ export async function getReport(req: Request, res: Response) {
       settled.reduce((s, o) => s + (Number(o.covers ?? 0) || 1), 0) ||
       diningOutlets.reduce((s, o) => s + Number(o.covers ?? 0), 0);
 
+    const ordersById = new Map(ordersAll.map((o) => [String(o.id), o]));
+    const gstBills = billsAll
+      .filter((b) => !/CANCEL|VOID/i.test(String(b.status ?? "")))
+      .filter((b) => {
+        const order = ordersById.get(String(b.orderId));
+        if (outletIdFilter && String(order?.outletId ?? "") !== outletIdFilter) return false;
+        const day = billDay(b);
+        return day !== "" && inDateRange(day, from, to);
+      })
+      .sort((a, b) => String(a.billNo ?? "").localeCompare(String(b.billNo ?? "")));
+    const gst = type === "gst" ? await gstRows(gstBills, ordersById, outletsAll) : [];
+    const gstTotals = gst.reduce(
+      (t, r) => ({
+        taxable: t.taxable + r.taxableValue,
+        cgst: t.cgst + r.cgstValue,
+        sgst: t.sgst + r.sgstValue,
+        igst: t.igst + r.igstValue,
+        tax: t.tax + r.taxValue,
+      }),
+      { taxable: 0, cgst: 0, sgst: 0, igst: 0, tax: 0 },
+    );
+
     const rows = (() => {
       switch (type) {
+        case "gst":
+          return gst;
+
         case "daily-sales": {
           const byDay: Record<
             string,
@@ -600,6 +693,16 @@ export async function getReport(req: Request, res: Response) {
         from,
         to,
         outletId: outletIdFilter || null,
+        ...(type === "gst"
+          ? {
+              taxableLabel: inr2(round2(gstTotals.taxable)),
+              cgstLabel: inr2(round2(gstTotals.cgst)),
+              sgstLabel: inr2(round2(gstTotals.sgst)),
+              igstLabel: inr2(round2(gstTotals.igst)),
+              taxLabel: inr2(round2(gstTotals.tax)),
+              billCount: gst.length,
+            }
+          : {}),
         ...(cashier
           ? {
               cashLabel: inr(cashier.cash),

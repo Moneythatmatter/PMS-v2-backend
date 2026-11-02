@@ -8,6 +8,7 @@ import {
   mountCrud,
 } from "../controllers/front-office/crud.js";
 import { getDashboard } from "../controllers/front-office/dashboard.js";
+import { getMainDashboard } from "../controllers/front-office/main-dashboard.js";
 import { getReport } from "../controllers/front-office/reports.js";
 import * as reservations from "../controllers/front-office/reservations.js";
 import * as rooms from "../controllers/front-office/rooms.js";
@@ -59,6 +60,7 @@ router.use(
       modules: ["dashboard", "housekeeping", "maintenance", "food_beverages"],
     },
     { methods: ["GET"], path: /^\/wake-up-calls(\/|$)/, modules: ["dashboard"] },
+    { methods: ["GET"], path: /^\/main-dashboard$/, modules: ["dashboard"] },
     { methods: ["GET", "POST"], path: /^\/guests(\/|$)/, modules: ["food_beverages"] },
   ]),
 );
@@ -66,6 +68,7 @@ router.use(attachRequestContext);
 
 // Dashboard
 router.get("/dashboard", getDashboard);
+router.get("/main-dashboard", getMainDashboard);
 
 // Reservations
 router.get("/reservations/summary", reservations.getSummary);

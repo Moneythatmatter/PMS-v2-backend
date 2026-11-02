@@ -74,6 +74,26 @@ const KOT_TO_KITCHEN: Record<string, string> = {
   CANCELLED: "Rejected",
 };
 
+const KITCHEN_PENDING_KOT = new Set(["PENDING", "PREPARING"]);
+
+async function assertKitchenDone(orderId: string) {
+  const kots = await fbModel.list<Row>(fbModel.tables.kotTickets, {
+    filters: { order_id: orderId },
+  });
+  const pending = kots.filter((k) =>
+    KITCHEN_PENDING_KOT.has(String(k.status ?? "").toUpperCase()),
+  );
+  if (!pending.length) return;
+  const labels = pending.map((k) => {
+    const no = String(k.kotNumber ?? k.id);
+    return /^kot/i.test(no) ? no : `KOT-${no}`;
+  });
+  throw new AppError(
+    `Food is still being prepared (${labels.join(", ")}). Bill once the kitchen marks it ready.`,
+    409,
+  );
+}
+
 function kotUiStatus(raw: string) {
   return KOT_TO_KITCHEN[String(raw ?? "").toUpperCase()] ?? "Pending";
 }
@@ -219,7 +239,7 @@ async function syncBillAfterCancellation(orderId: string) {
       : { subtotal: amount, tax: 0 };
     const tax = split.tax;
     const discount = Number(bill.discount ?? 0);
-    const total = Math.max(0, split.subtotal + tax - discount);
+    const total = roundedBillTotal(split.subtotal, tax, discount);
     await syncRoomServiceAfterCancellationViaRpc({
       billId: String(bill.id),
       orderId,
@@ -291,6 +311,79 @@ async function fbBillAmounts(orderId: string, gross: number, order?: Row | null)
   return { subtotal: result.quote.taxableAmount, tax: result.quote.taxAmount };
 }
 
+type BillTaxLine = { code: string; name: string; type: string; rate: number; fixed: boolean; amount: number };
+
+/**
+ * Per-tax split of a bill's stored tax (e.g. CGST 2.5% + SGST 2.5%), from the F&B billing point.
+ * Line amounts are scaled so they always add up to the tax frozen on the bill.
+ */
+export async function billTaxBreakdown(order: Row, bill: Row | null | undefined) {
+  const tax = Number(bill?.tax ?? 0);
+  if (!bill || !(tax > 0)) return { included: false, lines: [] as BillTaxLine[] };
+  const point = String(order.type ?? "").trim() === "Room Service" ? "FB_ROOM_SERVICE" : "FB_RESTAURANT_BILL";
+  const subtotal = Number(bill.subtotal ?? 0);
+  const date = String(bill.createdAt ?? "").slice(0, 10) || localTodayIso();
+  try {
+    let result = await quoteBillingPoint(point, subtotal, date);
+    if (result.configured && result.resolution.priceIncludesTax) {
+      result = await quoteBillingPoint(point, subtotal + tax, date);
+    }
+    if (!result.configured || !result.quote.ok || !result.quote.lines.length) {
+      return { included: false, lines: [{ code: "TAX", name: "Tax", type: "", rate: 0, fixed: false, amount: tax }] };
+    }
+    const raw = result.quote.lines;
+    const rawSum = raw.reduce((s, l) => s + l.amount, 0) || 1;
+    let allocated = 0;
+    const lines = raw.map((l, idx) => {
+      const amount =
+        idx === raw.length - 1
+          ? Math.round((tax - allocated) * 100) / 100
+          : Math.round(((l.amount / rawSum) * tax) * 100) / 100;
+      allocated += amount;
+      return {
+        code: l.taxCode,
+        name: l.taxName || l.taxCode,
+        type: l.taxType,
+        rate: l.rate,
+        fixed: l.calculationType === "Fixed",
+        amount,
+      };
+    });
+    return { included: result.resolution.priceIncludesTax, lines };
+  } catch {
+    return { included: false, lines: [{ code: "TAX", name: "Tax", type: "", rate: 0, fixed: false, amount: tax }] };
+  }
+}
+
+async function billPayments(billId: string) {
+  const txs = await TransactionService.list({ sourceModule: "FNB", sourceId: billId });
+  return txs
+    .filter((t) => String(t.status).toUpperCase() === "COMPLETED")
+    .filter((t) => String(t.transactionType).toUpperCase() === "PAYMENT")
+    .map((t) => ({
+      id: String(t.id),
+      method: String(t.paymentMethod ?? ""),
+      amount: Number(t.amount ?? 0),
+      at: String(t.createdAt ?? ""),
+    }));
+}
+
+/** Bills are payable in whole rupees; the paise difference posts to the Round Off ledger. */
+function roundedBillTotal(subtotal: number, tax: number, discount = 0) {
+  return Math.max(0, Math.round(subtotal + tax - discount));
+}
+
+/** Unpaid bills saved before rupee rounding carry paise; round them before they are shown or paid. */
+async function withRoundedTotal(bill: Row): Promise<Row>;
+async function withRoundedTotal(bill: Row | null | undefined): Promise<Row | null | undefined>;
+async function withRoundedTotal(bill: Row | null | undefined) {
+  if (!bill?.id) return bill;
+  if (String(bill.paymentStatus ?? "UNPAID").toUpperCase() !== "UNPAID") return bill;
+  const total = roundedBillTotal(Number(bill.subtotal ?? 0), Number(bill.tax ?? 0), Number(bill.discount ?? 0));
+  if (Number(bill.total ?? 0) === total) return bill;
+  return fbModel.update<Row>(fbModel.tables.bills, String(bill.id), { total, updatedAt: nowIso() });
+}
+
 async function ensureBillForOrder(orderId: string, itemsTotal: number) {
   const { subtotal, tax } = await fbBillAmounts(orderId, itemsTotal);
   const existing = await fbModel.list<Row>(fbModel.tables.bills, {
@@ -305,7 +398,7 @@ async function ensureBillForOrder(orderId: string, itemsTotal: number) {
       subtotal,
       tax,
       discount: Number(bill.discount ?? 0),
-      total: Math.round((subtotal + tax - Number(bill.discount ?? 0)) * 100) / 100,
+      total: roundedBillTotal(subtotal, tax, Number(bill.discount ?? 0)),
       updatedAt: nowIso(),
     });
   }
@@ -318,7 +411,7 @@ async function ensureBillForOrder(orderId: string, itemsTotal: number) {
     subtotal,
     tax,
     discount: 0,
-    total: Math.round((subtotal + tax) * 100) / 100,
+    total: roundedBillTotal(subtotal, tax),
   });
 }
 
@@ -598,7 +691,15 @@ export const PosService = {
       })),
     );
 
-    return { order, items, kots: kotsWithItems, bills };
+    if (bills[0]) bills[0] = await withRoundedTotal(bills[0]);
+    const primaryBill = bills[0];
+    const [taxSummary, payments] = await Promise.all([
+      billTaxBreakdown(order, primaryBill),
+      primaryBill?.id ? billPayments(String(primaryBill.id)) : Promise.resolve([]),
+    ]);
+    const paidAmount = Math.round(payments.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+
+    return { order, items, kots: kotsWithItems, bills, taxSummary, payments, paidAmount };
   },
 
   async getOpenOrderForTable(liveTableId: string) {
@@ -613,10 +714,21 @@ export const PosService = {
   async printBill(billId: string) {
     const bill = await fbModel.get<Row>(fbModel.tables.bills, billId);
     if (!bill) throw new AppError("Bill not found", 404);
+    if (bill.orderId) await assertKitchenDone(String(bill.orderId));
 
+    const unpaid = String(bill.paymentStatus ?? "UNPAID").toUpperCase() === "UNPAID";
     return fbModel.update(fbModel.tables.bills, billId, {
       billPrintedAt: nowIso(),
       updatedAt: nowIso(),
+      ...(unpaid
+        ? {
+            total: roundedBillTotal(
+              Number(bill.subtotal ?? 0),
+              Number(bill.tax ?? 0),
+              Number(bill.discount ?? 0),
+            ),
+          }
+        : {}),
     });
   },
 
@@ -667,7 +779,7 @@ export const PosService = {
     receivedBy?: string;
     notes?: string;
   }) {
-    const bill = await fbModel.get<Row>(fbModel.tables.bills, input.billId);
+    const bill = await withRoundedTotal(await fbModel.get<Row>(fbModel.tables.bills, input.billId));
     if (!bill) throw new AppError("Bill not found", 404);
 
     const orderId = String(bill.orderId ?? "");
@@ -675,8 +787,15 @@ export const PosService = {
       ? await fbModel.get<Row>(fbModel.tables.orders, orderId)
       : null;
 
+    if (String(bill.paymentStatus ?? "").toUpperCase() === "PAID") {
+      throw new AppError("This bill is already fully paid", 409);
+    }
+
     const roomCharge = isRoomChargePayment(input.paymentMethod);
     if (roomCharge) {
+      if (String(bill.paymentStatus ?? "").toUpperCase() === "PARTIALLY_PAID") {
+        throw new AppError("Room Charge can't be used on a part-paid bill — collect the balance with Cash, Card or UPI", 400);
+      }
       if (String(order?.type ?? "").trim() !== "Room Service") {
         throw new AppError("Room Charge is only available for Room Service", 400);
       }
@@ -718,10 +837,11 @@ export const PosService = {
       : ((await this.syncBillPaymentStatus(input.billId)) as Row);
 
     if (String(updatedBill?.paymentStatus) === "PAID" && orderId && !roomCharge) {
+      const methods = new Set((await billPayments(input.billId)).map((p) => p.method.toUpperCase()));
       await fbModel.update(fbModel.tables.orders, orderId, {
         status: "Settled",
         lifecycleStatus: "CLOSED",
-        paymentMode: input.paymentMethod ?? "Cash",
+        paymentMode: methods.size > 1 ? "Split" : input.paymentMethod ?? "Cash",
         paidAt: nowLabel(),
       });
 
@@ -767,7 +887,7 @@ export const PosService = {
     externalReference?: string;
     receivedBy?: string;
   }) {
-    const bill = await fbModel.get<Row>(fbModel.tables.bills, input.billId);
+    const bill = await withRoundedTotal(await fbModel.get<Row>(fbModel.tables.bills, input.billId));
     if (!bill) throw new AppError("Bill not found", 404);
 
     const txs = await TransactionService.list({

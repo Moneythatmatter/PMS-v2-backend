@@ -22,6 +22,16 @@ export async function listRoomServiceOpenOrders(req: Request, res: Response) {
   }
 }
 
+export async function listTakeawayOpenOrders(req: Request, res: Response) {
+  try {
+    const outletId = req.query.outletId as string | undefined;
+    const rows = await FloorPlanService.listTakeawayOpenOrders(outletId);
+    return ok(res, rows);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
 export async function getFloorPlanTable(req: Request, res: Response) {
   try {
     const row = await FloorPlanService.getTableFloorPlan(String(req.params.id));

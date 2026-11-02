@@ -188,3 +188,28 @@ test("paid in excess: difference goes to the Guest Ledger", () => {
   assert.equal(line(b, "guest-ledger", "Cr"), 5);
   assert.ok(balanced(b));
 });
+
+test("a bill rounded to the rupee posts the paise to the round off ledger", () => {
+  const b = buildFbPosting({
+    bills: [bill("r1", 450, 22.5, [pay("p1", 473)], { total: 473 })],
+    latePayments: [],
+    voids: [],
+    ledgers: { ...ledgers, roundOffId: "round-off" },
+  });
+  assert.deepEqual(b.issues, []);
+  assert.equal(line(b, "cash", "Dr"), 473);
+  assert.equal(line(b, "restaurant-revenue", "Cr"), 450);
+  assert.equal(line(b, "round-off", "Cr"), 0.5);
+  assert.equal(line(b, "guest-ledger", "Cr") + line(b, "guest-ledger", "Dr"), 0);
+});
+
+test("a bill rounded down debits round off", () => {
+  const b = buildFbPosting({
+    bills: [bill("r2", 410, 20.4, [pay("p2", 430)], { total: 430 })],
+    latePayments: [],
+    voids: [],
+    ledgers: { ...ledgers, roundOffId: "round-off" },
+  });
+  assert.equal(line(b, "round-off", "Dr"), 0.4);
+  assert.equal(line(b, "cash", "Dr"), 430);
+});

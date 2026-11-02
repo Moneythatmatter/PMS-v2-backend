@@ -59,6 +59,18 @@ function deriveDisplayState(input: {
   return "BLANK";
 }
 
+/** foodReady: every live KOT has left the kitchen (READY/SERVED) and at least one exists. */
+function kitchenState(kots: Row[]) {
+  const statuses = kots
+    .map((k) => String(k.status ?? "").toUpperCase())
+    .filter((s) => s !== "CANCELLED");
+  const kitchenPending = statuses.some((s) => s === "PENDING" || s === "PREPARING");
+  return {
+    kitchenPending,
+    foodReady: statuses.length > 0 && !kitchenPending,
+  };
+}
+
 async function loadContextForTable(table: Row) {
   const tableId = String(table.id);
   const sessions = await fbModel.list<Row>(fbModel.tables.tableSessions, {
@@ -149,6 +161,7 @@ async function loadContextForTable(table: Row) {
     order,
     bill,
     kotCount: kots.length,
+    ...kitchenState(kots),
     guest:
       session?.guestName ??
       order?.guest ??
@@ -208,7 +221,8 @@ async function loadContextForRoomServiceOrder(order: Row) {
     id: orderId,
     outletId: String(order.outletId ?? ""),
     tableNo: String(order.ref ?? "—").trim() || "—",
-    section: "Room Service",
+    section: String(order.type ?? "Room Service"),
+    orderNo: String(order.orderNo ?? ""),
     capacity: 0,
     covers: Number(order.pax ?? 0),
     guest: String(order.guest ?? "—"),
@@ -221,6 +235,7 @@ async function loadContextForRoomServiceOrder(order: Row) {
     openBillId: bill?.id ? String(bill.id) : null,
     reservationId: order.reservationId ? String(order.reservationId) : null,
     kotCount: kots.length,
+    ...kitchenState(kots),
   };
 }
 
@@ -228,18 +243,25 @@ export const FloorPlanService = {
   deriveDisplayState,
   DISPLAY_TO_LEGACY,
 
-  async listRoomServiceOpenOrders(outletId?: string) {
+  /** Open orders of a table-less type (Room Service, Takeaway) as floor tiles. */
+  async listOpenOrdersByType(type: string, outletId?: string) {
     const orders = await fbModel.list<Row>(fbModel.tables.orders, {
-      filters: outletId ? { outlet_id: outletId } : undefined,
+      filters: { ...(outletId ? { outlet_id: outletId } : {}), type },
       orderBy: "created_at",
       ascending: false,
     });
-    const openRoomOrders = orders.filter((order) => {
-      if (String(order.type) !== "Room Service") return false;
-      const lifecycle = String(order.lifecycleStatus ?? "OPEN").toUpperCase();
-      return lifecycle === "OPEN";
-    });
-    return Promise.all(openRoomOrders.map((order) => loadContextForRoomServiceOrder(order)));
+    const open = orders.filter(
+      (order) => String(order.lifecycleStatus ?? "OPEN").toUpperCase() === "OPEN",
+    );
+    return Promise.all(open.map((order) => loadContextForRoomServiceOrder(order)));
+  },
+
+  async listRoomServiceOpenOrders(outletId?: string) {
+    return this.listOpenOrdersByType("Room Service", outletId);
+  },
+
+  async listTakeawayOpenOrders(outletId?: string) {
+    return this.listOpenOrdersByType("Takeaway", outletId);
   },
 
   async listFloorPlan(outletId?: string) {

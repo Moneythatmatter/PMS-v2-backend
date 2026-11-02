@@ -49,6 +49,8 @@ export type FbLedgers = Pick<
   FoLedgers,
   "guestLedgerId" | "incomeFor" | "taxAccountFor" | "paymentAccountFor" | "outletDivision" | "outletName"
 > & {
+  /** Round Off ledger for the paise dropped when a bill total is rounded to the rupee. */
+  roundOffId?: string;
   /** Split a bill's tax across tax codes using the billing point's rules. */
   taxSplit: (point: BillingPointCode, taxable: number, date: string) => { details: FoTaxDetail[] } | { issue: string };
 };
@@ -136,7 +138,10 @@ export function buildFbPosting(input: {
     const label = POINT_LABEL.get(b.billingPoint) ?? b.billingPoint;
     const net = round2(b.subtotal - b.discount);
     const tax = round2(b.tax);
-    const total = round2(net + tax);
+    const exact = round2(net + tax);
+    const billed = round2(b.total);
+    const roundOff = billed > 0 && Math.abs(billed - exact) < 1 ? round2(billed - exact) : 0;
+    const total = round2(exact + roundOff);
     if (!(total > 0)) continue;
 
     const income = ledgers.incomeFor(b.billingPoint, b.businessDate, b.outletId);
@@ -185,6 +190,10 @@ export function buildFbPosting(input: {
     }
     add(income.accountId, "Cr", net, `${label}${where}`, division);
     details.forEach((d, i) => add(taxAccounts[i], "Cr", shares[i], `${d.taxCode} on F&B bills${where}`, division));
+    if (roundOff !== 0) {
+      const roundOffAccount = ledgers.roundOffId || income.accountId;
+      add(roundOffAccount, roundOff > 0 ? "Cr" : "Dr", Math.abs(roundOff), `F&B bill round off${where}`, division);
+    }
     if (diff > 0) add(ledgers.guestLedgerId, "Cr", diff, `F&B bills paid in excess${where}`, division);
     if (diff < 0) add(ledgers.guestLedgerId, "Dr", -diff, `F&B bills paid short${where}`, division);
 
@@ -383,6 +392,7 @@ async function build(date: string) {
   const start = settings?.foPostingStartDate ? String(settings.foPostingStartDate).slice(0, 10) : "";
   const fbLedgers: FbLedgers = {
     ...ledgers,
+    roundOffId: String(settings?.defaultRoundOffAccountId ?? ""),
     taxSplit: (point, taxable, d) => {
       const r = resolveBillingPoint(setup, point, d);
       if (!r.configured) return { issue: `Accounts → Tax/GST Master → Billing Points: map "${POINT_LABEL.get(point) ?? point}" to a revenue category` };
