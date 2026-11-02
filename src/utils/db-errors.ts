@@ -1,4 +1,4 @@
-import { DatabaseError } from "../errors/index.js";
+import { ConflictError, DatabaseError } from "../errors/index.js";
 
 const RLS_HINT =
   "Supabase Row Level Security blocked this write. " +
@@ -9,5 +9,15 @@ export function throwIfRlsError(message: string): never {
   if (/row-level security/i.test(message)) {
     throw new DatabaseError(RLS_HINT);
   }
+  if (/duplicate key value violates unique constraint/i.test(message)) {
+    throw new ConflictError(`Duplicate entry: ${duplicateField(message)} already exists in this property.`);
+  }
   throw new Error(message);
+}
+
+function duplicateField(message: string): string {
+  const name = message.match(/constraint "([^"]+)"/)?.[1] ?? "";
+  const field = ["item_code", "recipe_code", "table_no", "table_number", "order_no", "bill_no", "kot_number", "code", "name"]
+    .find((f) => name.includes(`_${f}_`) || name.endsWith(`_${f}`));
+  return field ? `this ${field.replace(/_/g, " ")}` : "a record with the same value";
 }
