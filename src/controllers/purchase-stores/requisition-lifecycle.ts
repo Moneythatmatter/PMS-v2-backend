@@ -96,7 +96,75 @@ type PoRow = {
   linkedPR?: string | null;
   linkedRFQ?: string | null;
   items: PoLine[];
+  totalAmount?: number | string | null;
+  payments?: PoPayment[] | null;
 };
+
+type PoPayment = {
+  id?: string;
+  paymentDate?: string;
+  amount?: number | string;
+  paymentMode?: string;
+  reference?: string;
+  paidBy?: string;
+  remarks?: string;
+};
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+const PO_ATTACHMENT_TYPES = new Set(["pdf", "jpg", "jpeg", "png"]);
+const PO_ATTACHMENT_MAX_FILES = 5;
+
+function assertPoAttachments(attachments: unknown, existing: unknown = []) {
+  if (attachments === undefined || attachments === null) return;
+  if (!Array.isArray(attachments)) throw new ValidationError("attachments must be a list");
+  if (attachments.length > PO_ATTACHMENT_MAX_FILES) {
+    throw new ValidationError(`A purchase order can have at most ${PO_ATTACHMENT_MAX_FILES} attachments`);
+  }
+  const existingIds = new Set(
+    (Array.isArray(existing) ? (existing as { id?: string }[]) : []).map((a) => a?.id).filter(Boolean),
+  );
+  for (const a of attachments as { id?: string; fileName?: string; fileType?: string }[]) {
+    if (a?.id && existingIds.has(a.id)) continue;
+    const ext = String(a?.fileType || String(a?.fileName ?? "").split(".").pop() || "").toLowerCase();
+    if (!PO_ATTACHMENT_TYPES.has(ext)) {
+      throw new ValidationError(`Attachment "${a?.fileName ?? ext}" is not allowed. Only PDF, JPG and PNG files are accepted.`);
+    }
+  }
+}
+
+/** Validates payments and derives paidAmount / paymentStatus against the PO total. */
+export function applyPoPaymentSummary(
+  body: Record<string, unknown>,
+  prev?: Pick<PoRow, "totalAmount" | "payments">,
+) {
+  if (body.payments === undefined && body.totalAmount === undefined) return;
+  const raw = (body.payments ?? prev?.payments ?? []) as PoPayment[];
+  if (!Array.isArray(raw)) throw new ValidationError("payments must be a list");
+  const payments = raw.map((p, i) => {
+    const amount = round2(Number(p.amount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new ValidationError(`Payment ${i + 1}: amount must be greater than 0`);
+    }
+    if (!String(p.paymentMode ?? "").trim()) {
+      throw new ValidationError(`Payment ${i + 1}: payment mode is required`);
+    }
+    return {
+      ...p,
+      id: p.id || newId("PAY"),
+      amount,
+      paymentDate: String(p.paymentDate || new Date().toISOString().slice(0, 10)),
+    };
+  });
+  const total = round2(Number(body.totalAmount ?? prev?.totalAmount ?? 0) || 0);
+  const paid = round2(payments.reduce((sum, p) => sum + p.amount, 0));
+  if (paid > total + 0.5) {
+    throw new ValidationError(`Payments (₹${paid}) exceed the PO total (₹${total})`);
+  }
+  body.payments = payments;
+  body.paidAmount = paid;
+  body.paymentStatus = paid <= 0 ? "Unpaid" : paid >= total - 0.5 ? "Paid" : "Partially Paid";
+}
 
 type RfqRow = {
   id: string;
@@ -702,6 +770,9 @@ export async function deleteRfq(req: Request, res: Response) {
 export async function createPurchaseOrder(req: Request, res: Response) {
   try {
     const body = withPsDocumentDefaults({ ...(req.body as Record<string, unknown>) }, PO_DOC);
+    if (body.payments === undefined) body.payments = [];
+    applyPoPaymentSummary(body);
+    assertPoAttachments(body.attachments);
     const active = norm(body.status) !== "cancelled";
     const linkedRfq = trimOrEmpty(body.linkedRFQ);
     let prNumber = trimOrEmpty(body.linkedPR);
@@ -736,6 +807,10 @@ export async function updatePurchaseOrder(req: Request, res: Response) {
     delete body.id;
     const prev = await getRowById<PoRow>(T.purchaseOrders, id);
     if (!prev) throw new NotFoundError("Purchase order not found");
+    delete body.paidAmount;
+    delete body.paymentStatus;
+    applyPoPaymentSummary(body, prev);
+    assertPoAttachments(body.attachments, (prev as { attachments?: unknown }).attachments);
 
     const prevPr = trimOrEmpty(prev.linkedPR);
     const nextPr = body.linkedPR !== undefined ? trimOrEmpty(body.linkedPR) : prevPr;

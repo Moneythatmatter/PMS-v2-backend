@@ -11,11 +11,15 @@
 --   Sales & Mkt  venues, lead sources, activity types, deal stages, contact types
 --   Maintenance  asset / problem categories, root causes, vendors, spare parts, PM templates, assets, room & area rows
 --
--- Prerequisite: accounts-property-setup.sql (for the Accounts part). Run this whole file once in the
--- Supabase SQL Editor. It is safe to re-run: tables that already have data for the property are skipped.
--- The last statement returns a per-table report ("seeded" / "skipped" / "error: ...").
+-- Prerequisite: accounts-property-setup.sql (for the Accounts part). Run this whole file in the
+-- Supabase SQL Editor. Every run creates a NEW demo property with the next free id / code:
+-- prop-demo / demo, then prop-demo2 / demo2, prop-demo3 / demo3 ... ("Demo Hotel", "Demo Hotel 2", ...).
+-- The last statement returns the new property id plus a per-table report ("seeded" / "skipped" / "error: ...").
 --
--- Another demo property:  select public.demo_seed_property('prop-demo2', 'Demo Resort', 'demo2', 'Puri');
+-- After the file has been run once, you can also just run:
+--   select public.demo_seed_new_property();                          -- next numbered demo property
+--   select public.demo_seed_new_property('Demo Resort', 'Puri');     -- custom name / city
+--   select public.demo_seed_property('prop-x', 'My Hotel', 'x', 'Goa'); -- exact id / code (re-run safe)
 
 ------------------------------------------------------------------------------------------------
 -- 1. Codes / numbers unique per property (otherwise room "101" or code "STD" clashes with
@@ -904,9 +908,42 @@ begin
 end;
 $$;
 
+------------------------------------------------------------------------------------------------
+-- 3. New demo property on every call: prop-demo, prop-demo2, prop-demo3 ... (id and code both unused)
+------------------------------------------------------------------------------------------------
+create or replace function public.demo_seed_new_property(
+  p_name text default 'Demo Hotel',
+  p_city text default 'Bhubaneswar'
+)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  n int := 1;
+  pid text;
+  pcode text;
+begin
+  -- Serialise concurrent runs so two calls never pick the same number.
+  perform pg_advisory_xact_lock(hashtext('demo_seed_new_property'));
+  loop
+    pid := case when n = 1 then 'prop-demo' else 'prop-demo' || n end;
+    pcode := case when n = 1 then 'demo' else 'demo' || n end;
+    exit when not exists (select 1 from public.properties where id = pid or lower(code) = pcode);
+    n := n + 1;
+  end loop;
+
+  return jsonb_build_object(
+    'property_id', pid,
+    'name', case when n = 1 then p_name else p_name || ' ' || n end,
+    'code', pcode
+  ) || public.demo_seed_property(pid, case when n = 1 then p_name else p_name || ' ' || n end, pcode, p_city);
+end;
+$$;
+
 notify pgrst, 'reload schema';
 
 ------------------------------------------------------------------------------------------------
--- 3. Create the demo property (change the values to make another one)
+-- 4. Create a new demo property (each run adds one more)
 ------------------------------------------------------------------------------------------------
-select jsonb_pretty(public.demo_seed_property('prop-demo', 'Demo Hotel', 'demo', 'Bhubaneswar')) as report;
+select jsonb_pretty(public.demo_seed_new_property('Demo Hotel', 'Bhubaneswar')) as report;
