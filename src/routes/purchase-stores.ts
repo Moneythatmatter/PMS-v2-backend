@@ -17,6 +17,19 @@ import {
   prepareSupplierCreate,
   prepareSupplierUpdate,
 } from "../services/shared/vendor-party.service.js";
+import {
+  assertAdjustmentDeletable,
+  prepareAdjustmentCreate,
+  prepareAdjustmentUpdate,
+} from "../services/purchase-stores/stock-adjustment.service.js";
+import {
+  assertIssueDeletable,
+  assertTransferDeletable,
+  prepareIssueCreate,
+  prepareIssueUpdate,
+  prepareTransferCreate,
+  prepareTransferUpdate,
+} from "../services/purchase-stores/stock-movement.service.js";
 
 const router = Router();
 const T = psModel.tables;
@@ -146,8 +159,12 @@ const grnCrud = docCrud(T.grns, "GRN", {
 router.get("/grns", grnCrud.list);
 router.get("/grns/:id", grnCrud.get);
 router.post("/grns", receiving.createGrn);
-router.put("/grns/:id", grnCrud.update);
-router.patch("/grns/:id", grnCrud.update);
+const updateGrnKeepingPo: typeof grnCrud.update = (req, res) => {
+  if (req.body && typeof req.body === "object") delete (req.body as Record<string, unknown>).poNumber;
+  return grnCrud.update(req, res);
+};
+router.put("/grns/:id", updateGrnKeepingPo);
+router.patch("/grns/:id", updateGrnKeepingPo);
 router.delete("/grns/:id", grnCrud.remove);
 
 const qiCrud = docCrud(T.qualityInspections, "QI", {
@@ -178,9 +195,57 @@ mountCrud(router, "/stock-balances", createTableCrud({
     status: req.query.status !== "all" ? (req.query.status as string) : undefined,
   }),
 }));
-mountCrud(router, "/stock-issues", docCrud(T.stockIssues, "ISS", { numberField: "issueNo", prefix: "ISS" }));
-mountCrud(router, "/stock-transfers", docCrud(T.stockTransfers, "TRF", { numberField: "transferNo", prefix: "TRF" }));
-mountCrud(router, "/stock-adjustments", docCrud(T.stockAdjustments, "ADJ", { numberField: "adjustmentNo", prefix: "ADJ", dateDefaults: { adjustmentDate: "today" } }));
+const mountGuardedDoc = (
+  path: string,
+  table: string,
+  doc: { numberField: string; prefix: string; dateDefaults?: Record<string, string> },
+  hooks: {
+    beforeCreate: (body: Record<string, unknown>) => Promise<void>;
+    beforeUpdate: (id: string, body: Record<string, unknown>) => Promise<void>;
+    beforeDelete: (id: string) => Promise<void>;
+  },
+) => {
+  const crud = createTableCrud({
+    table,
+    idPrefix: doc.prefix,
+    mapIncoming: (body, ctx) => (ctx?.isCreate ? withPsDocumentDefaults(body, doc) : body),
+    listFilters: (req) => ({ status: req.query.status && req.query.status !== "all" ? String(req.query.status) : undefined }),
+    orderBy: "created_at",
+    ascending: false,
+    beforeCreate: hooks.beforeCreate,
+    beforeUpdate: hooks.beforeUpdate,
+  });
+  router.get(path, crud.list);
+  router.get(`${path}/:id`, crud.get);
+  router.post(path, crud.create);
+  router.put(`${path}/:id`, crud.update);
+  router.patch(`${path}/:id`, crud.update);
+  router.delete(`${path}/:id`, async (req, res) => {
+    try {
+      await hooks.beforeDelete(String(req.params.id));
+      return crud.remove(req, res);
+    } catch (e) {
+      return fromError(res, e);
+    }
+  });
+};
+
+// Stock movements post to balances + ledger on approval (server-side, idempotent per document).
+mountGuardedDoc("/stock-issues", T.stockIssues, { numberField: "issueNo", prefix: "ISS" }, {
+  beforeCreate: prepareIssueCreate,
+  beforeUpdate: prepareIssueUpdate,
+  beforeDelete: assertIssueDeletable,
+});
+mountGuardedDoc("/stock-transfers", T.stockTransfers, { numberField: "transferNo", prefix: "TRF" }, {
+  beforeCreate: prepareTransferCreate,
+  beforeUpdate: prepareTransferUpdate,
+  beforeDelete: assertTransferDeletable,
+});
+mountGuardedDoc("/stock-adjustments", T.stockAdjustments, { numberField: "adjustmentNo", prefix: "ADJ", dateDefaults: { adjustmentDate: "today" } }, {
+  beforeCreate: prepareAdjustmentCreate,
+  beforeUpdate: prepareAdjustmentUpdate,
+  beforeDelete: assertAdjustmentDeletable,
+});
 mountCrud(router, "/par-stock", createTableCrud({ table: T.parStock, idPrefix: "PAR" }));
 mountCrud(router, "/batches", createTableCrud({
   table: T.batches,

@@ -227,6 +227,22 @@ export async function createGrn(req: Request, res: Response) {
     const items = (body.items as GrnLine[]) ?? [];
     const totalAmount = items.reduce((s, l) => s + Number(l.receivedValue ?? 0), 0);
 
+    const poRef = String(body.poNumber ?? "").trim();
+    if (!poRef) return fail(res, "Select an approved purchase order", 400);
+    const [po] = await listRows<{ poNumber: string; status: string }>(T.purchaseOrders, {
+      filters: { po_number: poRef },
+      limit: 1,
+    });
+    if (!po) return fail(res, `Purchase order ${poRef} was not found`, 404);
+    if (po.status !== "Approved" && po.status !== "Issued") {
+      return fail(res, `Purchase order ${poRef} is ${po.status} — only approved POs can be received`, 400);
+    }
+    const [existing] = await listRows<{ grnNumber: string }>(T.grns, { filters: { po_number: poRef }, limit: 1 });
+    if (existing) {
+      return fail(res, `${existing.grnNumber} already exists for ${poRef}. A purchase order can have only one GRN.`, 409);
+    }
+    body.poNumber = poRef;
+
     const grnPayload: Record<string, unknown> = {
       ...body,
       itemCount: items.length,
@@ -291,7 +307,7 @@ export async function createGrn(req: Request, res: Response) {
   }
 }
 
-/** PUT/PATCH quality inspection — post stock when completed with pass/partial. */
+/** PUT/PATCH quality inspection — each line is fully passed or fully rejected; accepted lines post to stock on completion. */
 export async function updateQualityInspection(req: Request, res: Response) {
   try {
     const id = String(req.params.id);
@@ -305,6 +321,18 @@ export async function updateQualityInspection(req: Request, res: Response) {
     }>(T.qualityInspections, id);
     if (!prev) return fail(res, "Not found", 404);
 
+    if (body.result === "Partial" || body.result === "Partially Accepted") {
+      return fail(res, "Partial acceptance is not allowed — pass or reject each item in full", 400);
+    }
+    if (Array.isArray(body.items)) {
+      const split = (body.items as Array<{ productName?: string; acceptedQty?: number; rejectedQty?: number; qualityResult?: string }>).find(
+        (i) => i.qualityResult === "Partially Accepted" || i.qualityResult === "Partial" || (Number(i.acceptedQty) > 0 && Number(i.rejectedQty) > 0),
+      );
+      if (split) {
+        return fail(res, `${split.productName ?? "An item"} is partially accepted — pass or reject each item in full`, 400);
+      }
+    }
+
     const row = await updateRow<Record<string, unknown>>(T.qualityInspections, id, body);
 
     const newStatus = String(body.status ?? prev.status);
@@ -312,7 +340,7 @@ export async function updateQualityInspection(req: Request, res: Response) {
     const wasCompleted =
       newStatus === "Completed" &&
       prev.status !== "Completed" &&
-      (newResult === "Passed" || newResult === "Partial" || newResult === "Partially Accepted");
+      newResult === "Passed";
 
     if (wasCompleted && prev.grnNumber) {
       const grns = await listRows<Record<string, unknown>>(T.grns, {
@@ -341,12 +369,7 @@ export async function updateQualityInspection(req: Request, res: Response) {
             ...line,
             acceptedQty,
             rejectedQty,
-            qcStatus:
-              rejectedQty > 0 && acceptedQty > 0
-                ? "Partial"
-                : acceptedQty > 0
-                  ? "Passed"
-                  : "Failed",
+            qcStatus: acceptedQty > 0 ? ("Passed" as const) : ("Failed" as const),
             batchAllocations: (line.batchAllocations ?? []).map((b) => {
               const batchAccepted = Math.round(Number(b.receivedQty) * ratio);
               return {
@@ -369,9 +392,9 @@ export async function updateQualityInspection(req: Request, res: Response) {
 
         await updateRow(T.grns, String(grn.id), {
           status: "Completed",
-          inspectionStatus: newResult === "Passed" ? "Passed" : "Partially Accepted",
+          inspectionStatus: "Passed",
           inspectionDetails: {
-            status: newResult === "Passed" ? "Passed" : "Partially Accepted",
+            status: "Passed",
             inspector: String(body.inspectorName ?? "QC Auditor"),
             inspectionDate: new Date().toISOString().slice(0, 10),
             comments: String(body.generalRemarks ?? body.remarks ?? "QC completed"),
