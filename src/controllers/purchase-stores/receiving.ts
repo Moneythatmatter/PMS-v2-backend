@@ -405,6 +405,39 @@ export async function updateQualityInspection(req: Request, res: Response) {
       }
     }
 
+    const wasFullyRejected =
+      newStatus === "Completed" && prev.status !== "Completed" && newResult === "Rejected";
+    if (wasFullyRejected && prev.grnNumber) {
+      const [grn] = await listRows<Record<string, unknown>>(T.grns, {
+        filters: { grn_number: prev.grnNumber },
+        limit: 1,
+      });
+      if (grn) {
+        const items = ((grn.items as GrnLine[]) ?? []).map((line) => ({
+          ...line,
+          acceptedQty: 0,
+          rejectedQty: line.receivedQty,
+          qcStatus: "Failed" as const,
+          batchAllocations: (line.batchAllocations ?? []).map((b) => ({
+            ...b,
+            acceptedQty: 0,
+            rejectedQty: Number(b.receivedQty),
+            qcStatus: "Failed" as const,
+          })),
+        }));
+        await updateRow(T.grns, String(grn.id), {
+          inspectionStatus: "Rejected",
+          inspectionDetails: {
+            status: "Rejected",
+            inspector: String(body.inspectorName ?? "QC Auditor"),
+            inspectionDate: new Date().toISOString().slice(0, 10),
+            comments: String(body.generalRemarks ?? body.remarks ?? "All items rejected in QC"),
+          },
+          items,
+        });
+      }
+    }
+
     return ok(res, row);
   } catch (e) {
     return fromError(res, e);
