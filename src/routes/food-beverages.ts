@@ -14,6 +14,8 @@ import * as cashier from "../controllers/food-beverages/cashier.js";
 import * as cashierSessions from "../controllers/food-beverages/cashier-sessions.js";
 import { getReport } from "../controllers/food-beverages/reports.js";
 import * as recipes from "../controllers/food-beverages/recipes.js";
+import * as conversions from "../controllers/food-beverages/conversions.js";
+import * as conversionItems from "../controllers/food-beverages/conversion-items.js";
 import * as modifiers from "../controllers/food-beverages/modifiers.js";
 import * as reservations from "../controllers/food-beverages/reservations.js";
 import * as guestRequests from "../controllers/food-beverages/guest-order-requests.js";
@@ -281,13 +283,44 @@ mountCrud(
 mountCrud(
   router,
   "/inventory/wastage",
-  createTableCrud({ table: fbModel.tables.wastage, idPrefix: "WST" }),
+  createTableCrud({
+    table: fbModel.tables.wastage,
+    idPrefix: "WST",
+    orderBy: "created_at",
+    ascending: false,
+    mapIncoming: (body, ctx) => {
+      const next = { ...body };
+      if (ctx?.isCreate) {
+        if (!String(next.entryNo ?? "").trim()) {
+          next.entryNo = `WS-${Date.now().toString(36).toUpperCase()}`;
+        }
+        if (!String(next.status ?? "").trim()) next.status = "Pending";
+      }
+      return next;
+    },
+  }),
 );
 mountCrud(
   router,
   "/inventory/adjustments",
   createTableCrud({ table: fbModel.tables.stockAdjustments, idPrefix: "ADJ" }),
 );
+
+// Conversion items (master BOM) + production batches (stock).
+router.get("/inventory/conversion-items", conversionItems.listConversionItems);
+router.get("/inventory/conversion-items/:id", conversionItems.getConversionItem);
+router.post("/inventory/conversion-items", conversionItems.createConversionItem);
+router.put("/inventory/conversion-items/:id", conversionItems.updateConversionItem);
+router.patch("/inventory/conversion-items/:id", conversionItems.updateConversionItem);
+router.delete("/inventory/conversion-items/:id", conversionItems.deleteConversionItem);
+
+router.get("/inventory/conversions", conversions.listConversions);
+router.get("/inventory/conversions/:id", conversions.getConversion);
+router.post("/inventory/conversions", conversions.createConversion);
+router.put("/inventory/conversions/:id", conversions.updateConversion);
+router.patch("/inventory/conversions/:id", conversions.updateConversion);
+router.post("/inventory/conversions/:id/complete", conversions.completeConversion);
+router.delete("/inventory/conversions/:id", conversions.deleteConversion);
 
 // Outlet day close (hotel business date)
 router.get("/day-close/status", cashierSessions.dayCloseStatus);

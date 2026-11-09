@@ -11,6 +11,7 @@ import {
   recipeTables,
   type Recipe,
 } from "../../models/food-beverages/recipes.js";
+import { deductFbPreparedForPsMaterials } from "../../models/food-beverages/conversion-ps-bridge.js";
 
 type SourceType = "POS Sale" | "Manual";
 
@@ -188,6 +189,12 @@ export async function consumeRecipe(input: {
     totalCost,
     lines,
   });
+
+  // Keep F&B conversion stock (fb_ingredients) in sync when prepared items are used in recipes.
+  await deductFbPreparedForPsMaterials(
+    lines.map((l) => ({ materialId: l.materialId, quantity: l.quantity })),
+  ).catch((e) => console.warn("[F&B] prepared ingredient sync skipped:", e));
+
   return toConsumption(saved);
 }
 
