@@ -118,4 +118,35 @@ begin
   end if;
 end $$;
 
+-- RLS: required when backend uses SUPABASE_ANON_KEY (same pattern as food-beverages-schema.sql).
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'fb_conversion_items',
+    'fb_conversion_item_lines',
+    'fb_conversions',
+    'fb_conversion_lines'
+  ]
+  loop
+    if to_regclass('public.' || t) is null then
+      continue;
+    end if;
+    execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists "anon_all_%s" on public.%I', t, t);
+    execute format(
+      'create policy "anon_all_%s" on public.%I for all to anon using (true) with check (true)',
+      t, t
+    );
+    execute format('drop policy if exists "authenticated_all_%s" on public.%I', t, t);
+    execute format(
+      'create policy "authenticated_all_%s" on public.%I for all to authenticated using (true) with check (true)',
+      t, t
+    );
+  end loop;
+end $$;
+
+notify pgrst, 'reload schema';
+
 commit;
