@@ -23,7 +23,7 @@ create table if not exists public.fb_recipes (
   issue_warehouse_id text references public.ps_warehouses (id) on delete set null,
   instructions text not null default '',
   notes text not null default '',
-  -- Costing snapshot from the last save (live cost is recomputed on read).
+  -- Manual prep cost: cost_per_portion is entered by the user; batch_cost = cost_per_portion × yield.
   batch_cost numeric(14,2) not null default 0,
   cost_per_portion numeric(14,2) not null default 0,
   food_cost_percent numeric(7,2) not null default 0,

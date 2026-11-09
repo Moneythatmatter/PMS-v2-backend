@@ -44,7 +44,7 @@ export type RecipeConsumption = {
 
 type BalanceRow = { id: string; materialId: string; quantity: number; averageCost: number };
 
-const round = (n: number, dp = 3) => Math.round(n * 10 ** dp) / 10 ** dp;
+const round = (n: number, dp = 4) => Math.round(n * 10 ** dp) / 10 ** dp;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function defaultKitchenStore(): Promise<string | null> {
@@ -190,10 +190,15 @@ export async function consumeRecipe(input: {
     lines,
   });
 
-  // Keep F&B conversion stock (fb_ingredients) in sync when prepared items are used in recipes.
+  // Keep F&B ingredient / conversion stock in sync when recipes deduct PS materials.
   await deductFbPreparedForPsMaterials(
-    lines.map((l) => ({ materialId: l.materialId, quantity: l.quantity })),
-  ).catch((e) => console.warn("[F&B] prepared ingredient sync skipped:", e));
+    lines.map((l) => ({
+      materialId: l.materialId,
+      quantity: l.quantity,
+      materialName: l.materialName,
+      productCode: l.productCode,
+    })),
+  ).catch((e) => console.warn("[F&B] ingredient stock sync skipped:", e));
 
   return toConsumption(saved);
 }
@@ -225,40 +230,96 @@ export async function consumeRecipeById(
   });
 }
 
-/** Deduct ingredients for every recipe-linked item on a settled order. Safe to call more than once. */
-export async function consumeRecipesForOrder(orderId: string) {
-  const items = await fbModel.list<{ menuItemId: string | null; quantity: number; status: string }>(
-    fbModel.tables.orderItems,
-    { filters: { order_id: orderId } },
-  );
-  const qtyByMenuItem = new Map<string, number>();
-  for (const item of items) {
-    if (String(item.status ?? "ACTIVE").toUpperCase() !== "ACTIVE") continue;
-    const menuItemId = String(item.menuItemId ?? "");
-    if (!UUID.test(menuItemId)) continue;
-    qtyByMenuItem.set(menuItemId, (qtyByMenuItem.get(menuItemId) ?? 0) + (Number(item.quantity) || 0));
-  }
-  if (qtyByMenuItem.size === 0) return [];
+type OrderLineForConsume = {
+  menuItemId?: string | null;
+  recipeId?: string | null;
+  quantity: number;
+  status?: string;
+};
 
-  const recipes = await listActiveRecipesForMenuItems([...qtyByMenuItem.keys()]);
+/**
+ * Deduct stock for the given order lines (usually one KOT's items).
+ * `sourceRef` must be unique per POS Sale + recipe (e.g. orderId::kotId) so add-on KOTs still deduct.
+ */
+export async function consumeRecipesForOrderLines(
+  orderId: string,
+  lines: OrderLineForConsume[],
+  sourceRef: string,
+) {
+  const qtyByRecipeId = new Map<string, number>();
+  const qtyByMenuItem = new Map<string, number>();
+
+  for (const item of lines) {
+    if (String(item.status ?? "ACTIVE").toUpperCase() !== "ACTIVE") continue;
+    const qty = Number(item.quantity) || 0;
+    if (!(qty > 0)) continue;
+
+    const recipeId = item.recipeId ? String(item.recipeId) : "";
+    if (recipeId && UUID.test(recipeId)) {
+      qtyByRecipeId.set(recipeId, (qtyByRecipeId.get(recipeId) ?? 0) + qty);
+      continue;
+    }
+
+    const menuItemId = item.menuItemId ? String(item.menuItemId) : "";
+    if (UUID.test(menuItemId)) {
+      qtyByMenuItem.set(menuItemId, (qtyByMenuItem.get(menuItemId) ?? 0) + qty);
+    }
+  }
+
+  if (qtyByMenuItem.size > 0) {
+    const recipes = await listActiveRecipesForMenuItems([...qtyByMenuItem.keys()]);
+    for (const recipe of recipes) {
+      const portions = qtyByMenuItem.get(String(recipe.menuItemId)) ?? 0;
+      if (portions > 0) {
+        qtyByRecipeId.set(String(recipe.id), (qtyByRecipeId.get(String(recipe.id)) ?? 0) + portions);
+      }
+    }
+  }
+
+  if (qtyByRecipeId.size === 0) return [];
+
   const posted: RecipeConsumption[] = [];
-  for (const recipe of recipes) {
-    const portions = qtyByMenuItem.get(String(recipe.menuItemId)) ?? 0;
-    if (portions <= 0 || recipe.ingredients.length === 0) continue;
+  for (const [recipeId, portions] of qtyByRecipeId) {
+    if (!(portions > 0)) continue;
     try {
+      const recipe = await getRecipe(recipeId);
+      if (!recipe || !recipe.isActive || recipe.ingredients.length === 0) continue;
       const row = await consumeRecipe({
         recipe,
         portions,
         sourceType: "POS Sale",
-        sourceRef: orderId,
+        sourceRef,
+        menuItemId: recipe.menuItemId,
         consumedBy: "POS",
       });
       if (row) posted.push(row);
     } catch (e) {
-      console.warn(`[F&B] recipe consumption failed for ${recipe.name} on order ${orderId}:`, e);
+      console.warn(`[F&B] recipe consumption failed for recipe ${recipeId} on order ${orderId}:`, e);
     }
   }
   return posted;
+}
+
+/** Deduct ingredients for every recipe-linked item on a settled order (payment fallback). */
+export async function consumeRecipesForOrder(orderId: string) {
+  // Prefer KOT-time deductions (`orderId::kotId`). Skip if any already posted for this order.
+  const { data: prior, error: priorError } = await supabase
+    .from(recipeTables.consumptions)
+    .select("id")
+    .eq("source_type", "POS Sale")
+    .like("source_ref", `${orderId}%`)
+    .limit(1);
+  if (priorError) console.warn("[F&B] prior consumption check skipped:", priorError.message);
+  if ((prior ?? []).length > 0) return [];
+
+  const items = await fbModel.list<{
+    menuItemId: string | null;
+    recipeId?: string | null;
+    quantity: number;
+    status: string;
+  }>(fbModel.tables.orderItems, { filters: { order_id: orderId } });
+
+  return consumeRecipesForOrderLines(orderId, items, orderId);
 }
 
 export async function listConsumptions(filters: { recipeId?: string; limit?: number } = {}) {

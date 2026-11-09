@@ -14,11 +14,15 @@ import {
   type ModifierGroup,
   type SelectedModifier,
 } from "../../models/food-beverages/modifiers.js";
-import { consumeRecipesForOrder } from "./recipe-consumption.service.js";
+import {
+  consumeRecipesForOrder,
+  consumeRecipesForOrderLines,
+} from "./recipe-consumption.service.js";
 import { TableReservationService } from "./table-reservations.service.js";
 import { FbCashierSessionService } from "./fb-cashier-session.service.js";
 import { quoteBillingPoint } from "../accounts/tax-resolver.js";
 import { localTodayIso } from "../front-office/room-hk-status.js";
+import { listActiveRecipesForMenuItems } from "../../models/food-beverages/recipes.js";
 
 type Row = Record<string, unknown>;
 
@@ -609,9 +613,37 @@ export const PosService = {
     const orderId = String(order.id);
     const createdItems: Row[] = [];
 
+    // Freeze recipe prep cost onto each line so later recipe edits do not rewrite history.
+    const menuItemIds = [
+      ...new Set(
+        pricedLines
+          .map((l) => (l.menuItemId ? String(l.menuItemId) : ""))
+          .filter((id) => id.length > 0),
+      ),
+    ];
+    const recipesByMenuItem = new Map<string, { id: string; prepCost: number }>();
+    if (menuItemIds.length) {
+      const recipes = await listActiveRecipesForMenuItems(menuItemIds).catch((e) => {
+        console.warn("[pos] recipe prep cost lookup skipped:", e);
+        return [];
+      });
+      for (const recipe of recipes) {
+        const menuItemId = recipe.menuItemId ? String(recipe.menuItemId) : "";
+        if (!menuItemId || recipesByMenuItem.has(menuItemId)) continue;
+        recipesByMenuItem.set(menuItemId, {
+          id: String(recipe.id),
+          prepCost: Math.round((Number(recipe.costPerPortion) || 0) * 10000) / 10000,
+        });
+      }
+    }
+
     for (const line of pricedLines) {
       const qty = Math.max(1, Number(line.qty) || 1);
       const unitPrice = line.unitPrice;
+      const menuItemId = line.menuItemId ? String(line.menuItemId) : "";
+      const linked = menuItemId ? recipesByMenuItem.get(menuItemId) : undefined;
+      const prepCostPerUnit = linked?.prepCost ?? 0;
+      const prepCostTotal = Math.round(prepCostPerUnit * qty * 10000) / 10000;
       const item = await fbModel.create<Row>(fbModel.tables.orderItems, {
         id: fbModel.newId("OI"),
         orderId,
@@ -625,6 +657,9 @@ export const PosService = {
         lineTotal: qty * unitPrice,
         note: line.note ?? null,
         status: "ACTIVE",
+        recipeId: linked?.id ?? null,
+        prepCostPerUnit,
+        prepCostTotal,
       });
       createdItems.push(item);
     }
@@ -646,6 +681,18 @@ export const PosService = {
         status: "PREPARING",
       });
     }
+
+    // Deduct recipe stock when kitchen gets the KOT (not only at payment).
+    await consumeRecipesForOrderLines(
+      orderId,
+      createdItems.map((item) => ({
+        menuItemId: item.menuItemId ? String(item.menuItemId) : null,
+        recipeId: item.recipeId ? String(item.recipeId) : null,
+        quantity: Number(item.quantity) || 0,
+        status: String(item.status ?? "ACTIVE"),
+      })),
+      `${orderId}::${String(kot.id)}`,
+    ).catch((e) => console.warn(`[F&B] recipe stock deduction skipped for KOT ${String(kot.id)}:`, e));
 
     const amount = await recomputeOrderAmount(orderId);
     await ensureBillForOrder(orderId, amount);

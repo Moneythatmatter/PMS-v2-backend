@@ -30,7 +30,7 @@ type BalanceRow = {
 
 const PREPARED_CATEGORY = "Prepared Item";
 
-function round(n: number, places = 3) {
+function round(n: number, places = 4) {
   const f = 10 ** places;
   return Math.round(n * f) / f;
 }
@@ -169,9 +169,9 @@ export async function creditPreparedPsStock(opts: {
   });
 }
 
-/** When a recipe consumes a prepared PS material, also reduce fb_ingredients.on_hand. */
+/** When a recipe consumes PS materials, also reduce matching F&B ingredient / prepared on-hand. */
 export async function deductFbPreparedForPsMaterials(
-  lines: Array<{ materialId: string; quantity: number }>,
+  lines: Array<{ materialId: string; quantity: number; materialName?: string; productCode?: string }>,
 ) {
   if (lines.length === 0) return;
   const items = await listRows<{
@@ -186,10 +186,37 @@ export async function deductFbPreparedForPsMaterials(
       .map((i) => [String(i.psProductId), String(i.outputIngredientId ?? "")]),
   );
 
+  const ingredients = await listRows<{
+    id: string;
+    code?: string;
+    name: string;
+    onHand?: number;
+    kind?: string;
+  }>(fbTables.ingredients, {});
+  const byCode = new Map(
+    ingredients
+      .filter((i) => String(i.code ?? "").trim())
+      .map((i) => [String(i.code).trim().toLowerCase(), i.id]),
+  );
+  const byName = new Map(
+    ingredients.map((i) => [String(i.name ?? "").trim().toLowerCase(), i.id]),
+  );
+
   for (const line of lines) {
-    const fbId = byPs.get(line.materialId);
-    if (!fbId || !(line.quantity > 0)) continue;
-    const ing = await getRowById<{ id: string; onHand?: number }>(fbTables.ingredients, fbId);
+    if (!(line.quantity > 0)) continue;
+    const codeKey = String(line.productCode ?? "").trim().toLowerCase();
+    const nameKey = String(line.materialName ?? "").trim().toLowerCase();
+    const fbId =
+      byPs.get(line.materialId) ||
+      (codeKey ? byCode.get(codeKey) : undefined) ||
+      (nameKey ? byName.get(nameKey) : undefined);
+    if (!fbId) {
+      console.warn(
+        `[F&B] no Ingredients row matched for stock sync (${line.productCode || "?"} ${line.materialName || line.materialId})`,
+      );
+      continue;
+    }
+    const ing = await getRowById<{ id: string; onHand?: number; uom?: string }>(fbTables.ingredients, fbId);
     if (!ing) continue;
     await updateRow(fbTables.ingredients, ing.id, {
       onHand: round(Math.max(0, (Number(ing.onHand) || 0) - line.quantity)),

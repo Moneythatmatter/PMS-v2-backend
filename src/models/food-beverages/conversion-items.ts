@@ -59,7 +59,7 @@ function num(v: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function round(n: number, places = 3) {
+function round(n: number, places = 4) {
   const f = 10 ** places;
   return Math.round(n * f) / f;
 }

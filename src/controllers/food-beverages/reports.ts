@@ -564,9 +564,7 @@ export async function getReport(req: Request, res: Response) {
         }
 
         case "inventory": {
-          const low = ingredients.filter(
-            (i) => Number(i.onHand ?? 0) <= Number(i.reorder ?? 0),
-          ).length;
+          const low = ingredients.filter((i) => Number(i.onHand ?? 0) <= 0).length;
           const value = ingredients.reduce(
             (s, i) => s + Number(i.onHand ?? 0) * 100,
             0,

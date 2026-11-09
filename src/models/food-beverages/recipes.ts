@@ -82,6 +82,10 @@ type HeaderRow = {
   issueWarehouseId: string | null;
   instructions: string;
   notes: string;
+  /** Manual prep cost per yield unit (portion). Not auto-calculated from ingredients. */
+  costPerPortion?: number;
+  batchCost?: number;
+  foodCostPercent?: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -251,9 +255,10 @@ async function hydrate(headers: HeaderRow[], all = false): Promise<Recipe[]> {
       };
     });
 
-    const batchCost = ingredients.reduce((s, i) => s + i.lineCost, 0);
     const yieldQuantity = num(h.yieldQuantity, 1) || 1;
-    const costPerPortion = batchCost / yieldQuantity;
+    // Prep cost is entered manually on the recipe — never derived from ingredient stock costs.
+    const costPerPortion = round(num(h.costPerPortion));
+    const batchCost = round(costPerPortion * yieldQuantity);
     const sellingPrice = num(h.sellingPrice);
     const menuItem = h.menuItemId ? lookups.menuItems.get(h.menuItemId) : undefined;
 
@@ -277,8 +282,8 @@ async function hydrate(headers: HeaderRow[], all = false): Promise<Recipe[]> {
       notes: h.notes ?? "",
       isActive: h.isActive !== false,
       status: h.isActive === false ? "Inactive" : "Active",
-      batchCost: round(batchCost),
-      costPerPortion: round(costPerPortion),
+      batchCost,
+      costPerPortion,
       foodCostPercent: sellingPrice > 0 ? round((costPerPortion / sellingPrice) * 100) : 0,
       ingredients,
       createdAt: h.createdAt,
@@ -430,6 +435,13 @@ async function buildHeader(body: Record<string, unknown>, recipeId: string | nul
     if (price < 0) details.push({ path: "sellingPrice", message: "Selling price cannot be negative" });
     header.sellingPrice = price;
   }
+  if (isCreate || has("costPerPortion") || has("prepCost")) {
+    const prep = num(body.costPerPortion ?? body.prepCost);
+    if (prep < 0) details.push({ path: "costPerPortion", message: "Prep cost cannot be negative" });
+    header.costPerPortion = round(prep);
+    const yieldForBatch = num(header.yieldQuantity ?? body.yieldQuantity, 1) || 1;
+    header.batchCost = round(prep * yieldForBatch);
+  }
   if (isCreate || has("wastagePercent")) {
     const wastage = num(body.wastagePercent);
     if (wastage < 0 || wastage > 100) details.push({ path: "wastagePercent", message: "Wastage must be 0–100%" });
@@ -472,11 +484,11 @@ async function buildHeader(body: Record<string, unknown>, recipeId: string | nul
 }
 
 async function snapshotCost(id: string) {
+  // Prep cost is manual — only keep batch total and food-cost % aligned with the saved prep cost.
   const recipe = await getRecipe(id);
   if (!recipe) return null;
   await updateRow(HEADER, id, {
     batchCost: recipe.batchCost,
-    costPerPortion: recipe.costPerPortion,
     foodCostPercent: recipe.foodCostPercent,
   });
   return recipe;
