@@ -294,9 +294,24 @@ mountCrud(
         if (!String(next.entryNo ?? "").trim()) {
           next.entryNo = `WS-${Date.now().toString(36).toUpperCase()}`;
         }
-        if (!String(next.status ?? "").trim()) next.status = "Pending";
+        if (!String(next.status ?? "").trim()) next.status = "Approved";
       }
       return next;
+    },
+    beforeCreate: async (body) => {
+      const { prepareWastageBody } = await import("../models/food-beverages/wastage.js");
+      const prepared = await prepareWastageBody(body, { isCreate: true });
+      Object.assign(body, prepared);
+    },
+    beforeUpdate: async (id, body) => {
+      const { prepareWastageBody } = await import("../models/food-beverages/wastage.js");
+      const { getRowById } = await import("../models/front-office/base.js");
+      const existing = await getRowById<Record<string, unknown>>(fbModel.tables.wastage, id);
+      const prepared = await prepareWastageBody(
+        { ...(existing ?? {}), ...body },
+        { isCreate: false, existing },
+      );
+      Object.assign(body, prepared);
     },
   }),
 );
