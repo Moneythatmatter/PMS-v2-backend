@@ -52,9 +52,12 @@ export const PropertyService = {
     if (error) throw new AppError(error.message, 500);
     if (data) return true;
 
-    // Tenant Admins (users.role = Admin) may open any property under their tenant.
+    // Tenant Admins (users.role = Admin) may open any property under their Active tenant.
     // Regular Users must have an explicit user_property_access row.
     if (!isTenantAdminRole(role)) return false;
+
+    const activeTenantIds = await getActiveTenantIdsForUser(userId);
+    if (!activeTenantIds.length) return false;
 
     const { data: prop } = await supabase
       .from(PROPERTIES)
@@ -62,7 +65,9 @@ export const PropertyService = {
       .eq("id", propertyId)
       .maybeSingle();
     const propertyTenantId = prop?.tenant_id ? String(prop.tenant_id) : "";
-    if (!propertyTenantId) return false;
+    if (!propertyTenantId || !activeTenantIds.includes(propertyTenantId)) {
+      return false;
+    }
     const { data: adminLink } = await supabase
       .from("tenant_users")
       .select("role")
@@ -140,6 +145,9 @@ export const PropertyService = {
     const tenantId = input.tenantId.trim();
     if (!name || !code) throw new AppError("Name and code are required", 400);
     if (!tenantId) throw new AppError("Tenant is required", 400);
+
+    const { TenantService } = await import("../saas/tenant.service.js");
+    await TenantService.assertCanCreateProperty(tenantId);
 
     const id = `prop-${code}`;
     const { data, error } = await supabase

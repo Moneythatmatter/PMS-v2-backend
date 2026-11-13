@@ -32,7 +32,17 @@ export async function getPropertyTenantId(propertyId: string): Promise<string | 
     .maybeSingle();
   if (error) throw new AppError(error.message, 500);
   if (!data || String(data.status) !== "Active") return null;
-  return data.tenant_id ? String(data.tenant_id) : null;
+  const tenantId = data.tenant_id ? String(data.tenant_id) : null;
+  if (!tenantId) return null;
+
+  const { data: tenant, error: tErr } = await supabase
+    .from("tenants")
+    .select("id, status")
+    .eq("id", tenantId)
+    .maybeSingle();
+  if (tErr) throw new AppError(tErr.message, 500);
+  if (!tenant || String(tenant.status) !== "Active") return null;
+  return tenantId;
 }
 
 /** True when the user may open this property under tenant isolation rules. */

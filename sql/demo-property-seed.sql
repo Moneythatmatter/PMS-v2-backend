@@ -11,15 +11,19 @@
 --   Sales & Mkt  venues, lead sources, activity types, deal stages, contact types
 --   Maintenance  asset / problem categories, root causes, vendors, spare parts, PM templates, assets, room & area rows
 --
--- Prerequisite: accounts-property-setup.sql (for the Accounts part). Run this whole file in the
--- Supabase SQL Editor. Every run creates a NEW demo property with the next free id / code:
--- prop-demo / demo, then prop-demo2 / demo2, prop-demo3 / demo3 ... ("Demo Hotel", "Demo Hotel 2", ...).
--- The last statement returns the new property id plus a per-table report ("seeded" / "skipped" / "error: ...").
+-- Prerequisite: accounts-property-setup.sql (for the Accounts part) + saas-tenants.sql.
+-- Run this whole file once in the Supabase SQL Editor (creates/replaces the functions).
+-- Then seed a property FOR A SPECIFIC TENANT (tenant id is required):
 --
--- After the file has been run once, you can also just run:
---   select public.demo_seed_new_property();                          -- next numbered demo property
---   select public.demo_seed_new_property('Demo Resort', 'Puri');     -- custom name / city
---   select public.demo_seed_property('prop-x', 'My Hotel', 'x', 'Goa'); -- exact id / code (re-run safe)
+--   select public.demo_seed_new_property('tenant-itc');
+--   select public.demo_seed_new_property('tenant-itc', 'Demo Resort', 'Puri');
+--   select public.demo_seed_property(
+--     'prop-itc-demo', 'ITC Demo Hotel', 'itc-demo', 'Bhubaneswar', 'tenant-itc'
+--   );
+--
+-- Tenant id = tenants.id from the platform console (e.g. tenant-default, tenant-itc).
+-- Each call creates a NEW demo property under that tenant (prop-demo, prop-demo2, ...).
+-- Respects tenants.property_limit. Links property access to that tenant's users.
 
 ------------------------------------------------------------------------------------------------
 -- 1. Codes / numbers unique per property (otherwise room "101" or code "STD" clashes with
@@ -88,7 +92,8 @@ create or replace function public.demo_seed_property(
   p_property_id text default 'prop-demo',
   p_name text default 'Demo Hotel',
   p_code text default 'demo',
-  p_city text default 'Bhubaneswar'
+  p_city text default 'Bhubaneswar',
+  p_tenant_id text default null
 )
 returns jsonb
 language plpgsql
@@ -96,22 +101,79 @@ security definer
 as $$
 declare
   pid text := p_property_id;
+  tid text := nullif(trim(coalesce(p_tenant_id, '')), '');
   rep jsonb := '{}'::jsonb;
   yr int := extract(year from (now() at time zone 'Asia/Kolkata'))::int;
   today date := (now() at time zone 'Asia/Kolkata')::date;
   rec record;
   n int;
   cnt int;
+  lim int;
+  used int;
+  tname text;
+  tstatus text;
+  is_new boolean;
 begin
+  if tid is null then
+    raise exception 'p_tenant_id is required. Example: select demo_seed_new_property(''tenant-itc'');';
+  end if;
+
+  select t.name, t.status, coalesce(t.property_limit, 5)
+    into tname, tstatus, lim
+  from public.tenants t
+  where t.id = tid;
+
+  if tname is null then
+    raise exception 'Tenant not found: %. Check tenants.id in the platform console.', tid;
+  end if;
+  if coalesce(tstatus, '') <> 'Active' then
+    raise exception 'Tenant % is not Active (status=%). Activate it before seeding.', tid, tstatus;
+  end if;
+
+  is_new := not exists (select 1 from public.properties where id = pid);
+  if is_new then
+    select count(*)::int into used from public.properties where tenant_id = tid;
+    if used >= lim then
+      raise exception
+        'Property limit exceeded for tenant % (%). Already % / % properties. Raise property_limit in the platform console.',
+        tid, tname, used, lim;
+    end if;
+  end if;
+
   -- Platform -----------------------------------------------------------------------------------
-  insert into public.properties (id, name, code, city, timezone, is_default, status)
-  values (pid, p_name, p_code, p_city, 'Asia/Kolkata', false, 'Active')
-  on conflict (id) do nothing;
+  insert into public.properties (id, name, code, city, timezone, is_default, status, tenant_id)
+  values (pid, p_name, p_code, p_city, 'Asia/Kolkata', false, 'Active', tid)
+  on conflict (id) do update set
+    name = excluded.name,
+    code = excluded.code,
+    city = excluded.city,
+    timezone = excluded.timezone,
+    status = excluded.status,
+    tenant_id = excluded.tenant_id,
+    updated_at = now();
+
+  rep := rep || jsonb_build_object(
+    'tenant_id', tid,
+    'tenant_name', tname,
+    'property_limit', lim
+  );
 
   begin
+    -- Tenant's own users (admin + staff) get access to this property.
     insert into public.user_property_access (user_id, property_id, is_default)
-    select u.id, pid, false from public.users u where lower(coalesce(u.role, '')) in ('admin', 'administrator', 'super admin')
+    select tu.user_id, pid, false
+    from public.tenant_users tu
+    where tu.tenant_id = tid
     on conflict do nothing;
+
+    -- Platform super-admins can open any property for support.
+    insert into public.user_property_access (user_id, property_id, is_default)
+    select u.id, pid, false
+    from public.users u
+    where coalesce(u.is_super_admin, false) = true
+       or lower(trim(coalesce(u.role, ''))) in ('super admin', 'superadmin')
+    on conflict do nothing;
+
     rep := rep || jsonb_build_object('user_property_access', 'seeded');
   exception when others then rep := rep || jsonb_build_object('user_property_access', 'error: ' || sqlerrm);
   end;
@@ -904,14 +966,44 @@ begin
   exception when others then rep := rep || jsonb_build_object('mnt_locations', 'error: ' || sqlerrm);
   end;
 
+  -- Stamp tenant_id on property-scoped rows (SaaS isolation) ---------------------------------
+  begin
+    for rec in
+      select c.table_name
+      from information_schema.columns c
+      where c.table_schema = 'public'
+        and c.column_name = 'tenant_id'
+        and exists (
+          select 1 from information_schema.columns p
+          where p.table_schema = 'public'
+            and p.table_name = c.table_name
+            and p.column_name = 'property_id'
+        )
+        and c.table_name <> 'properties'
+    loop
+      begin
+        execute format(
+          'update public.%I set tenant_id = $1 where property_id = $2 and (tenant_id is null or tenant_id <> $1)',
+          rec.table_name
+        ) using tid, pid;
+      exception when others then
+        null;
+      end;
+    end loop;
+    rep := rep || jsonb_build_object('tenant_backfill', 'done');
+  exception when others then
+    rep := rep || jsonb_build_object('tenant_backfill', 'error: ' || sqlerrm);
+  end;
+
   return rep;
 end;
 $$;
 
 ------------------------------------------------------------------------------------------------
--- 3. New demo property on every call: prop-demo, prop-demo2, prop-demo3 ... (id and code both unused)
+-- 3. New demo property for a tenant: prop-demo, prop-demo2, ... (id and code both unused)
 ------------------------------------------------------------------------------------------------
 create or replace function public.demo_seed_new_property(
+  p_tenant_id text,
   p_name text default 'Demo Hotel',
   p_city text default 'Bhubaneswar'
 )
@@ -923,7 +1015,12 @@ declare
   n int := 1;
   pid text;
   pcode text;
+  tid text := nullif(trim(coalesce(p_tenant_id, '')), '');
 begin
+  if tid is null then
+    raise exception 'p_tenant_id is required. Example: select demo_seed_new_property(''tenant-itc'');';
+  end if;
+
   -- Serialise concurrent runs so two calls never pick the same number.
   perform pg_advisory_xact_lock(hashtext('demo_seed_new_property'));
   loop
@@ -936,14 +1033,27 @@ begin
   return jsonb_build_object(
     'property_id', pid,
     'name', case when n = 1 then p_name else p_name || ' ' || n end,
-    'code', pcode
-  ) || public.demo_seed_property(pid, case when n = 1 then p_name else p_name || ' ' || n end, pcode, p_city);
+    'code', pcode,
+    'tenant_id', tid
+  ) || public.demo_seed_property(
+    pid,
+    case when n = 1 then p_name else p_name || ' ' || n end,
+    pcode,
+    p_city,
+    tid
+  );
 end;
 $$;
 
 notify pgrst, 'reload schema';
 
 ------------------------------------------------------------------------------------------------
--- 4. Create a new demo property (each run adds one more)
+-- 4. Seed one demo property for a tenant
+--    Replace 'tenant-YOUR-SLUG' with tenants.id from the platform console, then uncomment:
 ------------------------------------------------------------------------------------------------
-select jsonb_pretty(public.demo_seed_new_property('Demo Hotel', 'Bhubaneswar')) as report;
+-- select jsonb_pretty(public.demo_seed_new_property('tenant-YOUR-SLUG', 'Demo Hotel', 'Bhubaneswar')) as report;
+
+-- Examples:
+--   select jsonb_pretty(public.demo_seed_new_property('tenant-default'));
+--   select jsonb_pretty(public.demo_seed_new_property('tenant-itc', 'ITC Demo', 'Kolkata'));
+--   select jsonb_pretty(public.demo_seed_property('prop-itc-1', 'ITC One', 'itc1', 'Kolkata', 'tenant-itc'));

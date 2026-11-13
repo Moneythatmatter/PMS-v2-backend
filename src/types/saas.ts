@@ -3,6 +3,8 @@ export type TenantRow = {
   name: string;
   slug: string;
   status: string;
+  /** Max properties this tenant may create (platform Super Admin sets). */
+  propertyLimit?: number;
   createdAt?: string;
   updatedAt?: string;
 };

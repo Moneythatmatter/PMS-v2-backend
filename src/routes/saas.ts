@@ -11,5 +11,6 @@ router.use(attachRequestContext);
 router.get("/tenants", tenants.listTenants);
 router.post("/tenants", tenants.createTenant);
 router.patch("/tenants/:id/status", tenants.updateTenantStatus);
+router.patch("/tenants/:id/property-limit", tenants.updateTenantPropertyLimit);
 
 export default router;

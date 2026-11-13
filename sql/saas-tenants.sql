@@ -8,10 +8,14 @@ create table if not exists public.tenants (
   name text not null,
   slug text not null,
   status text not null default 'Active',
+  property_limit integer not null default 5,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint tenants_slug_unique unique (slug)
 );
+
+alter table public.tenants
+  add column if not exists property_limit integer not null default 5;
 
 create index if not exists idx_tenants_status on public.tenants (status);
 

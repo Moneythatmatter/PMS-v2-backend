@@ -4,7 +4,7 @@ import { toCamel } from "../../utils/mappers.js";
 import {
   AppError,
   NotFoundError,
-  PermissionError,
+  UnauthorizedError,
   ValidationError,
 } from "../../errors/index.js";
 import type { TenantRow, TenantWithAdmin } from "../../types/saas.js";
@@ -72,6 +72,7 @@ export const TenantService = {
 
       result.push({
         ...tenant,
+        propertyLimit: Number(tenant.propertyLimit) > 0 ? Number(tenant.propertyLimit) : 5,
         adminUserId,
         adminName,
         adminEmail,
@@ -96,11 +97,13 @@ export const TenantService = {
     adminName: string;
     adminEmail: string;
     adminPassword: string;
+    propertyLimit?: number;
   }): Promise<TenantWithAdmin> {
     const name = input.name.trim();
     const adminName = input.adminName.trim();
     const adminEmail = input.adminEmail.trim().toLowerCase();
     const slug = slugify(input.slug?.trim() || name);
+    const propertyLimit = this.normalizePropertyLimit(input.propertyLimit);
 
     if (!name) throw new ValidationError("Tenant name is required");
     if (!slug) throw new ValidationError("Tenant slug is required");
@@ -133,6 +136,7 @@ export const TenantService = {
         name,
         slug,
         status: "Active",
+        property_limit: propertyLimit,
       })
       .select()
       .single();
@@ -171,6 +175,15 @@ export const TenantService = {
     return this.getTenant(tenantId);
   },
 
+  normalizePropertyLimit(value: unknown, fallback = 5): number {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    const limit = Math.floor(n);
+    if (limit < 1) throw new ValidationError("Property limit must be at least 1");
+    if (limit > 1000) throw new ValidationError("Property limit cannot exceed 1000");
+    return limit;
+  },
+
   async updateTenantStatus(id: string, status: string): Promise<TenantWithAdmin> {
     const next = status.trim();
     if (!["Active", "Inactive"].includes(next)) {
@@ -185,6 +198,50 @@ export const TenantService = {
     if (error) throw new AppError(error.message, 500);
     if (!data) throw new NotFoundError("Tenant not found");
     return this.getTenant(id);
+  },
+
+  async updateTenantPropertyLimit(
+    id: string,
+    propertyLimit: unknown,
+  ): Promise<TenantWithAdmin> {
+    const limit = this.normalizePropertyLimit(propertyLimit);
+    const { data, error } = await supabase
+      .from(TENANTS)
+      .update({ property_limit: limit, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("id")
+      .maybeSingle();
+    if (error) throw new AppError(error.message, 500);
+    if (!data) throw new NotFoundError("Tenant not found");
+    return this.getTenant(id);
+  },
+
+  /** Throws when tenant already has property_limit properties. */
+  async assertCanCreateProperty(tenantId: string) {
+    const { data: tenant, error } = await supabase
+      .from(TENANTS)
+      .select("id, name, property_limit, status")
+      .eq("id", tenantId)
+      .maybeSingle();
+    if (error) throw new AppError(error.message, 500);
+    if (!tenant) throw new NotFoundError("Tenant not found");
+    if (String(tenant.status) !== "Active") {
+      throw new ValidationError("Tenant account is inactive");
+    }
+
+    const limit = this.normalizePropertyLimit(tenant.property_limit ?? 5);
+    const { count, error: countErr } = await supabase
+      .from(PROPERTIES)
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId);
+    if (countErr) throw new AppError(countErr.message, 500);
+
+    const used = count ?? 0;
+    if (used >= limit) {
+      throw new ValidationError(
+        `Property limit exceeded. This account can create up to ${limit} propert${limit === 1 ? "y" : "ies"} (${used}/${limit} used). Contact your platform administrator to increase the limit.`,
+      );
+    }
   },
 
   async getTenantIdsForUser(userId: string): Promise<string[]> {
@@ -242,12 +299,16 @@ export const TenantService = {
     return Boolean(data?.length);
   },
 
+  /**
+   * PMS gate: tenant admin + every user linked via tenant_users need at least one
+   * Active tenant. Platform super-admins skip this (console only).
+   */
   async assertUserCanUsePms(userId: string, isSuperAdmin?: boolean) {
     if (isSuperAdmin) return;
 
     const tenantIds = await this.getTenantIdsForUser(userId);
     if (!tenantIds.length) {
-      throw new PermissionError(
+      throw new UnauthorizedError(
         "No tenant access. Contact your platform administrator.",
       );
     }
@@ -259,7 +320,9 @@ export const TenantService = {
       .eq("status", "Active")
       .limit(1);
     if (!active?.length) {
-      throw new PermissionError("Your tenant account is inactive.");
+      throw new UnauthorizedError(
+        "Your tenant account is inactive. Contact your platform administrator.",
+      );
     }
   },
 

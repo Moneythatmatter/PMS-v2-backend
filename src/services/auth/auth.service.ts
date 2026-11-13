@@ -157,6 +157,8 @@ export const AuthService = {
       if (user.status && user.status !== "Active") {
         throw new UnauthorizedError("Account is inactive");
       }
+      // Drop sessions when the tenant was deactivated after login.
+      await TenantService.assertUserCanUsePms(user.id, Boolean(user.isSuperAdmin));
       return await toPublic(user);
     } catch (e) {
       if (e instanceof AppError) throw e;
