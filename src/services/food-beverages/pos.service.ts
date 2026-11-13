@@ -23,6 +23,9 @@ import { FbCashierSessionService } from "./fb-cashier-session.service.js";
 import { quoteBillingPoint } from "../accounts/tax-resolver.js";
 import { localTodayIso } from "../front-office/room-hk-status.js";
 import { listActiveRecipesForMenuItems } from "../../models/food-beverages/recipes.js";
+import { supabase } from "../../utils/supabase.js";
+import { toCamel } from "../../utils/mappers.js";
+import { getActivePropertyId } from "../../utils/request-context.js";
 
 type Row = Record<string, unknown>;
 
@@ -360,10 +363,24 @@ export async function billTaxBreakdown(order: Row, bill: Row | null | undefined)
 }
 
 async function billPayments(billId: string) {
-  const txs = await TransactionService.list({ sourceModule: "FNB", sourceId: billId });
-  return txs
-    .filter((t) => String(t.status).toUpperCase() === "COMPLETED")
-    .filter((t) => String(t.transactionType).toUpperCase() === "PAYMENT")
+  // Query by source only — do not require tenant_id (older payments may lack it).
+  const propertyId = getActivePropertyId();
+  const { data, error } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("source_module", "FNB")
+    .eq("source_id", billId);
+  if (error) throw new Error(error.message);
+
+  return (data ?? [])
+    .map((row) => toCamel<Record<string, unknown>>(row as Record<string, unknown>))
+    .filter((t) => {
+      if (propertyId && t.propertyId && String(t.propertyId) !== propertyId) return false;
+      return (
+        String(t.status ?? "").toUpperCase() === "COMPLETED" &&
+        String(t.transactionType ?? "").toUpperCase() === "PAYMENT"
+      );
+    })
     .map((t) => ({
       id: String(t.id),
       method: String(t.paymentMethod ?? ""),
@@ -797,18 +814,12 @@ export const PosService = {
     const bill = await fbModel.get<Row>(fbModel.tables.bills, billId);
     if (!bill) throw new AppError("Bill not found", 404);
 
-    const txs = await TransactionService.list({
-      sourceModule: "FNB",
-      sourceId: billId,
-    });
-    const paid = txs
-      .filter((t) => String(t.status).toUpperCase() === "COMPLETED")
-      .filter((t) => String(t.transactionType).toUpperCase() === "PAYMENT")
-      .reduce((s, t) => s + Number(t.amount ?? 0), 0);
+    const payments = await billPayments(billId);
+    const paid = payments.reduce((s, p) => s + Number(p.amount ?? 0), 0);
     const total = Number(bill.total ?? 0);
 
     let paymentStatus = "UNPAID";
-    if (paid >= total && total > 0) paymentStatus = "PAID";
+    if (paid + 0.009 >= total && total > 0) paymentStatus = "PAID";
     else if (paid > 0) paymentStatus = "PARTIALLY_PAID";
 
     return fbModel.update(fbModel.tables.bills, billId, {
@@ -937,14 +948,10 @@ export const PosService = {
     const bill = await withRoundedTotal(await fbModel.get<Row>(fbModel.tables.bills, input.billId));
     if (!bill) throw new AppError("Bill not found", 404);
 
-    const txs = await TransactionService.list({
-      sourceModule: "FNB",
-      sourceId: input.billId,
-    });
-    const paid = txs
-      .filter((t) => String(t.status).toUpperCase() === "COMPLETED")
-      .filter((t) => String(t.transactionType).toUpperCase() === "PAYMENT")
-      .reduce((s, t) => s + Number(t.amount ?? 0), 0);
+    const paid = (await billPayments(input.billId)).reduce(
+      (s, p) => s + Number(p.amount ?? 0),
+      0,
+    );
     const remaining = Math.max(0, Number(bill.total ?? 0) - paid);
     if (remaining <= 0) {
       const bill = (await this.syncBillPaymentStatus(input.billId)) as Row;

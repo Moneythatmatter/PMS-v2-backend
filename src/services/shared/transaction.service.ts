@@ -6,7 +6,11 @@ import type {
   Transaction,
 } from "../../types/transactions.js";
 import { AppError } from "../../errors/index.js";
-import { getActivePropertyId, getRequestStore } from "../../utils/request-context.js";
+import {
+  getActivePropertyId,
+  getActiveTenantId,
+  getRequestStore,
+} from "../../utils/request-context.js";
 import { CashierSessionService } from "../front-office/cashier-session.service.js";
 
 function normalizePaymentMethod(mode?: string): string {
@@ -106,16 +110,24 @@ export const TransactionService = {
 
     if (error) throw new Error(error.message);
     const row = toCamel<Transaction>(data as Record<string, unknown>);
-    // record_transaction does not take a property, so stamp it here to keep the ledger property-scoped.
+    // record_transaction does not take property/tenant — stamp both so property-scoped
+    // list filters (used by F&B bill sync) can see the payment.
     const propertyId = getActivePropertyId();
+    const tenantId = getActiveTenantId();
     const raw = data as Record<string, unknown> | null;
-    if (propertyId && raw?.id && raw.property_id == null) {
-      const { error: stampErr } = await supabase
-        .from(foModel.tables.transactions)
-        .update({ property_id: propertyId })
-        .eq("id", String(raw.id));
-      if (stampErr) throw new Error(stampErr.message);
-      (row as Transaction & { propertyId?: string }).propertyId = propertyId;
+    if (raw?.id && (propertyId || tenantId)) {
+      const patch: Record<string, unknown> = {};
+      if (propertyId && raw.property_id == null) patch.property_id = propertyId;
+      if (tenantId && raw.tenant_id == null) patch.tenant_id = tenantId;
+      if (Object.keys(patch).length) {
+        const { error: stampErr } = await supabase
+          .from(foModel.tables.transactions)
+          .update(patch)
+          .eq("id", String(raw.id));
+        if (stampErr) throw new Error(stampErr.message);
+        if (propertyId) (row as Transaction & { propertyId?: string }).propertyId = propertyId;
+        if (tenantId) (row as Transaction & { tenantId?: string }).tenantId = tenantId;
+      }
     }
     return CashierSessionService.attachTransaction(row);
   },
