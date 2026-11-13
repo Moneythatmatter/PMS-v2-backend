@@ -1,7 +1,7 @@
 import { supabase } from "../../utils/supabase.js";
 import { toCamel, toSnake } from "../../utils/mappers.js";
 import { throwIfRlsError } from "../../utils/db-errors.js";
-import { getActivePropertyId } from "../../utils/request-context.js";
+import { getActivePropertyId, getActiveTenantId } from "../../utils/request-context.js";
 import { isPropertyScopedTable } from "../../utils/property-scoped-tables.js";
 
 export type FilterMap = Record<string, string | number | boolean | undefined>;
@@ -10,22 +10,35 @@ function mergePropertyFilter(
   table: string,
   filters: FilterMap = {},
 ): FilterMap {
+  if (!isPropertyScopedTable(table)) return filters;
+  let next = filters;
   const propertyId = getActivePropertyId();
-  if (propertyId && isPropertyScopedTable(table) && filters.property_id === undefined) {
-    return { ...filters, property_id: propertyId };
+  if (propertyId && next.property_id === undefined) {
+    next = { ...next, property_id: propertyId };
   }
-  return filters;
+  // Defense in depth: never return another tenant's rows even if property_id were wrong.
+  const tenantId = getActiveTenantId();
+  if (tenantId && next.tenant_id === undefined) {
+    next = { ...next, tenant_id: tenantId };
+  }
+  return next;
 }
 
 function injectPropertyOnWrite(
   table: string,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
+  if (!isPropertyScopedTable(table)) return payload;
+  let next = payload;
   const propertyId = getActivePropertyId();
-  if (propertyId && isPropertyScopedTable(table) && payload.propertyId == null && payload.property_id == null) {
-    return { ...payload, propertyId };
+  if (propertyId && next.propertyId == null && next.property_id == null) {
+    next = { ...next, propertyId };
   }
-  return payload;
+  const tenantId = getActiveTenantId();
+  if (tenantId && next.tenantId == null && next.tenant_id == null) {
+    next = { ...next, tenantId };
+  }
+  return next;
 }
 
 export async function listRows<T>(
@@ -67,9 +80,11 @@ export async function getRowById<T>(
   idColumn = "id",
 ): Promise<T | null> {
   let query = supabase.from(table).select("*").eq(idColumn, id);
-  const propertyId = getActivePropertyId();
-  if (propertyId && isPropertyScopedTable(table)) {
-    query = query.eq("property_id", propertyId);
+  if (isPropertyScopedTable(table)) {
+    const propertyId = getActivePropertyId();
+    if (propertyId) query = query.eq("property_id", propertyId);
+    const tenantId = getActiveTenantId();
+    if (tenantId) query = query.eq("tenant_id", tenantId);
   }
   const { data, error } = await query.maybeSingle();
 
@@ -126,9 +141,11 @@ export async function updateRow<T>(
   const row = toSnake(payload) as Record<string, unknown>;
   for (let attempt = 0; attempt < 24; attempt++) {
     let query = supabase.from(table).update(row).eq(idColumn, id);
-    const propertyId = getActivePropertyId();
-    if (propertyId && isPropertyScopedTable(table)) {
-      query = query.eq("property_id", propertyId);
+    if (isPropertyScopedTable(table)) {
+      const propertyId = getActivePropertyId();
+      if (propertyId) query = query.eq("property_id", propertyId);
+      const tenantId = getActiveTenantId();
+      if (tenantId) query = query.eq("tenant_id", tenantId);
     }
     const { data, error } = await query.select().maybeSingle();
 
@@ -146,9 +163,11 @@ export async function deleteRow(
   idColumn = "id",
 ): Promise<void> {
   let query = supabase.from(table).delete().eq(idColumn, id);
-  const propertyId = getActivePropertyId();
-  if (propertyId && isPropertyScopedTable(table)) {
-    query = query.eq("property_id", propertyId);
+  if (isPropertyScopedTable(table)) {
+    const propertyId = getActivePropertyId();
+    if (propertyId) query = query.eq("property_id", propertyId);
+    const tenantId = getActiveTenantId();
+    if (tenantId) query = query.eq("tenant_id", tenantId);
   }
   const { error } = await query;
   if (error) throw new Error(error.message);

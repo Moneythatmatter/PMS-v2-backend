@@ -12,6 +12,7 @@ import housekeepingRoutes from "./routes/housekeeping.js";
 import purchaseStoresRoutes from "./routes/purchase-stores.js";
 import maintenanceRoutes from "./routes/maintenance.js";
 import platformRoutes from "./routes/platform.js";
+import saasRoutes from "./routes/saas.js";
 import transactionsRoutes from "./routes/transactions.js";
 import humanResourcesRoutes from "./routes/human-resources.js";
 import salesMarketingRoutes from "./routes/sales-marketing.js";
@@ -44,6 +45,7 @@ app.get("/health", (_req, res) => {
 mountApiDocs(app);
 
 app.use("/api/auth", authRoutes);
+app.use("/api/saas", saasRoutes);
 app.use("/api/platform", platformRoutes);
 app.use("/api/front-office", frontOfficeRoutes);
 app.use("/api/food-beverages", foodBeveragesRoutes);
@@ -72,6 +74,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`API docs     → http://localhost:${PORT}/api-docs`);
   console.log(`OpenAPI JSON → http://localhost:${PORT}/api-docs.json`);
   console.log("Request logging enabled — API hits tagged by module:\n");
+  console.log("  [SAAS] /api/saas");
   console.log("  [FO]   /api/front-office");
   console.log("  [FB]   /api/food-beverages");
   console.log("  [HK]   /api/housekeeping");

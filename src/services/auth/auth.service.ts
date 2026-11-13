@@ -11,6 +11,7 @@ import {
 } from "../../errors/index.js";
 import type { AuthUserPublic, AuthUserRow } from "../../types/auth.js";
 import { buildEmployeePortalContext } from "../employee-portal/employee-context.service.js";
+import { TenantService } from "../saas/tenant.service.js";
 
 const USERS_TABLE = "users";
 
@@ -19,12 +20,16 @@ type JwtPayload = {
   email: string;
   role: string;
   isSuperAdmin?: boolean;
+  tenantId?: string | null;
 };
 
 async function toPublic(user: AuthUserRow): Promise<AuthUserPublic> {
   const employee = user.employeeId
     ? await buildEmployeePortalContext(user.employeeId)
     : null;
+  const tenantId =
+    user.tenantId ??
+    (await TenantService.getPrimaryTenantId(user.id).catch(() => null));
   return {
     id: user.id,
     name: user.name,
@@ -32,6 +37,7 @@ async function toPublic(user: AuthUserRow): Promise<AuthUserPublic> {
     role: user.role,
     initials: user.initials,
     isSuperAdmin: Boolean(user.isSuperAdmin),
+    tenantId: tenantId ?? null,
     employeeId: user.employeeId ?? null,
     employee,
   };
@@ -43,6 +49,7 @@ function signToken(user: AuthUserPublic): string {
     email: user.email,
     role: user.role,
     isSuperAdmin: user.isSuperAdmin,
+    tenantId: user.tenantId ?? null,
   };
   return jwt.sign(payload, config.jwtSecret, {
     expiresIn: config.jwtExpiresIn as jwt.SignOptions["expiresIn"],
@@ -104,6 +111,37 @@ export const AuthService = {
     const okHash = await bcrypt.compare(password, user.passwordHash);
     if (!okHash) {
       throw new UnauthorizedError("Invalid email or password");
+    }
+
+    // PMS login requires an active tenant membership (platform super-admins always allowed).
+    await TenantService.assertUserCanUsePms(user.id, Boolean(user.isSuperAdmin));
+
+    const publicUser = await toPublic(user);
+    const token = signToken(publicUser);
+    return { user: publicUser, token };
+  },
+
+  /** Platform console (admin app) — only is_super_admin users. */
+  async loginPlatform(email: string, password: string) {
+    const normalized = email.trim().toLowerCase();
+    if (!normalized || !password) {
+      throw new ValidationError("Email and password are required");
+    }
+
+    const user = await findByEmail(normalized);
+    if (!user) {
+      throw new UnauthorizedError("Invalid email or password");
+    }
+    if (user.status && user.status !== "Active") {
+      throw new UnauthorizedError("Account is inactive");
+    }
+
+    const okHash = await bcrypt.compare(password, user.passwordHash);
+    if (!okHash) {
+      throw new UnauthorizedError("Invalid email or password");
+    }
+    if (!user.isSuperAdmin) {
+      throw new UnauthorizedError("Platform admin access required");
     }
 
     const publicUser = await toPublic(user);

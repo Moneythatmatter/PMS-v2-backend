@@ -1,7 +1,10 @@
 import { supabase } from "../../utils/supabase.js";
 import { toCamel } from "../../utils/mappers.js";
 import { AppError, NotFoundError, PermissionError } from "../../errors/index.js";
-import { isPlatformAdmin } from "../../utils/platform-admin.js";
+import {
+  getActiveTenantIdsForUser,
+  userBelongsToPropertyTenant,
+} from "../../utils/tenant-isolation.js";
 import type {
   PermissionLevel,
   PropertyRow,
@@ -19,6 +22,11 @@ function initialsFromName(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
+function isTenantAdminRole(role?: string) {
+  const r = String(role ?? "").trim().toLowerCase();
+  return r === "admin" || r === "administrator";
+}
+
 export const PropertyService = {
   async userCanAccessProperty(
     userId: string,
@@ -26,7 +34,15 @@ export const PropertyService = {
     isSuperAdmin?: boolean,
     role?: string,
   ): Promise<boolean> {
-    if (isPlatformAdmin({ isSuperAdmin, role: role ?? "" })) return true;
+    // Only true platform super-admins bypass access rows.
+    if (isSuperAdmin) {
+      const tenantOk = await userBelongsToPropertyTenant(userId, propertyId, true);
+      return tenantOk;
+    }
+
+    const sameTenant = await userBelongsToPropertyTenant(userId, propertyId, false);
+    if (!sameTenant) return false;
+
     const { data, error } = await supabase
       .from(ACCESS)
       .select("property_id")
@@ -34,7 +50,27 @@ export const PropertyService = {
       .eq("property_id", propertyId)
       .maybeSingle();
     if (error) throw new AppError(error.message, 500);
-    return Boolean(data);
+    if (data) return true;
+
+    // Tenant Admins (users.role = Admin) may open any property under their tenant.
+    // Regular Users must have an explicit user_property_access row.
+    if (!isTenantAdminRole(role)) return false;
+
+    const { data: prop } = await supabase
+      .from(PROPERTIES)
+      .select("tenant_id")
+      .eq("id", propertyId)
+      .maybeSingle();
+    const propertyTenantId = prop?.tenant_id ? String(prop.tenant_id) : "";
+    if (!propertyTenantId) return false;
+    const { data: adminLink } = await supabase
+      .from("tenant_users")
+      .select("role")
+      .eq("user_id", userId)
+      .eq("tenant_id", propertyTenantId)
+      .eq("role", "admin")
+      .maybeSingle();
+    return Boolean(adminLink);
   },
 
   async listForUser(
@@ -42,7 +78,8 @@ export const PropertyService = {
     isSuperAdmin?: boolean,
     role?: string,
   ): Promise<PropertyRow[]> {
-    if (isPlatformAdmin({ isSuperAdmin, role: role ?? "" })) {
+    // Platform super-admin: all properties (support).
+    if (isSuperAdmin) {
       const { data, error } = await supabase
         .from(PROPERTIES)
         .select("*")
@@ -52,27 +89,40 @@ export const PropertyService = {
       return toCamel<PropertyRow[]>(data ?? []);
     }
 
+    const tenantIds = await getActiveTenantIdsForUser(userId);
+    if (!tenantIds.length) return [];
+
     const { data: links, error: linkErr } = await supabase
       .from(ACCESS)
       .select("property_id, is_default")
       .eq("user_id", userId);
     if (linkErr) throw new AppError(linkErr.message, 500);
-    if (!links?.length) return [];
 
-    const ids = links.map((l) => String(l.property_id));
-    const { data, error } = await supabase
+    // Tenant Admin (role Admin) → all properties in their tenant(s).
+    // User / Staff → ONLY assigned properties (never the whole tenant).
+    const showWholeTenant = isTenantAdminRole(role);
+
+    let query = supabase
       .from(PROPERTIES)
       .select("*")
-      .in("id", ids)
+      .in("tenant_id", tenantIds)
       .eq("status", "Active")
       .order("name");
+
+    if (!showWholeTenant) {
+      const ids = (links ?? []).map((l) => String(l.property_id));
+      if (!ids.length) return [];
+      query = query.in("id", ids);
+    }
+
+    const { data, error } = await query;
     if (error) throw new AppError(error.message, 500);
 
     const defaultId =
-      links.find((l) => l.is_default)?.property_id ?? links[0]?.property_id;
+      links?.find((l) => l.is_default)?.property_id ?? links?.[0]?.property_id;
     return toCamel<PropertyRow[]>(data ?? []).map((p) => ({
       ...p,
-      isDefault: String(p.id) === String(defaultId),
+      isDefault: defaultId ? String(p.id) === String(defaultId) : false,
     }));
   },
 
@@ -82,10 +132,14 @@ export const PropertyService = {
     city?: string;
     timezone?: string;
     isDefault?: boolean;
+    tenantId: string;
+    ownerUserId?: string;
   }): Promise<PropertyRow> {
     const name = input.name.trim();
     const code = input.code.trim().toLowerCase();
+    const tenantId = input.tenantId.trim();
     if (!name || !code) throw new AppError("Name and code are required", 400);
+    if (!tenantId) throw new AppError("Tenant is required", 400);
 
     const id = `prop-${code}`;
     const { data, error } = await supabase
@@ -98,10 +152,38 @@ export const PropertyService = {
         timezone: input.timezone ?? "Asia/Kolkata",
         is_default: Boolean(input.isDefault),
         status: "Active",
+        tenant_id: tenantId,
       })
       .select()
       .single();
     if (error) throw new AppError(error.message, 500);
+
+    if (input.ownerUserId) {
+      await supabase.from(ACCESS).upsert(
+        {
+          user_id: input.ownerUserId,
+          property_id: id,
+          is_default: true,
+        },
+        { onConflict: "user_id,property_id" },
+      );
+
+      // Tenant owner needs full module access on the new property.
+      const { PLATFORM_MODULES } = await import("../../types/platform.js");
+      const permRows = PLATFORM_MODULES.map((m) => ({
+        id: crypto.randomUUID(),
+        user_id: input.ownerUserId,
+        property_id: id,
+        module_key: m.key,
+        permission: "admin",
+      }));
+      await supabase.from(PERMS).delete().eq("user_id", input.ownerUserId).eq("property_id", id);
+      if (permRows.length) {
+        const { error: permErr } = await supabase.from(PERMS).insert(permRows);
+        if (permErr) throw new AppError(permErr.message, 500);
+      }
+    }
+
     const accountsSetup = await this.seedAccounts(id);
     return { ...toCamel<PropertyRow>(data), accountsSetup } as PropertyRow;
   },
@@ -146,6 +228,43 @@ export const PropertyService = {
     if (error) throw new AppError(error.message, 500);
     if (!data) throw new NotFoundError("Property not found");
     return toCamel<PropertyRow>(data);
+  },
+
+  /**
+   * Delete property and all rows keyed by property_id across modules.
+   * Prefers SQL function delete_property_cascade (run property-delete-cascade.sql).
+   */
+  async delete(id: string): Promise<{ id: string; report: Record<string, unknown> }> {
+    const propertyId = id.trim();
+    if (!propertyId) throw new AppError("Property id is required", 400);
+
+    const { data: existing, error: findErr } = await supabase
+      .from(PROPERTIES)
+      .select("id, name")
+      .eq("id", propertyId)
+      .maybeSingle();
+    if (findErr) throw new AppError(findErr.message, 500);
+    if (!existing) throw new NotFoundError("Property not found");
+
+    const { data, error } = await supabase.rpc("delete_property_cascade", {
+      p_property_id: propertyId,
+    });
+
+    if (error) {
+      if (/delete_property_cascade/i.test(error.message)) {
+        throw new AppError(
+          "Run backend/sql/property-delete-cascade.sql in Supabase, then retry deleting the property.",
+          500,
+          "SCHEMA_MISSING",
+        );
+      }
+      throw new AppError(error.message, 500);
+    }
+
+    return {
+      id: propertyId,
+      report: (data ?? {}) as Record<string, unknown>,
+    };
   },
 
   async getUserPermissions(

@@ -21,6 +21,16 @@ export async function login(req: Request, res: Response) {
   }
 }
 
+export async function loginPlatform(req: Request, res: Response) {
+  try {
+    const body = parseBody(loginSchema, req.body);
+    const result = await AuthService.loginPlatform(body.email, body.password);
+    return ok(res, result);
+  } catch (e) {
+    return fromError(res, e);
+  }
+}
+
 export async function me(req: Request, res: Response) {
   try {
     const token = bearerToken(req);

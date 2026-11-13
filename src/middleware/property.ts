@@ -1,6 +1,7 @@
 import type { NextFunction, Response } from "express";
 import { AppError, PermissionError, UnauthorizedError } from "../errors/index.js";
 import { PropertyService } from "../services/platform/property.service.js";
+import { TenantService } from "../services/saas/tenant.service.js";
 import type { ContextRequest } from "./request-context.js";
 
 export function requireProperty(
@@ -32,6 +33,8 @@ export function requireProperty(
       }
 
       req.propertyId = raw;
+      req.tenantId =
+        (await TenantService.resolveTenantIdForProperty(raw)) ?? undefined;
       next();
     } catch (e) {
       next(e);

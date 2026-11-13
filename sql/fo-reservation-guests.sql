@@ -7,7 +7,7 @@ create table if not exists public.reservation_guests (
   id text primary key default gen_random_uuid()::text,
   property_id text,
   reservation_id text not null references public.reservations(id) on delete cascade,
-  guest_id text not null references public.guests(id) on delete restrict,
+  guest_id text not null references public.guests(id) on delete cascade,
   role text not null default 'COMPANION'
     check (role in ('PRIMARY', 'COMPANION')),
   created_at timestamptz not null default now(),

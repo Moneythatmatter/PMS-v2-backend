@@ -748,7 +748,7 @@ create sequence if not exists public.maintenance_requests_request_number_seq
 create table if not exists maintenance_requests (
   id text primary key default gen_random_uuid()::text,
   request_number text,
-  room_id text references rooms(id) on delete set null,
+  room_id text references rooms(id) on delete cascade,
   public_area_id text,
   issue_type public.maintenance_issue_type not null default 'OTHER',
   title text not null,

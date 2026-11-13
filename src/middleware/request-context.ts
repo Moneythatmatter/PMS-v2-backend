@@ -4,6 +4,7 @@ import { runWithRequestStore } from "../utils/request-context.js";
 
 export type ContextRequest = AuthedRequest & {
   propertyId?: string;
+  tenantId?: string;
 };
 
 export function attachRequestContext(
@@ -16,6 +17,7 @@ export function attachRequestContext(
     userRole: req.auth?.role,
     isSuperAdmin: req.auth?.isSuperAdmin,
     propertyId: req.propertyId,
+    tenantId: req.tenantId,
   };
   runWithRequestStore(store, () => next());
 }

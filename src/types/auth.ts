@@ -17,7 +17,9 @@ export type AuthUserPublic = {
   role: string;
   initials: string;
   isSuperAdmin?: boolean;
+  tenantId?: string | null;
   employeeId?: string | null;
+  accessRoleId?: string | null;
   employee?: EmployeePortalContext | null;
 };
 

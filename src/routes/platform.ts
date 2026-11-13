@@ -12,6 +12,7 @@ router.get("/portfolio", platform.getPortfolio);
 router.get("/properties", platform.listProperties);
 router.post("/properties", platform.createProperty);
 router.put("/properties/:id", platform.updateProperty);
+router.delete("/properties/:id", platform.deleteProperty);
 
 router.get("/modules", platform.listModules);
 router.get("/permissions/me", platform.myPermissions);
@@ -20,5 +21,10 @@ router.get("/users", platform.listUsers);
 router.get("/users/employee-link-options", platform.listEmployeeLinkOptions);
 router.post("/users", platform.createUser);
 router.put("/users/:id", platform.updateUser);
+
+router.get("/roles", platform.listRoles);
+router.post("/roles", platform.createRole);
+router.put("/roles/:id", platform.updateRole);
+router.delete("/roles/:id", platform.deleteRole);
 
 export default router;

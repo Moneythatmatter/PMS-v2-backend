@@ -1,6 +1,10 @@
 import { supabase } from "../../utils/supabase.js";
 import { toCamel, toSnake } from "../../utils/mappers.js";
-import { getActivePropertyId, getRequestStore } from "../../utils/request-context.js";
+import {
+  getActivePropertyId,
+  getActiveTenantId,
+  getRequestStore,
+} from "../../utils/request-context.js";
 import { AppError, ConflictError, NotFoundError, ValidationError } from "../../errors/index.js";
 
 export const accTables = {
@@ -60,6 +64,13 @@ export function propertyId(): string {
   const id = getActivePropertyId();
   if (!id) throw new AppError("X-Property-Id header is required", 400, "PROPERTY_REQUIRED");
   return id;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function withTenantEq(query: any): any {
+  const tenantId = getActiveTenantId();
+  if (!tenantId) return query;
+  return query.eq("tenant_id", tenantId);
 }
 
 const UNIQUE_MESSAGES: Record<string, string> = {
@@ -137,7 +148,9 @@ export async function list<T = Row>(table: AccTable, opts: ListOptions = {}): Pr
   const pid = propertyId();
   const out: Row[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
-    let q = supabase.from(table).select(opts.select ?? "*").eq("property_id", pid);
+    let q = withTenantEq(
+      supabase.from(table).select(opts.select ?? "*").eq("property_id", pid),
+    );
     for (const [k, v] of Object.entries(opts.eq ?? {})) {
       if (v === undefined) continue;
       q = v === null ? q.is(k, null) : q.eq(k, v);
@@ -183,12 +196,9 @@ export async function getSharedById<T = Row>(table: AccSharedTable, id: string):
 
 export async function getById<T = Row>(table: AccTable, id: string): Promise<T | null> {
   if (!isUuid(id)) return null;
-  const { data, error } = await supabase
-    .from(table)
-    .select("*")
-    .eq("property_id", propertyId())
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await withTenantEq(
+    supabase.from(table).select("*").eq("property_id", propertyId()).eq("id", id),
+  ).maybeSingle();
   if (error) mapDbError(error, table);
   return data ? toCamel<T>(data) : null;
 }
@@ -200,7 +210,12 @@ export async function mustGet<T = Row>(table: AccTable, id: string, label = "Rec
 }
 
 export async function insert<T = Row>(table: AccTable, payload: Row): Promise<T> {
-  const row = toSnake({ ...payload, propertyId: propertyId() }) as Row;
+  const tenantId = getActiveTenantId();
+  const row = toSnake({
+    ...payload,
+    propertyId: propertyId(),
+    ...(tenantId ? { tenantId } : {}),
+  }) as Row;
   const { data, error } = await supabase.from(table).insert(row).select().single();
   if (error) mapDbError(error, table);
   return toCamel<T>(data);
@@ -209,7 +224,15 @@ export async function insert<T = Row>(table: AccTable, payload: Row): Promise<T>
 export async function insertMany<T = Row>(table: AccTable, payloads: Row[]): Promise<T[]> {
   if (payloads.length === 0) return [];
   const pid = propertyId();
-  const rows = payloads.map((p) => toSnake({ ...p, propertyId: pid }) as Row);
+  const tenantId = getActiveTenantId();
+  const rows = payloads.map(
+    (p) =>
+      toSnake({
+        ...p,
+        propertyId: pid,
+        ...(tenantId ? { tenantId } : {}),
+      }) as Row,
+  );
   const { data, error } = await supabase.from(table).insert(rows).select();
   if (error) mapDbError(error, table);
   return toCamel<T[]>(data ?? []);
@@ -220,11 +243,10 @@ export async function update<T = Row>(table: AccTable, id: string, payload: Row)
   const row = toSnake(payload) as Row;
   delete row.id;
   delete row.property_id;
-  const { data, error } = await supabase
-    .from(table)
-    .update(row)
-    .eq("property_id", propertyId())
-    .eq("id", id)
+  delete row.tenant_id;
+  const { data, error } = await withTenantEq(
+    supabase.from(table).update(row).eq("property_id", propertyId()).eq("id", id),
+  )
     .select()
     .maybeSingle();
   if (error) mapDbError(error, table);
@@ -237,7 +259,9 @@ export async function updateWhere(
   payload: Row,
   where: { eq?: Record<string, string | number | boolean>; in?: Record<string, string[]> },
 ): Promise<number> {
-  let q = supabase.from(table).update(toSnake(payload) as Row).eq("property_id", propertyId());
+  let q = withTenantEq(
+    supabase.from(table).update(toSnake(payload) as Row).eq("property_id", propertyId()),
+  );
   for (const [k, v] of Object.entries(where.eq ?? {})) q = q.eq(k, v);
   for (const [k, v] of Object.entries(where.in ?? {})) {
     if (v.length === 0) return 0;
@@ -250,17 +274,15 @@ export async function updateWhere(
 
 export async function remove(table: AccTable, id: string): Promise<void> {
   requireUuid(id);
-  const { error, count } = await supabase
-    .from(table)
-    .delete({ count: "exact" })
-    .eq("property_id", propertyId())
-    .eq("id", id);
+  const { error, count } = await withTenantEq(
+    supabase.from(table).delete({ count: "exact" }).eq("property_id", propertyId()).eq("id", id),
+  );
   if (error) mapDbError(error, table);
   if (count === 0) throw new NotFoundError("Record not found");
 }
 
 export async function removeWhere(table: AccTable, eq: Record<string, string>): Promise<void> {
-  let q = supabase.from(table).delete().eq("property_id", propertyId());
+  let q = withTenantEq(supabase.from(table).delete().eq("property_id", propertyId()));
   for (const [k, v] of Object.entries(eq)) q = q.eq(k, v);
   const { error } = await q;
   if (error) mapDbError(error, table);
@@ -271,7 +293,9 @@ export async function count(
   eq: Record<string, string | number | boolean>,
   inFilter?: Record<string, string[]>,
 ): Promise<number> {
-  let q = supabase.from(table).select("id", { count: "exact", head: true }).eq("property_id", propertyId());
+  let q = withTenantEq(
+    supabase.from(table).select("id", { count: "exact", head: true }).eq("property_id", propertyId()),
+  );
   for (const [k, v] of Object.entries(eq)) q = q.eq(k, v);
   for (const [k, v] of Object.entries(inFilter ?? {})) {
     if (v.length === 0) return 0;

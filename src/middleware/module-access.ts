@@ -2,7 +2,6 @@ import type { NextFunction, Response } from "express";
 import { PermissionError, UnauthorizedError, AppError } from "../errors/index.js";
 import type { ModuleKey, PermissionLevel } from "../types/platform.js";
 import { UserAdminService } from "../services/platform/user-admin.service.js";
-import { isPlatformAdmin } from "../utils/platform-admin.js";
 import type { ContextRequest } from "./request-context.js";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -61,7 +60,8 @@ export function requireModule(
     void (async () => {
       try {
         if (!req.auth?.userId) throw new UnauthorizedError("Authentication required");
-        if (isPlatformAdmin(req.auth)) return next();
+        // Only true platform super-admins skip module ACL — tenant "Admin" role does not.
+        if (req.auth.isSuperAdmin) return next();
         if (!req.propertyId) {
           throw new AppError("X-Property-Id header is required", 400, "PROPERTY_REQUIRED");
         }
