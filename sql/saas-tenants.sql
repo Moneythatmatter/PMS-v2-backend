@@ -54,24 +54,41 @@ update public.properties
 set tenant_id = 'tenant-default'
 where tenant_id is null;
 
--- Link existing property users into default tenant as members (not tenant admins).
--- Only users.role Admin / Super Admin should be tenant_users.role = admin.
+-- Link orphan property users into default tenant as members (not tenant admins).
+-- Do NOT re-attach users who already belong to another tenant (re-run safe).
 insert into public.tenant_users (tenant_id, user_id, role)
 select distinct 'tenant-default', upa.user_id, 'member'
 from public.user_property_access upa
+join public.users u on u.id = upa.user_id
+where coalesce(u.is_super_admin, false) = false
+  and (u.tenant_id is null or u.tenant_id = 'tenant-default')
+  and not exists (
+    select 1 from public.tenant_users tu
+    where tu.user_id = upa.user_id and tu.tenant_id <> 'tenant-default'
+  )
 on conflict (tenant_id, user_id) do nothing;
 
+-- Only platform supers + default-tenant Admins become tenant-default admins.
 insert into public.tenant_users (tenant_id, user_id, role)
 select 'tenant-default', u.id, 'admin'
 from public.users u
-where coalesce(u.is_super_admin, false) = true
-   or lower(trim(u.role)) in ('admin', 'administrator', 'super admin', 'superadmin')
-on conflict (tenant_id, user_id) do update
-  set role = excluded.role;
+where (
+    coalesce(u.is_super_admin, false) = true
+    or (
+      lower(trim(u.role)) in ('admin', 'administrator', 'super admin', 'superadmin')
+      and (u.tenant_id is null or u.tenant_id = 'tenant-default')
+    )
+  )
+  and not exists (
+    select 1 from public.tenant_users tu
+    where tu.user_id = u.id and tu.tenant_id <> 'tenant-default'
+  )
+on conflict (tenant_id, user_id) do nothing;
 
 update public.users u
 set tenant_id = 'tenant-default'
 where u.tenant_id is null
+  and coalesce(u.is_super_admin, false) = false
   and exists (
     select 1 from public.tenant_users tu
     where tu.user_id = u.id and tu.tenant_id = 'tenant-default'

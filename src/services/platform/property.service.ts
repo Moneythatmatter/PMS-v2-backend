@@ -2,7 +2,7 @@ import { supabase } from "../../utils/supabase.js";
 import { toCamel } from "../../utils/mappers.js";
 import { AppError, NotFoundError, PermissionError } from "../../errors/index.js";
 import {
-  getActiveTenantIdsForUser,
+  getScopedTenantIdsForUser,
   userBelongsToPropertyTenant,
 } from "../../utils/tenant-isolation.js";
 import type {
@@ -52,12 +52,12 @@ export const PropertyService = {
     if (error) throw new AppError(error.message, 500);
     if (data) return true;
 
-    // Tenant Admins (users.role = Admin) may open any property under their Active tenant.
+    // Tenant Admins (users.role = Admin) may open any property under their home/scoped tenant.
     // Regular Users must have an explicit user_property_access row.
     if (!isTenantAdminRole(role)) return false;
 
-    const activeTenantIds = await getActiveTenantIdsForUser(userId);
-    if (!activeTenantIds.length) return false;
+    const scopedTenantIds = await getScopedTenantIdsForUser(userId);
+    if (!scopedTenantIds.length) return false;
 
     const { data: prop } = await supabase
       .from(PROPERTIES)
@@ -65,7 +65,7 @@ export const PropertyService = {
       .eq("id", propertyId)
       .maybeSingle();
     const propertyTenantId = prop?.tenant_id ? String(prop.tenant_id) : "";
-    if (!propertyTenantId || !activeTenantIds.includes(propertyTenantId)) {
+    if (!propertyTenantId || !scopedTenantIds.includes(propertyTenantId)) {
       return false;
     }
     const { data: adminLink } = await supabase
@@ -83,7 +83,7 @@ export const PropertyService = {
     isSuperAdmin?: boolean,
     role?: string,
   ): Promise<PropertyRow[]> {
-    // Platform super-admin: all properties (support).
+    // Platform super-admin only: all properties (support). Tenant Admins never hit this.
     if (isSuperAdmin) {
       const { data, error } = await supabase
         .from(PROPERTIES)
@@ -94,7 +94,8 @@ export const PropertyService = {
       return toCamel<PropertyRow[]>(data ?? []);
     }
 
-    const tenantIds = await getActiveTenantIdsForUser(userId);
+    // Home-tenant scoped (ignores leftover tenant-default memberships from old seeds).
+    const tenantIds = await getScopedTenantIdsForUser(userId);
     if (!tenantIds.length) return [];
 
     const { data: links, error: linkErr } = await supabase
@@ -103,8 +104,8 @@ export const PropertyService = {
       .eq("user_id", userId);
     if (linkErr) throw new AppError(linkErr.message, 500);
 
-    // Tenant Admin (role Admin) → all properties in their tenant(s).
-    // User / Staff → ONLY assigned properties (never the whole tenant).
+    // Tenant Admin → all properties in their home tenant only.
+    // Staff → only assigned properties that also belong to that tenant.
     const showWholeTenant = isTenantAdminRole(role);
 
     let query = supabase

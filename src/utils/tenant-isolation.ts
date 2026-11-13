@@ -24,6 +24,27 @@ export async function getActiveTenantIdsForUser(userId: string): Promise<string[
   return (active ?? []).map((r) => String(r.id));
 }
 
+/**
+ * Tenant scope for PMS property list/access.
+ * Prefer users.tenant_id (home tenant) so leftover multi-tenant seed rows
+ * (e.g. every Admin linked to tenant-default) cannot leak other orgs' hotels.
+ */
+export async function getScopedTenantIdsForUser(userId: string): Promise<string[]> {
+  const active = await getActiveTenantIdsForUser(userId);
+  if (!active.length) return [];
+
+  const { data: user, error } = await supabase
+    .from("users")
+    .select("tenant_id")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error) throw new AppError(error.message, 500);
+
+  const home = user?.tenant_id ? String(user.tenant_id) : null;
+  if (home && active.includes(home)) return [home];
+  return active;
+}
+
 export async function getPropertyTenantId(propertyId: string): Promise<string | null> {
   const { data, error } = await supabase
     .from("properties")
@@ -54,7 +75,7 @@ export async function userBelongsToPropertyTenant(
   if (isSuperAdmin) return true;
   const propertyTenantId = await getPropertyTenantId(propertyId);
   if (!propertyTenantId) return false;
-  const tenantIds = await getActiveTenantIdsForUser(userId);
+  const tenantIds = await getScopedTenantIdsForUser(userId);
   return tenantIds.includes(propertyTenantId);
 }
 
