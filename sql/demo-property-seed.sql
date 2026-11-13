@@ -1051,7 +1051,7 @@ notify pgrst, 'reload schema';
 -- 4. Seed one demo property for a tenant
 --    Replace 'tenant-YOUR-SLUG' with tenants.id from the platform console, then uncomment:
 ------------------------------------------------------------------------------------------------
--- select jsonb_pretty(public.demo_seed_new_property('tenant-YOUR-SLUG', 'Demo Hotel', 'Bhubaneswar')) as report;
+select jsonb_pretty(public.demo_seed_new_property('tenant-3rstays', '3R Stays', 'Nanital')) as report;
 
 -- Examples:
 --   select jsonb_pretty(public.demo_seed_new_property('tenant-default'));
