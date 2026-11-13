@@ -224,7 +224,8 @@ export function availabilityCalendarDayStatus(params: {
   if (hasBooking) return bookingInHouse ? "occupied" : "reserved";
 
   if (dayIso === todayIso && hkStatus === "OUT_OF_SERVICE") return "blocked";
-  if (dayIso === todayIso && (hkStatus === "DIRTY" || hkStatus === "INSPECTING" || hkStatus === "CLEAN")) {
+  // Today-only HK badge: Dirty / Cleaning → red "D". Clean + Inspected stay available.
+  if (dayIso === todayIso && (hkStatus === "DIRTY" || hkStatus === "INSPECTING")) {
     return "dirty";
   }
 
