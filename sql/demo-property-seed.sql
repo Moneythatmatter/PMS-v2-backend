@@ -178,6 +178,39 @@ begin
   exception when others then rep := rep || jsonb_build_object('user_property_access', 'error: ' || sqlerrm);
   end;
 
+  -- Full module ACL for Tenant Admins on this property (API create does this; SQL seed must too).
+  begin
+    insert into public.user_permissions (id, user_id, property_id, module_key, permission)
+    select gen_random_uuid()::text, tu.user_id, pid, m.module_key, 'admin'
+    from public.tenant_users tu
+    cross join (values
+      ('dashboard'),
+      ('front_office'),
+      ('food_beverages'),
+      ('housekeeping'),
+      ('purchase_stores'),
+      ('human_resources'),
+      ('accounts'),
+      ('sales_marketing'),
+      ('maintenance'),
+      ('workspace.properties'),
+      ('workspace.dashboard'),
+      ('workspace.reports'),
+      ('workspace.user_management'),
+      ('workspace.roles')
+    ) m(module_key)
+    where tu.tenant_id = tid
+      and lower(trim(tu.role)) = 'admin'
+      and not exists (
+        select 1 from public.user_permissions up
+        where up.user_id = tu.user_id
+          and up.property_id = pid
+          and up.module_key = m.module_key
+      );
+    rep := rep || jsonb_build_object('user_permissions', 'seeded');
+  exception when others then rep := rep || jsonb_build_object('user_permissions', 'error: ' || sqlerrm);
+  end;
+
   -- Accounts -----------------------------------------------------------------------------------
   begin
     rep := rep || jsonb_build_object('accounts', public.acc_seed_property(pid));

@@ -2,6 +2,7 @@ import type { NextFunction, Response } from "express";
 import { PermissionError, UnauthorizedError, AppError } from "../errors/index.js";
 import type { ModuleKey, PermissionLevel } from "../types/platform.js";
 import { UserAdminService } from "../services/platform/user-admin.service.js";
+import { isPlatformAdmin } from "../utils/platform-admin.js";
 import type { ContextRequest } from "./request-context.js";
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -29,14 +30,21 @@ export function invalidateModuleAccessCache(userId?: string) {
   }
 }
 
-async function loadPermissions(userId: string, propertyId: string) {
-  const key = `${userId}:${propertyId}`;
+async function loadPermissions(
+  userId: string,
+  propertyId: string,
+  isSuperAdmin?: boolean,
+  role?: string,
+) {
+  const key = `${userId}:${propertyId}:${Boolean(isSuperAdmin)}:${role ?? ""}`;
   const cached = permissionCache.get(key);
   if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.perms;
-  const perms = (await UserAdminService.getMyPermissions(userId, propertyId)) as Record<
-    string,
-    PermissionLevel
-  >;
+  const perms = (await UserAdminService.getMyPermissions(
+    userId,
+    propertyId,
+    isSuperAdmin,
+    role,
+  )) as Record<string, PermissionLevel>;
   permissionCache.set(key, { at: Date.now(), perms });
   return perms;
 }
@@ -60,13 +68,18 @@ export function requireModule(
     void (async () => {
       try {
         if (!req.auth?.userId) throw new UnauthorizedError("Authentication required");
-        // Only true platform super-admins skip module ACL — tenant "Admin" role does not.
-        if (req.auth.isSuperAdmin) return next();
+        // Platform Super Admin + Tenant Admin (role Admin) have full module access on their properties.
+        if (isPlatformAdmin(req.auth)) return next();
         if (!req.propertyId) {
           throw new AppError("X-Property-Id header is required", 400, "PROPERTY_REQUIRED");
         }
 
-        const perms = await loadPermissions(req.auth.userId, req.propertyId);
+        const perms = await loadPermissions(
+          req.auth.userId,
+          req.propertyId,
+          req.auth.isSuperAdmin,
+          req.auth.role,
+        );
         const has = (key: string) => Boolean(perms[key]);
 
         if (owners.some(has)) return next();
